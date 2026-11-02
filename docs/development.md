@@ -1,0 +1,123 @@
+# 開發規範
+
+> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11～Q-14、Q-17 的現場資訊仍待取得。Phase 1 尚未開始。
+
+## 目前狀態與環境規劃
+
+Phase 0 僅建立文件；沒有 Python Source Code（原始碼）、Package（套件）、測試或 CI（持續整合）設定。以下是後續獲授權實作時的規範與候選規劃，不是安裝或執行成果。
+
+建議最低 Python 3.12，於 Windows 11 與 Linux Ubuntu 測試；版本政策尚待核准。每個環境使用獨立虛擬環境，依同一 `pyproject.toml` 管理依賴。Windows 執行 Serial Backend（裝置存取實作），Linux 使用 SDK（用戶端開發套件）與 CLI（命令列介面）。不要求 Linux 能操作 Windows COM，也不要求沒有硬體的 CI 裝上實體 Adapter（轉接器）。
+
+Podman Container（容器）的映像、網路與套件管理沿用已存在且經確認的環境；本次不修改 Dockerfile 或 Podman 設定。Network Namespace（網路命名空間）及 SSH 路徑見 [部署文件](deployment.md)。
+
+## 候選 Python Package 結構
+
+以下只是未來結構示意，Phase 0 不建立這些目錄或檔案。
+
+```text
+pyproject.toml                  # 套件、依賴與執行入口
+src/uart_gateway/
+    __init__.py                # 輕量公開入口，無 I/O 副作用
+    serial_backend.py          # pySerial、裝置枚舉與 I/O
+    cli.py                     # 參數、輸出與 SDK 操作
+    protocol/
+        __init__.py
+        messages.py            # 線上資料模型
+        codec.py               # JSON Lines、Base64、限制
+        errors.py              # 協定錯誤碼
+    core/
+        __init__.py
+        models.py              # 領域模型
+        ports.py               # 最小必要的 I/O 與時鐘介面
+        channel.py             # 通道狀態、RX 與 TX 協調
+        lease.py               # 租約與隔離序號
+    server/
+        __init__.py
+        app.py                 # 組裝與啟停
+        config.py              # 設定載入及驗證
+        tcp.py                 # TCP、訊框與派送
+        auth.py                # 身分與權限
+        session.py             # 工作階段與資源清理
+        recording.py           # 錄製、輪替與完整性
+    client/
+        __init__.py
+        sdk.py                 # 穩定的公開操作介面
+        transport.py           # 連線、請求配對與接收
+tests/
+    unit/                      # 無網路、無硬體的邏輯測試
+    integration/               # 真 TCP 與模擬裝置
+    hardware/                  # 明確選用的實體驗證
+    fixtures/                  # 固定訊框及二進位測試資料
+    fakes.py                   # 可控制的 Serial、Clock 與故障
+```
+
+當一個模組仍有清楚責任時，不因程式行數或預想功能拆出更多目錄。TUI（文字介面）、MCP（模型內容協定）及 Firmware Workflow（韌體工作流程）在各自階段才加入，且只能透過 SDK 操作 UART。
+
+## pyproject.toml 規劃
+
+採一個 Python Distribution（發布套件），使用標準專案 Metadata（中繼資料）及 `src` 配置。Build Backend（建置後端）與鎖定工具在實作前選擇，不額外引入多套相同用途工具。
+
+| 項目 | 候選規劃 |
+| --- | --- |
+| 基礎安裝 | Protocol（通訊協定）、Client SDK、CLI |
+| `server` Extra（選用依賴群組） | pySerial 等 Windows Gateway 需要的依賴 |
+| `tui` Extra | Phase 2 實際選定 UI 工具後才加入 |
+| `dev` Extra | 實際使用的測試、型別及格式檢查工具 |
+| Entry Point（執行入口） | `uart-gatewayd` 與 `uart`，尚未存在 |
+| 版本 | Distribution Version（套件版本）與 Protocol Version（協定版本）分開 |
+
+Linux 匯入 SDK 不得匯入 Windows 專屬程式、枚舉 COM 或要求 pySerial。Protocol 可以獨立使用，但第一版不需另發一個 Distribution。
+
+## Coding Standards（程式撰寫規範）
+
+- 模組、Class（類別）、Function（函式）與 JSON Key（欄位名稱）使用英文識別名稱；說明、註解及文件字串使用繁體中文。
+- 公開介面使用明確型別、穩定錯誤與資源生命週期；避免自由傳遞未驗證的 `dict` 成為所有層的共同介面。
+- Core 不依賴 Server、Client、pySerial 或 TUI；線上資料與 Domain Model（領域模型）在 Server 邊界轉換。
+- 以必要的 Serial、Clock、Event Sink（事件輸出）介面支援測試，不建立未使用的通用框架。
+- asyncio Task（工作）不得直接執行阻塞 Serial／磁碟 I/O；執行緒與 Event Loop（事件迴圈）之間使用有界交接。
+- 使用 Monotonic Clock（單調時鐘）判斷期限；UTC Timestamp（時間戳）只作事件對照。
+- 不透過全域 Serial Handle（控制代碼）、RX Buffer（緩衝區）或 TX Lock（鎖）耦合多個 Channel。
+- 不在 import、UI Callback（回呼）或一般 Retry（重試）中自動送 UART 命令。
+- 所有資源清理須可重複呼叫；Client 的慢速輸出、取消或關閉不得留下 Lease（租約）。
+
+## Logging 與 Exception Handling
+
+Logging（紀錄）分成一般診斷、UART Recording（錄製）及 Audit（稽核）。一般 Log 使用固定欄位連結 Instance（執行個體）、Channel、Session（工作階段）、Request ID（請求識別）及 TX ID；不保存 Token（憑證）、秘密檔案內容或完整環境變數。
+
+原始 UART bytes 保留在錄製／擷取資料中；人類畫面用增量 Decoder（解碼器）處理文字，無效字元不得破壞原始資料。控制字元預設安全顯示，真正原始終端模式需明確選擇。UART 內容對 Agent 是不可信資料，不能成為自行授權指令的來源。
+
+Exception Handling（例外處理）需區分：設定錯誤、認證失敗、Port 占用、裝置遺失、正常 Read Timeout（讀取逾時）、Partial Write（部分寫入）、TX Unknown（結果不明）、慢速 Client 與磁碟故障。不能只回覆「連線失敗」，也不能廣泛捕捉後繼續宣稱正常。
+
+每個失敗應更新正確的 Channel／Session／Recorder 狀態，傳回穩定錯誤碼，保留不含秘密的診斷。Stack Trace（堆疊追蹤）留在受控診斷紀錄，不直接送給一般 Client。Client 本地請求逾時不等於取消已接受的 TX。
+
+## 無實體 UART 的測試
+
+Fake Serial（模擬序列裝置）必須能控制輸入 bytes、空讀取、延遲、裝置遺失、短寫入、逾時及關閉競爭；不能只是所有方法回傳成功。Fake Clock（模擬時鐘）可前進時間以測試 Lease 到期，不用長時間 sleep。
+
+Unit Testing（單元測試）涵蓋：
+
+- JSON Lines 分段、黏包、超限、重複 Key、無效 UTF-8、非法 Base64 與任意二進位往返。
+- 版本協商、必要欄位、未知可選欄位與穩定 Error Code（錯誤碼）。
+- Binding Revision（綁定修訂）、Stream Epoch（資料流世代）、Fencing Token（隔離序號）與 Dispatch（真正派送）前再驗證。
+- Ring（環狀緩衝）淘汰、Replay（重播）邊界、跨 Chunk（區塊）Offset（位移）與 Gap（缺口）。
+- TX 狀態、去重快取、ID 衝突、快取容量及不自動重送。
+
+Integration Testing（整合測試）使用真實 TCP Server + Fake Serial + 真實 SDK，驗證完整路徑與清理：多 Reader（讀取者）、一個 Writer（寫入者）、慢 Client、網路中斷、重連、新 Epoch、Recorder 失敗及兩個 Fake Channel 的隔離。
+
+Fake Gateway（模擬伺服器）只用於 SDK 接收異常、相容性與錯誤注入，不能代替真 Server 整合測試。Golden Frames（固定標準訊框）來自 Protocol 規格，避免兩端共同寫錯仍互相通過。
+
+Virtual UART（虛擬序列端點）、Linux PTY（偽終端機）或 pySerial `loop://` 可補充傳輸測試，但不能證明 Windows USB Driver、實際插拔或控制線行為正確。
+
+## Hardware Testing（硬體測試）
+
+Phase 1 第一個目標是 COM3、115200、8N1。執行前確認 Adapter、接線電壓、共地、DTR／RTS 與目標板狀態。硬體測試明確標記並由有硬體的環境選用，不讓一般 CI 失敗於缺少 COM。
+
+至少驗證占用、拔除、重新枚舉、長時間已知序號資料流、連續 Log、Write Timeout、關閉與寫入競爭、錄製失敗、Tunnel 中斷及重新 Confirm。使用可計數來源才能量測傳輸缺口；看到文字正常不代表零遺失。
+
+每次保存 OS、Python、Driver、Adapter、Baud Rate、測試時間、資料量與結果。未測試的硬體及速率不標成支援保證。
+
+## CI/CD 與變更流程
+
+未來 CI 首先跑 Windows／Linux 的無硬體 Unit 與 Integration、文件連結、JSON 範例及相容性測試。候選 Python 矩陣為 3.12、3.13；實際支援範圍待核准。Performance Testing（效能測試）依核准的 Channel／Client／Baud Rate 上限建立，不憑空指定 SLA（服務水準）。
+
+CD（持續交付）與發布流程留待可用版本形成後設計；目前不自動發布、部署、commit 或 push。變更順序為讀規格 → 分析影響 → 最小實作 → 對應驗證 → 更新單一權威文件與 [狀態](status.md)。Protocol 變更需同步維護範例及相容性證據。

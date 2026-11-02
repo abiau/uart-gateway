@@ -1,0 +1,74 @@
+# 開發路線圖
+
+> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11～Q-14、Q-17 的現場資訊仍待取得。Phase 1 尚未開始。
+
+## 使用方式與核准邊界
+
+本文件定義 Phase 0–4 的候選範圍與驗收，不表示功能已實作。使用者已確認分階段方向；容量、政策與詳細契約仍依 [核准清單](status.md) 處理。不得因列出未來功能而提前建立空目錄或抽象。
+
+## Phase 0：文件與架構定稿
+
+- **開發目標**：將審查轉成可追溯、單一權威來源的規格，讓未來 Server（伺服器）與 Client（用戶端）能依同一契約實作。
+- **功能範圍**：建立指定 16 份 Markdown、架構圖、設定表、完整 Protocol V1（通訊協定）、七份 Proposed ADR（提議中的架構決策紀錄）、差異及核准清單。
+- **涉及模組**：只有文件；不建立 Source Code（原始碼）、設定檔或產品測試。
+- **前置條件**：唯讀檢查版本庫、閱讀使用者要求及初步架構審查。
+- **驗收標準**：文件有實質內容、內部連結有效、JSON 範例語法正確、責任與狀態一致、待核准事項明確；使用者審閱並正式核准後，Phase 0 才正式完成。
+- **測試項目**：文件清單、連結／錨點、UTF-8、繁體中文人工審閱及簡體字篩查、JSON／Base64、欄位與範例、跨文件一致性及 Git 範圍檢查。
+- **不包含**：程式、套件安裝、部署變更、硬體驗證、commit、push、Phase 1 啟動。
+
+目前只交付可審閱文件，不因自動檢查通過就替使用者核准決策。
+
+## Phase 1：可信賴的 UART 垂直切片
+
+- **開發目標**：在一個實體 UART 上完成從 Windows 裝置到 Linux SDK／CLI 的可靠路徑，優先處理錯誤與資料完整性。
+- **功能範圍**：COM3 初始目標、115200／8N1、可設定 Serial；結構化協定、版本協商、認證與 Channel ACL（存取規則）；Channel 查詢、Binding（綁定）兩步確認；多 Reader（讀取者）、單一 Lease Owner（租約持有者）；RX Ring Buffer（環狀緩衝）、Replay（重播）、Gap（缺口）；TX 狀態及有限結果查詢；SDK、CLI 擷取、基本有界錄製與稽核。
+- **涉及模組**：`protocol`、`core`、`serial_backend`、`server`、`client`、`cli` 及有用途的測試。
+- **前置條件**：Phase 0 正式核准及實作授權；確認 Q-04／Q-05／Q-08／Q-19 等操作與協定政策；實機前完成 Adapter（轉接器）、DTR／RTS（控制線）與 SSH／Podman 路徑確認。Recorder（錄製器）檔案格式與輪替契約在對應實作前補足。
+- **驗收標準**：一個實體 Channel 可讀取 Boot Log（開機紀錄）並以 Lease 保護 TX；同時多個 Reader；第二個 Writer 不得介入；Client 失聯後有界清理；慢 Client 不拖住 RX；Ring 淘汰與 Epoch（資料流世代）變化可見；Unknown TX 不自動重送；錄製失敗不宣稱完整。
+- **測試項目**：Codec（編解碼器）界限、認證／授權、Fake Clock（模擬時鐘）Lease、兩個 Fake Channel 的狀態隔離、真 TCP 整合、分段／黏包、插拔、Port 占用、結果快取與斷線／重啟競爭、磁碟失敗。實機量測條件需記錄，不宣稱未測速率已支援。
+- **不包含**：TUI、MCP（模型內容協定）、Web、Raw TCP 寫入、RFC2217、Binary Protocol（二進位協定）、通用 Shell Command RPC（遠端指令呼叫）、自動升級韌體、持久 Session／Lease、遠端 Adapter Selector（裝置條件）與 UART 設定修改、強制搶占 Lease。
+
+Phase 1 的 Core 一開始就是多 Channel 模型，不使用全域 Serial／Buffer／TX Lock（鎖）。「一個實體驗證目標」不代表只能表示一個 Channel。候選不包含 Raw TCP 的範圍仍待 Q-06 確認。
+
+建議驗收情境：
+
+| 情境 | 必須觀察的結果 |
+| --- | --- |
+| 兩個觀察者與一個操作者 | RX 一致，只有 Owner 可 TX |
+| Owner 在入列後失聯 | 未開始工作轉 rejected（拒絕）；已開始工作取得結果或 unknown（不明） |
+| Lease 到期同時派送 TX | 同一 Channel 協調邊界決定順序，過期 Token（隔離序號）不得新開始 I/O |
+| 同 Adapter 換板 | 明確 Rebind／Confirm；舊 Revision／Epoch 請求失效 |
+| 慢速／停止接收 Client | 自身訂閱終止或連線關閉，其他 Channel／Client 繼續 |
+| 重連所需資料已淘汰 | HISTORY_GAP，不從最新資料假裝無縫繼續 |
+| Server 在 TX 附近重啟 | 新 Instance；舊結果可能未知，無自動重送 |
+| Recorder 滿載或磁碟滿 | 錄製健康狀態失敗，Capture（擷取紀錄）不完整，RX 不被阻塞 |
+
+## Phase 2：多設備與互動工具
+
+- **開發目標**：擴大已驗證設備範圍並改善人工多板操作。
+- **功能範圍**：多實體 UART、裝置枚舉與換接操作體驗、TUI（文字介面）、受權限保護的遠端設定管理；有實際需求才加入 Raw RX（原始串流只讀相容）。
+- **涉及模組**：擴充 Backend、Core、SDK、CLI，新增實際需要的 TUI 或 Raw Adapter。
+- **前置條件**：Phase 1 的錯誤路徑穩定；核准 Channel／Client／Baud Rate 容量；確認 MobaXterm 連線模式與相容介面安全政策。
+- **驗收標準**：不同 Channel 的 Buffer、Lease、故障互相隔離；一個 Channel 拔除不停止其他通道；換接後歷史 Label 不被覆蓋；TUI 只使用 SDK。
+- **測試項目**：多裝置長時間傳輸、重編 COM、模糊身分、慢速訂閱、跨版本、TUI 取消／重連、選配 Raw bytes 透明性。
+- **不包含**：未經設計的 Raw TX、通用板子自動識別、未授權硬體控制、把所有設備抽象成完整資產平台。
+
+## Phase 3：Agent 與韌體工作流程
+
+- **開發目標**：使用穩定 SDK 組合可觀察、可中止的診斷與驗證工作流程。
+- **功能範圍**：Agent 工具、MCP、已知 Shell 狀態下的 Helper（輔助操作）、SSH 配合、經確認網路及復原條件的 Firmware Upgrade（韌體更新）與開機驗證。
+- **涉及模組**：Gateway 外的 Workflow（工作流程）與工具 Adapter；UART 一律經 SDK。
+- **前置條件**：可靠目標確認、韌體相容性、權限、TFTP 路徑與失敗復原方式。TFTP 使用 UDP，不能假定已被 TCP SSH Forward 保護或轉送。
+- **驗收標準**：每步有前置條件、Timeout（逾時）、結果與人工介入狀態；不能把 Driver 接受 bytes 當作命令成功，也不能由 UART Log 中的文字自行授權操作。
+- **測試項目**：Boot Failure（開機失敗）、Kernel Panic（核心崩潰）、Watchdog（看門狗）重啟、命令回覆混入背景 Log、傳輸中斷、升級後無法啟動及人工復原。
+- **不包含**：對未知板子盲目升級、Gateway 內建萬用 SSH／TFTP 引擎、未有復原路徑的無人值守更新。
+
+## Phase 4：依量測與需求擴充
+
+- **開發目標**：處理實際使用顯示的瓶頸，而非預先增加複雜度。
+- **功能範圍**：有需求時評估 Web、Log Analyzer（紀錄分析器）、搜尋、長期儲存、額外 Transport（傳輸方式）或效能最佳化。
+- **涉及模組**：依具體需求建立 ADR；保留 SDK 與 Core 邊界。
+- **前置條件**：使用者需求、現有量測與成本／收益分析。
+- **驗收標準**：每項新增功能有可重現需求與驗收，不破壞舊 Client 或資料完整性。
+- **測試項目**：對應效能、長時間運行、安全與相容性測試。
+- **不包含**：沒有證據支持的微服務、Message Broker（訊息中介）、分散式 Lock、通用 Plugin Framework（外掛框架）或全面重寫。
