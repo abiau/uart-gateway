@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "uart-gateway"
+version = "0.1.0"
+description = "供嵌入式開發使用的 UART Gateway"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+server = ["pyserial>=3.5,<4"]
+
+[project.scripts]
+uart = "uart_gateway.cli:main"
+uart-gatewayd = "uart_gateway.server.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,15 @@
+# 僅供第一批的模擬通路使用，不包含真實 Token 或 COM 設定。
+[network]
+bind_host = "127.0.0.1"
+port = 18081
+
+[[channels]]
+id = "ch_lab_1"
+label = "fake_uart"
+target_note = "模擬通道；不是實體板子"
+
+[[auth.principals]]
+id = "local_operator"
+token_secret_ref = "env:UART_GATEWAY_TOKEN"
+channels = ["ch_lab_1"]
+permissions = ["read", "tx", "configure"]

@@ -1,10 +1,20 @@
 # 設定規格
 
-> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11～Q-14、Q-17 的現場資訊仍待取得。Phase 1 尚未開始。
+> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
 ## 狀態、名稱與讀法
 
-本文件是設定參數的唯一權威規格草案，尚無載入器、設定檔或 `pyproject.toml`。建議使用 TOML，格式選擇與下列候選值仍待核准。表中的點號表示設定路徑，`channels[]` 表示 Channel（邏輯通道）清單；不是線上 JSON 欄位的另一套定義。
+本文件是設定參數的唯一權威規格，已接受為初始基線。目前已有 Fake Serial 與實體 Serial TOML 範例及局部載入器，尚未實作表中所有設定。表中的點號表示設定路徑，`channels[]` 表示 Channel（邏輯通道）清單；不是線上 JSON 欄位的另一套定義。
+
+## 目前實際支援範圍
+
+啟動必須明確選擇 `--fake` 或 `--serial`，只枚舉使用 `--list-ports`，不開啟 COM。共通欄位為 `network.bind_host/port`、`gateway.lifecycle_timeout_ms`、`channels[].id/label/target_note/auto_open_rx/auto_reconnect` 與 Principal 設定；`auto_reconnect` 目前僅接受 false。實體模式另接受完整 `channels[].adapter` 與 `channels[].serial` 欄位；模擬模式不接受這兩組設定，避免誤認已開啟真裝置。其餘未支援欄位明確拒絕，容量與期限採基線預設。
+
+Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開啟端點；不用 flush 等待或額外傳送 bytes。每次開啟重新以全部 Selector 條件匹配，模糊或不符時拒絕；只有明確 Port 且沒有其他條件時，允許枚舉缺少 Metadata 的端點。COM 名稱不是永久身分。Windows 使用 pySerial 的原生獨占開啟，POSIX 使用 exclusive，程序內另以端點預留防止不同 Channel 重複開啟。
+
+開啟失敗保留 Channel 錯誤與 TCP 管理介面，其他通道繼續；read 空逾時不算拔除，read 錯誤使租約與舊訂閱失效。生命週期等待逾時後維持 faulted、不讓晚到結果確認目標，未收斂 Handle 不得交接。這是邏輯等待上限，不能安全強殺卡死的 Driver 執行緒；極端狀況仍需人工處理程序。
+
+`token_secret_ref` 現支援 `env:變數名稱` 或 `file:檔案路徑`，不接受文件內的真實 Token。`file:` 必須指向受保護、以 UTF-8 儲存 Token 的檔案；權限由部署者管理。CLI 對應使用 `--token-env`（預設 `UART_GATEWAY_TOKEN`）或 `--token-file`，沒有直接傳入 Token 的命令列選項。
 
 「確認」只表示使用者已明示；「建議」不代表已核准。`必填` 不提供猜測值；`可省略` 採表中候選預設；`條件必要` 依說明判斷。所有容量均有上限，不允許 `0` 表示無限。秘密只透過參照載入，不在文件或版本庫放真值。
 

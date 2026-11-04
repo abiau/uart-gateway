@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.coverage
+.pytest_cache/
+*.local.toml
+.env
+recordings/
+*.secret
+*.local.jsonl

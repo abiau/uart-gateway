@@ -1,6 +1,6 @@
 # UART Gateway
 
-> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11～Q-14、Q-17 的現場資訊仍待取得。Phase 1 尚未開始。
+> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
 UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 獨占 USB-UART 對應的 COM Port，Linux d3s1 上的 Podman Container（容器）透過 SSH Tunnel 使用共同 Client SDK（用戶端開發套件），供 CLI（命令列介面）、未來 TUI（文字使用者介面）及 Agent（代理工具）操作。
 
@@ -13,7 +13,7 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 - 主協定採 TCP、JSON Lines 與 Base64，保留任意 UART bytes。
 - 不直接對公司網路暴露 Gateway；SSH Tunnel 之外仍有應用層認證與授權。
 
-以上是設計目標，**目前尚無 Gateway、SDK 或 CLI 程式可執行**。
+目前已提供 **Fake Serial、pySerial Backend、Gateway、SDK 與 CLI**。Linux 虛擬端點已驗證真 pySerial；使用者亦已在 Win11 啟動 Gateway，透過 watch 讀到 IPCAM 開機訊息。[Win11 COM3 接收步驟](docs/windows-quickstart.md) 使用只讀設定，不發送 UART 命令。
 
 ## 部署簡介
 
@@ -23,7 +23,7 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 ## 目前階段
 
-Phase 0 文件及建議基線已於 2026-11-03 由使用者核准，Phase 0 已完成；Phase 1 未開始。既有 COM3 網路連線成功屬使用者提供的背景，並非本版本庫的實作或驗證成果。
+Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。Win11 成果由使用者實際執行並回報；下一步是 Linux Container／SSH Tunnel 整合。實體 TX、插拔、長時間穩定性與完整 Phase 1 驗收尚未完成。
 
 七份 ADR（架構決策紀錄）均為 `Accepted`（已正式接受）。數值預設、具體協定契約及建議操作政策已接受為初始基線；尚未取得的現場資訊不視為已驗證。最新證據與待回答事項以 [目前狀態](docs/status.md) 為準。
 
@@ -47,4 +47,51 @@ Phase 0 文件及建議基線已於 2026-11-03 由使用者核准，Phase 0 已�
 | [ADR-006 RX 緩衝](docs/adr/ADR-006-rx-buffering.md) | 有界保留、Replay、Gap 與錄製 |
 | [ADR-007 安全](docs/adr/ADR-007-security.md) | Loopback、SSH、認證與權限 |
 
-本次只有 Markdown 文件，沒有安裝指令或執行指令可供啟動產品。後續實作需依核准的 Phase 1 範圍另行授權。
+## 第一批的安裝與模擬操作
+
+需要 Python 3.12 以上。SDK／Fake Serial 沒有執行期第三方依賴，建置使用 setuptools；實體 Serial 安裝 `.[server]` 加入 pySerial。
+
+Linux：
+
+```sh
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+export UART_GATEWAY_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+uart-gatewayd --fake --config examples/gateway.fake.toml
+```
+
+另開終端機，從受保護的管道提供相同的 `UART_GATEWAY_TOKEN`，啟用同一虛擬環境後操作。不要將真實 Token 貼入文件、版本庫或共享紀錄。
+
+```sh
+uart channels
+uart confirm ch_lab_1 --label fake_uart
+uart send ch_lab_1 hello --newline lf
+uart status ch_lab_1 TX_ID_FROM_SEND
+```
+
+最後一行的 `TX_ID_FROM_SEND` 請替換成 send 輸出的 `tx_id`。`send` 不自動補換行；此例明確指定 LF。輸出依序為 pending 與最終 TX 狀態；`written_to_driver` 不代表實體板子已執行命令。
+
+可在第三個終端機先執行 `uart watch ch_lab_1 --duration 10` 再送出文字，觀察帶 `data_b64` 的 RX Event。Fake Serial 的 TX 會回送到 RX；這是模擬行為，不是實體 UART。CLI 的 stdout 為 JSON Lines，診斷放 stderr，保留二進位內容並避免直接解讀終端控制字元。
+
+Win11 PowerShell 可使用下列安裝與模擬啟動方式；本次只在 Linux 驗證，尚未在 Win11 實測：
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+$env:UART_GATEWAY_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
+uart-gatewayd --fake --config examples/gateway.fake.toml
+```
+
+## 測試與目前限制
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+第一批 Linux／Python 3.12 執行 41 項測試全數通過，包含真 TCP 與模擬裝置；已安裝的兩個命令入口亦完成端到端操作。測試需要建立 `127.0.0.1` 暫時 Socket；禁止 Socket 的沙箱需取得對應執行權限，不能將略過整合測試當成通過。
+
+本次最新驗證為 Linux／Python 3.12／pySerial 3.5，58 項測試全部通過，包含 3 項真 pySerial PTY 整合。另以安裝後的 CLI 驗證實體 Serial 模式、只讀拒絕 TX 與文字接收；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
+
+目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟及生命週期等待期限；其他尚未支援欄位明確拒絕。持續錄製／稽核、完整設定、Win11 USB 行為與 SSH／Podman 尚未驗證。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。

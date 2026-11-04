@@ -1,6 +1,6 @@
 # 部署規格
 
-> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11～Q-14、Q-17 的現場資訊仍待取得。Phase 1 尚未開始。
+> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
 ## 狀態與證據邊界
 
@@ -9,7 +9,7 @@
 | 類別 | 已知內容 | 證據限制 |
 | --- | --- | --- |
 | 使用者提供的背景 | Linux Container 曾透過網路讀取 Windows COM3 | 未取得該程式、命令或 Log（紀錄），不代表本版本庫已實作或驗證 |
-| 本次實際檢查 | 本機版本庫起始為 `work` 分支、尚無 commit（提交）及程式 | 僅證明本機狀態；文件建立後仍無實作 |
+| 歷史起始檢查 | 初始版本庫只有文件工作前的空狀態 | 當時狀態；目前已有 Phase 1 程式，最新進度見專案狀態 |
 | 預計採用 | Windows Loopback（回送介面）Gateway + Reverse Forward（反向轉送）+ Container Local Forward（本地轉送） | 尚未執行任何部署命令 |
 | 待驗證 | Podman Network Mode（網路模式）、SSH 位址、DNS、Forward 權限、防火牆、Port 衝突、Adapter 身分與控制線 | 需使用者資訊及未來獲授權的現場驗證 |
 
@@ -96,4 +96,10 @@ SSH 保護傳輸，但 Host／Container 上可接近 Loopback 的其他程序仍
 
 依序確認：Windows 只有預期 Loopback Listener → COM 開啟／占用錯誤 → d3s1 反向 Listener 位址 → Container 可連 SSH → 容器本地 Listener → Hello 與應用層認證 → RX 與受 Lease 保護的 TX → Tunnel 中斷清理 → 重連 Gap／Epoch 行為。
 
-記錄 OS、OpenSSH、Podman、Python、Adapter／Driver 版本與實際命令。以上尚未執行，不能在 [專案狀態](status.md) 標為 Verified（已實際驗證）。
+記錄 OS、OpenSSH、Podman、Python、Adapter／Driver 版本與實際命令。Win11 本機啟動與 RX 已由使用者執行確認；其餘路徑仍需逐項驗證，不能在 [專案狀態](status.md) 擴大標為 Verified（已實際驗證）。
+
+## 本輪 Win11 接收驗證
+
+pySerial Backend 與只讀 COM3 範例已建立，Linux 的真 pySerial PTY 與 CLI 驗證已通過。使用者確認僅接 TX／RX／GND，參數為 115200／8N1／無流控，並已在 Win11 啟動本 Gateway、以 uart.exe watch 收到 IPCAM 開機訊息。本機 RX 可依使用者實際執行的回報標為已驗證；這不同於初期 MobaXterm 接收成功的背景。
+
+[Win11 本機接收步驟](windows-quickstart.md) 保留為重現流程，本機 RX 已成功，不需重做才能繼續。下一步確認既有 SSH 命令與轉送位置，建立 Container 到 Gateway 的只讀路徑；本次尚未修改 SSH／防火牆／Podman，也未驗證實體 TX。

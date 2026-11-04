@@ -1,10 +1,10 @@
 # 開發規範
 
-> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11～Q-14、Q-17 的現場資訊仍待取得。Phase 1 尚未開始。
+> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
 ## 目前狀態與環境規劃
 
-Phase 0 僅建立文件；沒有 Python Source Code（原始碼）、Package（套件）、測試或 CI（持續整合）設定。以下是後續獲授權實作時的規範與候選規劃，不是安裝或執行成果。
+Phase 1 第一批已建立套件、模擬 Gateway、SDK／CLI 與無硬體測試；Serial Backend 已進入第二批並以 Linux PTY 測試；CI（持續整合）、Win11 實機驗證與 Recorder 尚未完成。以下保留完整規劃；實際已建立的項目以專案狀態文件為準。
 
 建議最低 Python 3.12，於 Windows 11 與 Linux Ubuntu 測試；版本政策尚待核准。每個環境使用獨立虛擬環境，依同一 `pyproject.toml` 管理依賴。Windows 執行 Serial Backend（裝置存取實作），Linux 使用 SDK（用戶端開發套件）與 CLI（命令列介面）。不要求 Linux 能操作 Windows COM，也不要求沒有硬體的 CI 裝上實體 Adapter（轉接器）。
 
@@ -12,7 +12,7 @@ Podman Container（容器）的映像、網路與套件管理沿用已存在且�
 
 ## 候選 Python Package 結構
 
-以下只是未來結構示意，Phase 0 不建立這些目錄或檔案。
+以下為完整規劃，只有當批需要的模組才建立；尚未實作的目錄不提前建立。
 
 ```text
 pyproject.toml                  # 套件、依賴與執行入口
@@ -120,4 +120,10 @@ Phase 1 第一個目標是 COM3、115200、8N1。執行前確認 Adapter、接�
 
 未來 CI 首先跑 Windows／Linux 的無硬體 Unit 與 Integration、文件連結、JSON 範例及相容性測試。候選 Python 矩陣為 3.12、3.13；實際支援範圍待核准。Performance Testing（效能測試）依核准的 Channel／Client／Baud Rate 上限建立，不憑空指定 SLA（服務水準）。
 
-CD（持續交付）與發布流程留待可用版本形成後設計；目前不自動發布、部署、commit 或 push。變更順序為讀規格 → 分析影響 → 最小實作 → 對應驗證 → 更新單一權威文件與 [狀態](status.md)。Protocol 變更需同步維護範例及相容性證據。
+CD（持續交付）與發布流程留待可用版本形成後設計；目前不自動發布或部署；提交與推送依當次使用者授權範圍進行。變更順序為讀規格 → 分析影響 → 最小實作 → 對應驗證 → 更新單一權威文件與 [狀態](status.md)。Protocol 變更需同步維護範例及相容性證據。
+
+## 第二批的實體 Serial 驗證
+
+實體模式安裝 `python -m pip install -e '.[server]'`，再以 `uart-gatewayd --serial --config examples/gateway.com3.toml` 啟動。Gateway 的 `--list-ports` 只枚舉，不開啟裝置；CLI／SDK 仍不直接呼叫 Serial。Win11 只讀驗證見 [接收步驟](windows-quickstart.md)。
+
+新增測試分為 Driver 替身（開啟順序、控制線、匹配、錯誤、端點預留）、生命週期晚到結果，以及 POSIX PTY 的真 pySerial 整合。PTY 測試需要 `[server]` 與 POSIX，不能代替 Windows Driver 或 IPCAM 硬體證據。只有 Linux SDK 的環境不需要 pySerial，模組匯入也不開啟裝置。

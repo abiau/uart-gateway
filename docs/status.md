@@ -1,22 +1,23 @@
 # 專案狀態、核准清單與差異紀錄
 
-> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11～Q-14、Q-17 的現場資訊仍待取得。Phase 1 尚未開始。
+> 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
-更新日期：2026-11-03（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
+更新日期：2026-11-05（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
 ## 真實狀態
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
-| 本機 Repository（版本庫） | 已建立 | 起始位置 `/workspace/uart-gateway`；分支 `work`；`No commits yet on work`；只有 `.git` |
+| 本機 Repository（版本庫） | 已建立 | 分支 `work`；Phase 0 提交 `33eedba`；Phase 1 程式、測試與文件納入本次交接提交，版本以 Git 紀錄為準 |
 | 初步架構審查 | 已完成審查 | 依使用者需求分析，當時無現有程式可審閱 |
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
-| Gateway／Protocol／SDK／CLI 原始碼 | Planned（預計開發） | 尚未開始，沒有可啟動的產品 |
-| 產品 Unit／Integration／Hardware Tests（單元／整合／硬體測試） | Planned | 尚未建立或執行；文件檢查不算產品測試 |
-| COM3 既有連線 | 使用者提供的背景 | 不代表本版本庫已實作 Gateway，也不是本次驗證成果 |
-| Windows／SSH／Podman 正式部署 | Planned | 設計草案，未執行部署命令或變更設定 |
-| Commit／Push（提交／推送） | 本次已授權保存 | 文件更新後提交並推送 origin；實際提交與遠端狀態以 Git 紀錄為準 |
+| Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
+| 單元／整合測試 | Tested | Linux／Python 3.12／pySerial 3.5：58 項通過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
+| 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
+| SSH／Podman 遠端路徑 | Planned／待現場資訊 | 尚未以本版本庫驗證 Container 經 Tunnel 接收 UART |
+| Commit／Push（提交／推送） | 本次交接保存 | 使用者已授權將 Phase 1 程式、測試與文件提交並推送 origin/work；實際版本以 Git 紀錄及本次回報為準 |
 
 狀態語意：`Planned` 為預計開發；`In Progress` 為正在進行；`Implemented` 為已有實作；`Tested` 為已執行具體測試並有結果；`Verified` 為在聲稱的真實條件下實際驗證。不可因 Implemented 就改成 Tested，也不能以模擬測試把 Windows 硬體標為 Verified。文件可標示「已建立／已檢查」，但不讓這些詞代表產品已實作。
 
@@ -24,7 +25,7 @@
 
 使用者本次明示：Windows 單程序且獨占 COM、多 Channel 模型、Phase 1 一個實體 UART、COM3 初始目標、115200／8N1 預設、共同 SDK、Core 與 Protocol 的依賴邊界、非阻塞 Serial 協調、有界 Queue（佇列）、多 Reader（讀取者）、Exclusive Lease（獨占租約）、Fencing Token（隔離序號）、Binding（綁定）與 Epoch（世代）檢查、不自動重送 TX、明確 Gap（資料缺口）、SSH 之外仍需認證、錄製失敗不得宣稱完整。
 
-上述約束不表示所有詳細方案已獲核准。七份 ADR 含有操作政策與候選細節，因此整份狀態均為 Proposed。核准時記錄使用者同意日期、範圍與條件；不由 Agent（代理工具）替使用者標為 Accepted（已接受）。
+使用者已於 2026-11-03 接受建議答案，七份 ADR 為 Accepted。核准代表採用設計基線，不代表實作或實機驗證完成。2026-11-05 已明確授權開始實作。
 
 ## 決策清單（已接受建議；現場資訊待驗證）
 
@@ -42,7 +43,7 @@
 | Q-08 認證與授權政策 | Principal（身分）、ACL（存取規則）、Audit（稽核） | 阻擋安全實作 | 每人／工具獨立高熵 Token，明列 Channel 與 read／tx／configure 權限；禁止匿名 | SSH 不能識別所有本地 Client | 需核准；不得提供真實秘密到文件 |
 | Q-09 Recording（錄製）預設 | 斷線後證據與敏感資料保存 | 阻擋錄製預設及驗收 | 預設關閉，Ring 常駐；核准保留政策後明確啟用 | 避免未確認就長期保存敏感內容；代價是長斷線可能失去歷史 | 需核准 |
 | Q-10 保留期限與機密性 | 磁碟容量、權限與輪替 | 啟用錄製前阻擋 | 啟用後候選 7 天且每通道 1 GiB，先不記完整 TX；請確認 Log 是否含帳密 | 容量與年齡雙重有界，減少秘密外洩 | 需核准及提供資訊 |
-| Q-11 DTR／RTS（控制線） | Reset（重設）與 Boot Mode（開機模式）風險 | 阻擋實機開啟驗收 | 候選輸出 false；先確認是否接線及有效電位 | 軟體值無法保證開啟瞬間無脈衝 | 需硬體資訊及核准實測政策 |
+| Q-11 DTR／RTS（控制線） | Reset（重設）與 Boot Mode（開機模式）風險 | 接線前提已確認，等待實機驗收 | 使用者確認僅 TX／RX／GND；DTR／RTS 未接，沿用 false | 軟體值無法保證開啟瞬間無脈衝 | 已由使用者提供資訊，未自行量測 |
 | Q-12 Adapter 唯一序號 | 裝置匹配與自動重開 | 阻擋自動重連驗收 | 優先 VID/PID + 唯一序號；缺少時用明確 Port 與人工確認，自動重連預設關閉 | 同名 COM 不代表同一裝置 | 需提供實際裝置資訊 |
 | Q-13 Podman Network Mode（網路模式） | Host／Container 可達性與隔離 | 阻擋正式部署驗收 | 保留現有模式，不先改 Host Networking（共用主機網路） | 避免未核准的隔離變更 | 需提供 Rootless／Rootful 及網路模式 |
 | Q-14 Container 到 d3s1 SSH | 第二段 Local Forward（本地轉送）可行性 | 阻擋部署驗收 | 使用已驗證可達的 SSH 位址與受限金鑰，不假定 DNS 或特殊 Host 名稱 | 容器 Loopback 不是主機 Loopback | 需提供位址／Port 與授權方式，不提供秘密 |
@@ -67,7 +68,7 @@
 | C-07 Raw／MobaXterm 與 Phase 1 | 原審查建議延後，但使用者尚未確認是否必要 | 候選延後且先只讀，清楚保留範圍核准問題 | Q-06／Q-07 未核准 |
 | C-08 建議與正式決策 | 原審查有「正式建議」措辭，不能等同使用者正式接受 | 將本次明示原則與新增細節分開；七份 ADR 都 Proposed | 已依本次指示標示，尚無 Accepted ADR |
 
-## 文件一致性審查
+## Phase 0 初次交付的一致性審查（歷史紀錄）
 
 文件建立後使用既有 Python 標準函式庫進行一次性、未存檔的唯讀檢查，沒有建立產品程式、安裝套件或測試框架。檢查結果如下。
 
@@ -95,7 +96,7 @@
 
 本次檢查未發現未列出的內部矛盾。原審查的 C-01–C-08 及核准清單仍保留，不因文件一致就視為使用者已接受。產品測試、實機、正式網路及圖形渲染均未執行。
 
-## 本次核准與交接
+## Phase 0 核准與交接（2026-11-03）
 
 2026-11-03 使用者明確接受 Q-01～Q-19 的建議答案，並授權更新文件、commit 與 push。Phase 0 正式完成，七份 ADR 已改為 Accepted。上方初次交付的審查紀錄保留為歷史證據；其中 Proposed／未核准／尚無 commit 的描述只代表當時狀態，以本節更新為準。
 
@@ -104,10 +105,82 @@
 - 待現場取得：DTR／RTS 接線與有效電位、Adapter 唯一序號、Podman 權限／網路模式、Container 到 d3s1 的 SSH 位址與 Port。不得以採用建議代替實測；TFTP／韌體復原資訊延至 Phase 3。
 - 尚無產品原始碼、產品測試或正式部署；本次沒有進入 Phase 1。
 
-## 公司環境接續方式
+## Phase 1 第一批：無硬體通路（2026-11-05）
 
-先確認遠端分支 `work` 的最新提交，在乾淨的工作目錄切換或追蹤 `origin/work`；如果公司已有本地變更，先保留並檢查差異，不直接覆蓋。依序閱讀 AGENTS、README、本文件、architecture、roadmap 及相關協定／設定。
+使用者已明確要求開始實作。此批目標為 Fake Serial → 通道核心 → 真 TCP Gateway → SDK／CLI；保留已核准模組邊界，不操作實體 COM，不修改 SSH／Podman。
 
-下一次從 Phase 1 規劃與實作授權接續，不重做 Phase 0。先可進行不依賴硬體的 Protocol／Fake Serial 垂直切片；實機開啟前補齊上述現場資訊。開始與結束時更新本文件並記錄實際測試證據。
+| 項目 | 狀態 | 實際內容 |
+| --- | --- | --- |
+| Python Package | Implemented／Tested | Python 3.12 起、setuptools、src 結構、兩個命令入口；無執行期第三方依賴 |
+| Protocol | Implemented／Tested（切片） | 有界 LF Framing、UTF-8／JSON 深度、重複 Key、Base64、Request ID、方法參數與版本 |
+| Gateway | Implemented／Tested | Loopback、Hello／Auth、Principal／Channel ACL、Session 清理、心跳、分頁查詢 |
+| Channel／Binding | Implemented／Tested | 獨立狀態與 RX Ring、Rebind／Confirm、新 Epoch、舊訂閱終止、並行 Label 預留 |
+| RX | Implemented／Tested | 多訂閱、二進位資料、Replay 與中段 Offset、歷史淘汰 Gap、慢速接收隔離 |
+| Lease／TX | Implemented／Tested | 單一 Worker、入列與派送前檢查、Fencing、到期／斷線撤銷、部分／逾時寫入 Unknown、有限去重與結果保留 |
+| SDK／CLI | Implemented／Tested | 握手、認證、查詢、訂閱、Lease Context 自動更新、TX 查詢；回覆不明以 TxUncertain 保留 ID，絕不自動重送 |
+| Fake Serial | Implemented／Tested | 有界 RX／寫入觀測、TX 回送、可注入延遲、逾時、短寫入與裝置故障 |
+| 完整設定、錄製與稽核 | Planned | 局部 TOML 載入器以外的設定明確拒絕；尚無持續錄製、Audit 儲存與磁碟故障驗收 |
+| Windows Serial／正式部署 | Planned | 未建立 pySerial Backend、未開 COM3、未驗證 USB／DTR／RTS／SSH／Podman |
 
-本次完成文件保存後停止，讓使用者隔日在公司接續；不自行建立功能或改部署設定。
+### 驗證證據
+
+- 執行環境：Linux、Python 3.12.14；虛擬環境使用既有 setuptools，離線 editable 安裝成功，未下載第三方依賴。
+- 測試命令：`.venv/bin/python -m unittest discover -s tests -v`；41 項通過，含單元與真 TCP 整合。
+- 故障驗證包含過期工作未寫入、寫入中不交接、Unknown 不重送、結果快取滿載拒絕、Slot 保留、斷線清理、關閉失敗、超長未結束 Frame、SDK 本地事件溢位及並行 Confirm 同名競爭。
+- 已安裝的 `uart-gatewayd` 與 `uart` 在 127.0.0.1 暫時 Port 完成啟動、認證、列出、確認、訂閱、TX 回送、查詢、Rebind／新 Epoch 與正常停止。
+- 本機 Socket 在一般沙箱受限制，整合測試改用允許本機 Socket 的執行權限；未略過測試、未連外部服務。
+- 原 Protocol 文件 22 個 JSON 範例亦作為固定契約資料驗證。這不是完整 V1 相容性或實體零遺失證明。
+
+### 已知界線與下一批工作
+
+Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限，只接受範例中的網路、通道描述與認證欄位；Fake Serial 的 RX／TX 等待有界，尚未建立真實 Driver 卡死時的生命週期等待／復原機制。SDK 目前由呼叫者明確重連與恢復 Cursor；沒有自動恢復 Lease 或 TX。
+
+接續先加入完整設定模型及 Windows pySerial Backend，實機前確認 DTR／RTS、Adapter 序號與 COM 名稱，再測 RX、TX、占用與插拔；同階段補錄製格式、輪替、稽核與磁碟故障測試。正式 SSH／Podman 路徑依現場資訊驗證。TUI／MCP／Firmware Workflow 仍依後續階段，不提前建立目錄。
+
+第一批交付時尚未 commit／push；現已納入本次交接保存。開始接續前先檢查 Git Status，保留現有實作與使用者變更。執行與安裝步驟見 README。
+
+## Phase 1 第二批：Serial Backend 與 Win11 接收準備（2026-11-05）
+
+使用者要求繼續，並明確提供 COM3 已接 IPCAM、MobaXterm 可收到資料且已關閉。後續確認只有 TX／RX／GND、DTR／RTS 未接，115200／8N1／無流控；Win11 由使用者執行 PowerShell，不是 Agent 遠端操作。
+
+### 已實作與已測試
+
+- pySerial 3.5 選用依賴 `[server]`；Backend 與 SDK 匯入不載入 pySerial、不開啟 COM。
+- 全部 Adapter Selector 條件交集、模糊匹配拒絕、程序內端點預留、Windows 原生獨占與 POSIX exclusive；COM 名稱不當永久身分。
+- Serial 設定可調，DTR／RTS 在 open 前設定；有限 read／write 等待，不額外 flush、不補送 bytes。
+- 裝置枚舉、開啟錯誤分類、只讀逾時／拔除、寫入未知與保留端點；開啟失敗不關閉其他 Channel 或 TCP 管理介面。
+- 生命週期等待上限及晚到結果不重新確認目標；未收斂 Driver 操作禁止交接。這不是安全強殺執行緒的保證；極端卡死仍可能需要人工處理程序。
+- `examples/gateway.com3.toml`：穩定邏輯 ID `ch_uart_1`，目前端點 COM3，只授予 read；首次只接收，不發 IPCAM 指令。
+- `watch --text` 安全文字顯示與增量 UTF-8；`--replay` 從目前最早可用 Offset 接上即時 RX，明確標示模式。
+
+本次 Linux／Python 3.12.14／pySerial 3.5 共 58 項測試通過（無略過），包括 3 項真 pySerial PTY 整合。安裝後的實體模式與 CLI 已以 PTY 驗證：裝置枚舉、Channel 快照、只讀拒絕 TX、文字 RX、控制字元跳脫與正常停止。並非 Windows COM 或硬體零遺失證據。
+
+### 交付與下一步
+
+提供 `uart-gateway-win11-test.zip` 原始碼測試包，不含 `.git`、Linux `.venv`、私密設定或 Token。完整執行步驟見 [Win11 接收驗證](windows-quickstart.md)。第二批當時以測試包提供未提交程式；本次交接將程式、測試與文件一併保存至 work，後續可從 Git 取得。
+
+第二批交付時等待使用者執行；後續本機 RX 已成功，詳見下方實機紀錄。正式網路、常駐錄製／稽核及完整 Phase 1 驗收仍未完成。
+
+## Win11 本機 RX 實機結果（2026-11-05）
+
+使用者於本次對話回報：「在 win11 上，執行後 gateway 可以啟動，且執行 uart.exe watch 也可以讀到 ipcam 開機的訊息。」
+
+- 已驗證範圍：本版本庫的 Gateway 在 Win11 啟動，經 COM3 接收 IPCAM 資料，本機 SDK／CLI watch 顯示開機訊息。
+- 證據來源：使用者在 Win11 實際執行並回報；Agent 沒有遠端操作 Win11，也沒有取得原始 Boot Log、channels JSON 或 Driver 版本。不能宣稱已完成 Log 內容分析、長時間壓力測試或零遺失驗證。
+- 沿用已確認條件：TX／RX／GND，DTR／RTS 未接，115200／8N1／無流控；測試設定只授予 read。
+- 尚未驗證：實體 TX、USB 拔除／重插、Windows Port 占用錯誤、實體 Lease 交接，以及 Linux Container／SSH Tunnel 的端到端路徑。
+
+下一步保持現有 Gateway 執行，確認目前 Windows 到 d3s1 的 SSH 連線與 Forward 命令，再將 Container SDK／CLI 接到同一個只讀 Channel。Gateway 仍僅綁定 127.0.0.1:18081，不因遠端整合改成公開 Listener。Q-13／Q-14 的網路資訊仍待提供；本次未修改 SSH／Podman 或發送 UART 指令。
+
+## 暫停與下次接續（2026-11-05）
+
+使用者要求中斷進度，明日再繼續，並明確授權 commit 與 push。本次保存 Phase 1 第一、二批程式、58 項已通過的測試、範例與文件；不繼續實作或修改部署。Win11 COM3 本機 RX 已由使用者實際執行確認。
+
+下次從以下位置接續：
+
+1. 取得 origin/work 最新提交，先檢查本地變更並保留；閱讀 AGENTS、README 與本文件。Win11 已成功的 RX 流程不需從架構審查重做。
+2. 取得目前 Windows 到 d3s1 的 SSH 命令及既有 -R／-L 參數，確認 Q-13／Q-14 的 Container 網路與 SSH 可達資訊；不要提供密碼、Token 或私鑰內容到對話或版本庫。
+3. 以同一只讀 Channel 驗證 Linux Container SDK／CLI 經 SSH Tunnel 接收資料。Gateway 維持 Windows Loopback 127.0.0.1:18081，不公開 Listener。
+4. 若 Gateway 在休息期間已關閉，依 Win11 接收步驟正常重啟，並讓 Client 使用與新 Gateway 相同的認證資料；不得假設舊程序、Token、Session 或 Epoch 仍存在。
+
+尚未完成：實體 TX／插拔、遠端 Tunnel、常駐錄製／稽核及完整 Phase 1 驗收。本次不重跑未變更程式的測試；沿用最近一次 58 項通過與 Win11 使用者回報，另檢查提交範圍、文件連結及空白格式。
