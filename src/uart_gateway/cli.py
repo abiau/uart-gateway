@@ -201,6 +201,17 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
                     else:
                         sink.put(json.dumps(event, ensure_ascii=True, separators=(",", ":")) + "\n")
                     if event["event"] == "subscription_state" and event["data"]["state"] == "ended":
+                        if text_mode:
+                            reason = event["data"].get("reason")
+                            message = {
+                                "device_lost": "裝置已失去連線，監控已停止。",
+                                "epoch_changed": "通道資料流已變更，監控已停止。",
+                                "channel_closed": "通道已關閉，監控已停止。",
+                                "server_shutdown": "Gateway 已停止服務，監控已停止。",
+                                "slow_consumer": "接收速度跟不上資料，訂閱已停止。",
+                                "history_gap": "所需歷史資料已有缺口，訂閱已停止。",
+                            }.get(reason, "訂閱已結束，監控已停止。")
+                            await diagnostic(message)
                         return 2
         except TimeoutError:
             if not observation.expired():
@@ -259,6 +270,39 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
 def _check_local_args(args: argparse.Namespace) -> None:
     if args.host != "127.0.0.1" or args.token_file or args.token_env != "UART_GATEWAY_TOKEN":
         raise ValueError("本機列出／啟動只使用此電腦，不接受遠端位址或外部認證選項。")
+
+
+def _report_failure(exc: Exception) -> None:
+    print(f"操作失敗：{getattr(exc, 'code', type(exc).__name__)}：{exc}", file=sys.stderr, flush=True)
+
+
+def _run_selected(args: argparse.Namespace) -> int:
+    """選單與事件迴圈分開；每次啟動必須來自新的明確選擇。"""
+    from .local_ports import choose_port
+    from .local_launcher import LauncherCleanupError, LauncherError, validate_local_settings
+
+    _check_local_args(args)
+    if args.terminal and not sys.stdout.isatty():
+        raise ValueError("終端顯示需要互動式終端機；請移除 --terminal 再選擇裝置。")
+    validate_local_settings(args.gateway_port if args.gateway_port is not None else args.port,
+                            args.startup_timeout)
+    while True:
+        args.selected_adapter = choose_port()
+        if args.selected_adapter is None:
+            print("已取消，未啟動新的 Gateway。", file=sys.stderr, flush=True)
+            return 0
+        args.serial_port = args.selected_adapter.port
+        try:
+            result = asyncio.run(run(args))
+        except LauncherCleanupError:
+            raise
+        except (LauncherError, RemoteError, ProtocolError, OSError, TimeoutError) as exc:
+            _report_failure(exc)
+        else:
+            if result != 2:
+                return result
+        print("本次流程已結束，已返回裝置選單；請重新選擇端點或取消離開。\n"
+              "重新啟動會建立新的資料流，前次記憶體歷史不保留。", file=sys.stderr, flush=True)
 
 
 async def run(args: argparse.Namespace) -> int:
@@ -356,25 +400,17 @@ def main() -> None:
         parser.error("觀測時間必須大於零")
     try:
         if args.command == "local" and args.select:
-            from .local_ports import choose_port
-            _check_local_args(args)
-            if args.terminal and not sys.stdout.isatty():
-                raise ValueError("終端顯示需要互動式終端機；請移除 --terminal 再選擇裝置。")
-            args.selected_adapter = choose_port()
-            if args.selected_adapter is None:
-                print("已取消，未啟動 Gateway。", file=sys.stderr, flush=True)
-                raise SystemExit(0)
-            args.serial_port = args.selected_adapter.port
+            raise SystemExit(_run_selected(args))
         raise SystemExit(asyncio.run(run(args)))
     except (RemoteError, ProtocolError, OSError, ValueError, TimeoutError) as exc:
-        print(f"操作失敗：{getattr(exc, 'code', type(exc).__name__)}：{exc}", file=sys.stderr)
+        _report_failure(exc)
         if args.command == "local" and args.pause_on_error and sys.stdin.isatty():
             try:
                 input("按 Enter 關閉此視窗。")
             except (EOFError, KeyboardInterrupt):
                 pass
         raise SystemExit(1) from None
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, asyncio.CancelledError):
         raise SystemExit(130) from None
 
 

@@ -158,3 +158,9 @@ SDK 每次排入事件後讓出執行機會，避免已緩衝的歷史重播長�
 `tests/unit/test_local_ports.py` 用 Mock 清單驗證描述與自然排序、未提供資訊、控制字元跳脫、無裝置、無效輸入、重新整理、取消／EOF／Ctrl+C、同名端點變更及重複端點。選單在事件迴圈建立前輸入；測試確認取消不建立迴圈或 Gateway。`uart ports` 不讀取認證、不建立 SDK 連線或 Serial Handle。
 
 `test_local_launcher.py` 的單元測試驗證所選身分完整進入既有 TOML 載入器與 SDK Ready 檢查；整合測試用 POSIX PTY 驗證選擇後真子程序 RX、端點消失清理、占用保護與選單輸入期間 SIGINT。描述只放在 Backend 的本機顯示資料，Core／Wire Model 不增加欄位。這些測試不代替 Windows 枚舉、CMD 選單或 USB 插拔實測。
+
+## 互動模式手動恢復
+
+`_run_selected` 在同步選單與每次 `asyncio.run` 之間協調，不能在事件迴圈裡呼叫 input 或留下等待 input 的執行緒。監控結束碼 2 或已知啟動／連線錯誤，必須等 `launch_local` 清理完成後才重新選擇；取消、正常期限、參數錯誤或 `LauncherCleanupError` 均離開流程。未知程式錯誤不當作可重試的裝置故障。固定端點與遠端 watch 的既有退出碼保留。
+
+單元測試覆蓋新的明確選擇、改選端點、開啟／連線失敗、取消、參數預檢與清理失敗防護。`InteractiveRecoveryTests` 使用真 Gateway 子程序、pySerial／PTY 與 SDK，在收到第一筆資料後關閉 PTY master 模擬拔除；第二次選擇前檢查舊程序已結束、臨時設定已移除、鎖可取得，再選另一個端點驗證 RX 與新的 Token／Instance／Epoch。這不代表 Win11 插拔恢復或 30 分鐘接收已驗證。

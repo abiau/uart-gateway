@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock, Mock, patch
 from uart_gateway.cli import main
 from uart_gateway.core.models import AdapterInfo
 from uart_gateway.local_ports import choose_port, list_ports
-from uart_gateway.serial_backend import AdapterDetails, SerialBackendError, list_adapter_details, list_adapters
+from uart_gateway.serial_backend import AdapterDetails, AdapterSelector, SerialBackendError, list_adapter_details, list_adapters
+from uart_gateway.local_launcher import LauncherCleanupError, LauncherError
 
 
 def device(port="COM3", serial="adapter-1", description="USB UART"):
@@ -169,4 +170,60 @@ class LocalPortCliTests(unittest.TestCase):
         with patch("sys.stderr", io.StringIO()), patch("sys.stdout.isatty", return_value=False), \
                 patch("uart_gateway.local_ports.choose_port") as choose:
             self.assertEqual(self.invoke(["local", "--select", "--terminal"]), 1)
+        choose.assert_not_called()
+
+    def test_ended_monitor_requires_fresh_choice_and_can_change_port(self):
+        choices = [AdapterSelector(port="COM3"), AdapterSelector(port="COM8")]
+        with patch("uart_gateway.local_ports.choose_port", side_effect=choices) as choose, \
+                patch("uart_gateway.local_launcher.launch_local", new=AsyncMock(side_effect=[2, 0])) as launch, \
+                patch("sys.stderr", new_callable=io.StringIO) as output:
+            self.assertEqual(self.invoke(["local", "--select"]), 0)
+        self.assertEqual(choose.call_count, 2)
+        self.assertEqual([call.args[0] for call in launch.call_args_list], ["COM3", "COM8"])
+        self.assertIn("前次記憶體歷史不保留", output.getvalue())
+
+    def test_launch_or_connection_failure_returns_to_choice_until_cancelled(self):
+        for error in (LauncherError("端點被占用"), ConnectionError("連線已中斷")):
+            with self.subTest(error=type(error).__name__), \
+                    patch("uart_gateway.local_ports.choose_port", side_effect=[AdapterSelector(port="COM3"), None]) as choose, \
+                    patch("uart_gateway.local_launcher.launch_local", new=AsyncMock(side_effect=error)) as launch, \
+                    patch("sys.stderr", new_callable=io.StringIO) as output:
+                self.assertEqual(self.invoke(["local", "--select"]), 0)
+            self.assertEqual(choose.call_count, 2)
+            launch.assert_awaited_once()
+            self.assertIn(str(error), output.getvalue())
+            self.assertIn("已返回裝置選單", output.getvalue())
+
+    def test_cleanup_or_unexpected_failure_does_not_offer_another_start(self):
+        for error in (LauncherCleanupError("無法確認清理"), ValueError("非預期設定錯誤")):
+            with self.subTest(error=type(error).__name__), \
+                    patch("uart_gateway.local_ports.choose_port", return_value=AdapterSelector(port="COM3")) as choose, \
+                    patch("uart_gateway.local_launcher.launch_local", new=AsyncMock(side_effect=error)), \
+                    patch("sys.stderr", new_callable=io.StringIO) as output:
+                self.assertEqual(self.invoke(["local", "--select"]), 1)
+            choose.assert_called_once()
+            self.assertNotIn("已返回裝置選單", output.getvalue())
+
+    def test_ctrl_c_during_monitor_exits_instead_of_reselecting(self):
+        async def cancelled(*args, **kwargs):
+            import asyncio
+            raise asyncio.CancelledError()
+
+        with patch("uart_gateway.local_ports.choose_port", return_value=AdapterSelector(port="COM3")) as choose, \
+                patch("uart_gateway.local_launcher.launch_local", side_effect=cancelled), \
+                patch("sys.stderr", io.StringIO()):
+            self.assertEqual(self.invoke(["local", "--select"]), 130)
+        choose.assert_called_once()
+
+    def test_invalid_launch_settings_fail_before_selecting(self):
+        for flags in (["--gateway-port", "80"], ["--startup-timeout", "nan"]):
+            with self.subTest(flags=flags), patch("uart_gateway.local_ports.choose_port") as choose, \
+                    patch("sys.stderr", io.StringIO()):
+                self.assertEqual(self.invoke(["local", "--select", *flags]), 1)
+            choose.assert_not_called()
+
+    def test_fixed_port_ended_status_never_returns_to_menu(self):
+        with patch("uart_gateway.local_ports.choose_port") as choose, \
+                patch("uart_gateway.local_launcher.launch_local", new=AsyncMock(return_value=2)):
+            self.assertEqual(self.invoke(["local", "--port", "COM3"]), 2)
         choose.assert_not_called()

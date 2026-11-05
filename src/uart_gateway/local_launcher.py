@@ -26,6 +26,17 @@ class LauncherError(ValueError):
     code = "LOCAL_START_FAILED"
 
 
+class LauncherCleanupError(LauncherError):
+    code = "LOCAL_CLEANUP_FAILED"
+
+
+def validate_local_settings(gateway_port: int, startup_timeout: float) -> None:
+    if type(gateway_port) is not int or not 1024 <= gateway_port <= 65535:
+        raise LauncherError("Gateway Port 必須為 1024 至 65535。")
+    if not math.isfinite(startup_timeout) or not 0 < startup_timeout <= 300:
+        raise LauncherError("就緒等待時間必須大於零且不超過 300 秒。")
+
+
 class PortLock:
     """作業系統持有的程序鎖；不刪除鎖檔來避免 inode 競爭。"""
 
@@ -234,10 +245,7 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
                        reporter: Callable[[str], None] | None = None) -> int:
     if not isinstance(port, str) or not 1 <= len(port.encode("utf-8")) <= 256 or not port.isprintable():
         raise LauncherError("Serial 端點名稱不合法。")
-    if type(gateway_port) is not int or not 1024 <= gateway_port <= 65535:
-        raise LauncherError("Gateway Port 必須為 1024 至 65535。")
-    if not math.isfinite(startup_timeout) or not 0 < startup_timeout <= 300:
-        raise LauncherError("就緒等待時間必須大於零且不超過 300 秒。")
+    validate_local_settings(gateway_port, startup_timeout)
     if selector is not None and (not selector.port or port_key(selector.port) != port_key(port)):
         raise LauncherError("所選裝置的端點與啟動端點不一致。")
     report = reporter or (lambda message: print(message, file=sys.stderr, flush=True))
@@ -268,6 +276,9 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
                     if client is not None:
                         await client.close()
                 finally:
-                    await asyncio.to_thread(owned.stop)
+                    try:
+                        await asyncio.to_thread(owned.stop)
+                    except (OSError, LauncherError) as exc:
+                        raise LauncherCleanupError("無法確認本次 Gateway 已清理；請檢查該程序，停止本次啟動，不會建立另一個 Gateway。") from exc
                 if owned.process is not None:
                     report("已清理本次啟動的 Gateway；其他程序未受影響。")

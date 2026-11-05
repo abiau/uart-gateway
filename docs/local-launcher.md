@@ -49,8 +49,16 @@ Windows 子程序群組不跟父程序同時處理 Ctrl+C；POSIX 子程序另�
 - 選擇編號後再次枚舉，要求端點仍唯一且已知身分欄位未改變。變更或消失時重新顯示選單，不把原編號套用到另一個裝置。啟動時再以既有 Adapter Selector 的 Port 與可用 VID／PID、序號、位置交集匹配。
 - 裝置描述只屬本機 UI Metadata（顯示資訊），不加入 Core 或協定快照。重用原 Backend 的枚舉來源，不新增遠端枚舉 API。開啟後仍由 SDK 檢查 Ready、端點、只讀權限與 UART 安全設定。
 
-這只能縮小選擇與開啟之間的競爭窗口，不能證明無序號的同名 COM 一定是原 Adapter，也不能辨識同 Adapter 換接不同板子。取消或輸入無效時不建立 Gateway；占用與開啟失敗由原啟動器處理。Windows 枚舉、CMD 選單與實體插拔需另行驗證，居家先做 Mock 與 PTY 測試。
+這只能縮小選擇與開啟之間的競爭窗口，不能證明無序號的同名 COM 一定是原 Adapter，也不能辨識同 Adapter 換接不同板子。取消或輸入無效時不建立 Gateway；占用與開啟失敗由原啟動器處理。本輪已有 Mock 與 PTY 證據，使用者後續亦已回報居家 USB-UART／IPCAM 接收及終端顏色成功；CMD 選單與插拔等邊界情境仍需個別驗證。
 
 ## 驗證界線
 
 自動化涵蓋鎖、Token 不進參數／檔案、Gateway／Channel 就緒、缺少端點、既有服務與端點占用、子程序提早退出、逾時、取消與正常清理。POSIX PTY（虛擬終端端點）可驗證真正 pySerial 與完整程序路徑，但不能代替 Windows 檔案鎖、CMD 主控台 Ctrl+C 或實體 COM3 的操作。後續使用者已回報 Win11 Quickstart、Ctrl+C 後重啟、重複啟動與 MobaXterm 占用交叉測試全部通過；實機證據另見狀態文件，並非 Agent 直接操作 Windows。
+
+## 本輪：互動模式的手動恢復
+
+Win11 Client 已是現有 SDK／CLI，不另建一套 Python Client。本輪延伸 `local --select`，不改線上協定：監控因裝置遺失、訂閱終止或已知啟動／連線錯誤結束後，等待原啟動器清理，再回到重新枚舉的選單。只有再次輸入編號才啟動，不自動沿用舊 COM、序號或選單編號。
+
+每次監控各用一次 `asyncio.run`，輸入仍在事件迴圈之外；不建立 input 背景執行緒。Ctrl+C、Q／Enter／EOF 取消、正常到達 `--duration` 均離開整個互動流程。固定 `--port` 與遠端 watch 的退出語意保留。啟動參數錯誤在第一次選擇前拒絕，無法確認子程序已清理則以專用錯誤退出，不再次啟動。
+
+裝置遺失會先顯示繁體中文原因；其他錯誤仍顯示原始錯誤類別，不一律當成 USB 拔除。返回選單時明示下一次是新 Gateway／資料流，舊 Ring 歷史不保留；不是 SSH Tunnel 重連到仍存活的同一個 Gateway。Token、Instance、Epoch 均不沿用，沒有 TX、Confirm、Lease 或自動重連。

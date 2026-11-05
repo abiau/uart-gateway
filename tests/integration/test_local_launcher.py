@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import io
 import os
 from pathlib import Path
 import secrets
@@ -22,6 +23,7 @@ from uart_gateway.server.auth import Principal
 from uart_gateway.server.tcp import Gateway
 from uart_gateway.client import Client
 from tests.fakes import eventually
+from uart_gateway.cli import main, watch_client
 
 
 def free_port():
@@ -93,6 +95,8 @@ class LauncherProcessTests(unittest.IsolatedAsyncioTestCase):
             if process.returncode is None:
                 process.kill()
                 await process.wait()
+
+
 
     async def asyncSetUp(self):
         self.master, self.slave = os.openpty()
@@ -295,3 +299,93 @@ class LauncherProcessTests(unittest.IsolatedAsyncioTestCase):
             if process.returncode is None:
                 process.kill()
                 await process.wait()
+
+
+@unittest.skipUnless(os.name == "posix" and importlib.util.find_spec("serial") is not None,
+                     "需要 POSIX PTY 與 [server]；Windows 插拔恢復另行實測")
+class InteractiveRecoveryTests(unittest.TestCase):
+    def test_unplug_cleanup_reselect_another_port_and_receive_again(self):
+        first_master, first_slave = os.openpty()
+        second_master, second_slave = os.openpty()
+        first_port, second_port = os.ttyname(first_slave), os.ttyname(second_slave)
+        descriptors = {first_master, first_slave, second_master, second_slave}
+        inventory = [AdapterDetails(AdapterInfo(port=first_port), "第一個虛擬端點")]
+        owned = []
+        instances, epochs = [], []
+        choices = 0
+        stdout, stderr = io.StringIO(), io.StringIO()
+        original_start = OwnedGateway.start
+
+        def start(gateway):
+            owned.append(gateway)
+            original_start(gateway)
+
+        def read():
+            nonlocal choices
+            choices += 1
+            if choices == 2:
+                self.assertEqual(owned[0].process.poll(), 0)
+                config = Path(owned[0].command[owned[0].command.index("--config") + 1])
+                self.assertFalse(config.exists())
+                with PortLock(first_port):
+                    pass
+            self.assertLessEqual(choices, 2)
+            return "1"
+
+        async def monitor(client, channel_id, **options):
+            number = len(instances)
+            channel = await client.get_channel(channel_id)
+            self.assertEqual(channel["adapter"]["port"], (first_port, second_port)[number])
+            self.assertEqual(channel["rx"]["next_offset"], "0")
+            self.assertEqual(client.auth["grants"], [{"channel_id": channel_id, "permissions": ["read"]}])
+            instances.append(client.instance)
+            epochs.append(channel["stream_epoch"])
+            subscribed = asyncio.Event()
+            original_subscribe = client.subscribe
+
+            async def subscribe(*args, **kwargs):
+                result = await original_subscribe(*args, **kwargs)
+                subscribed.set()
+                return result
+
+            options["duration"] = None if number == 0 else 0.3
+            with patch.object(client, "subscribe", side_effect=subscribe):
+                task = asyncio.create_task(watch_client(client, channel_id, **options))
+                try:
+                    await asyncio.wait_for(subscribed.wait(), 2)
+                    payload = b"first RX\n" if number == 0 else b"second RX\n"
+                    os.write(first_master if number == 0 else second_master, payload)
+                    await eventually(lambda: payload.decode() in stdout.getvalue())
+                    if number == 0:
+                        inventory[:] = [AdapterDetails(AdapterInfo(port=second_port), "第二個虛擬端點")]
+                        os.close(first_master)
+                        descriptors.remove(first_master)
+                    return await asyncio.wait_for(task, 5)
+                finally:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+
+        try:
+            with patch("sys.argv", ["uart", "local", "--select", "--gateway-port", str(free_port())]), \
+                    patch("sys.stdin.isatty", return_value=True), patch("sys.stdout", stdout), patch("sys.stderr", stderr), \
+                    patch("uart_gateway.local_ports.list_adapter_details", side_effect=lambda: list(inventory)), \
+                    patch("builtins.input", side_effect=read), patch.object(OwnedGateway, "start", side_effect=start, autospec=True), \
+                    patch("uart_gateway.cli.watch_client", side_effect=monitor):
+                with self.assertRaises(SystemExit) as result:
+                    main()
+            self.assertEqual(result.exception.code, 0)
+            self.assertEqual(choices, 2)
+            self.assertEqual(len(owned), 2)
+            self.assertNotEqual(instances[0], instances[1])
+            self.assertNotEqual(epochs[0], epochs[1])
+            self.assertNotEqual(owned[0].token, owned[1].token)
+            self.assertTrue(all(gateway.process.poll() == 0 for gateway in owned))
+            self.assertIn("裝置已失去連線", stderr.getvalue())
+            self.assertIn("已返回裝置選單", stderr.getvalue())
+            self.assertIn("第一個虛擬端點", stderr.getvalue())
+            self.assertIn("第二個虛擬端點", stderr.getvalue())
+        finally:
+            for gateway in owned:
+                gateway.stop()
+            for descriptor in descriptors:
+                os.close(descriptor)

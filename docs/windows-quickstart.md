@@ -57,13 +57,17 @@ py -3 -m venv .venv
 
 輸入清單編號才會啟動，只有一個裝置也不會自動選取。`R` 重新整理，`Q`、直接 Enter、EOF 或 Ctrl+C 可取消；取消時不建立 Gateway。沒有 USB-UART 時仍可查看空清單、重新整理及取消，在家不需連到公司 d3s1。
 
+在 `--select` 模式，USB 失去連線或訂閱終止後，程式會顯示原因、清理本次 Gateway，再回到重新枚舉的選單。啟動或連線失敗也可重新選擇；不會自動沿用舊 COM。插回 USB 後可按 R，再輸入目前的編號。每次重新啟動都是新的 Gateway／資料流與 Token，前次記憶體歷史不保留；這與 SSH Tunnel 重連到原 Gateway 不同。
+
+Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清理後退出，不回選單。固定 `--port`、`run-com3.cmd` 與遠端 watch 保持原本的退出行為。若無法確認本次 Gateway 已清理，會停止流程，不允許重新選擇後再啟動另一個程序。
+
 清單以 COM 數字排序（例如 COM3 在 COM10 之前），裝置未提供的資訊會明示。輸入無效編號不會開啟端點。選擇後再次枚舉；端點消失、身分資訊變更或重複時會要求重新選擇，不把原編號套用到另一個裝置。啟動時也將可用身分條件交給既有 Gateway 載入器檢查。
 
 枚舉不代表 COM 未被占用。實際開啟時若被 MobaXterm 占用，仍由原啟動器顯示錯誤並清理本次子程序。COM 名稱與序號不能證明轉接器後面的板子身分，這些檢查不取代人工核對接線。
 
 `--select` 與 `--port` 不能同時使用；`uart local` 未指定兩者時仍預設 COM3。想直接指定端點或自動執行腳本，使用 `--port COM8` 等明確名稱。互動選單需要終端機輸入，不接受以管線送入編號。需要顏色與退格顯示時，可在互動式 ANSI 終端加上 `--terminal`。
 
-新選單、CMD 雙擊與實體插拔尚未在 Win11 驗證，既有 COM3 快捷方式的實機成功不代表新功能也已通過。此版僅啟動一個 Channel，不加入多 UART 啟動、遠端枚舉或完整 TUI。
+使用者已在本輪居家測試回報 USB-UART／IPCAM 接收成功，`--terminal` 可正確顯示顏色。新 CMD 雙擊、重新整理、取消、占用與實體插拔等情境未另行回報，不一併視為通過。此版僅啟動一個 Channel，不加入多 UART 啟動、遠端枚舉或完整 TUI。
 
 ## 日常使用：雙擊啟動
 
@@ -95,7 +99,7 @@ py -3 -m venv .venv
 
 文字顯示使用增量 UTF-8，無效 bytes 與控制字元跳脫；CR 顯示成 `\r`，LF／TAB 保留，避免將 UART 的終端控制序列當作畫面命令。這不改動原始 RX bytes。此模式沒有持續磁碟錄製或零遺失保證。
 
-需要換行、退格進度符號與 ANSI 顏色時，可在支援 ANSI 的互動式終端使用 `uart local --port COM3 --read-only --watch --terminal`。這是可選模式，雙擊入口仍維持原本的跳脫顯示；未知控制序列不轉送。遠端 CLI 使用 `watch ch_uart_1 --replay --terminal`，取代 `--text`。新模式的實際 Windows 畫面尚待驗證；Container 合併測試包的安裝與驗收見 [遠端 RX 測試](remote-rx-test.md)。
+需要換行、退格進度符號與 ANSI 顏色時，可在支援 ANSI 的互動式終端使用 `uart local --port COM3 --read-only --watch --terminal`。這是可選模式，雙擊入口仍維持原本的跳脫顯示；未知控制序列不轉送。遠端 CLI 使用 `watch ch_uart_1 --replay --terminal`，取代 `--text`。使用者已回報居家本機接收時可正確顯示顏色；Container 合併測試包的安裝與驗收見 [遠端 RX 測試](remote-rx-test.md)。
 
 ## 失敗如何處理
 
@@ -107,10 +111,11 @@ py -3 -m venv .venv
 | COM3 無法獨占開啟／`PORT_BUSY` | 關閉 MobaXterm 或其他 Serial 連線後重試；部分 Windows 權限失敗也可能歸為此類，不代表能識別占用程序 |
 | 找不到 COM3／`DEVICE_MISSING` | 用 `uart ports` 或 `--list-ports` 核對 USB-UART 與 COM 名稱，再重新選擇或明確指定端點 |
 | 所選端點已消失、資訊改變或無法唯一識別 | 依重新顯示的清單再次選擇，核對轉接器；不沿用原編號自動開啟 |
+| `LOCAL_CLEANUP_FAILED`／無法確認本次 Gateway 已清理 | 流程停止，不回選單；檢查訊息中本次建立的 PID，確認已結束後再啟動，不停止其他 Gateway |
 | Gateway 提早結束 | 查看上方 Gateway 訊息，確認 `[server]` 已安裝與 Python 版本；不會進入假的就緒狀態 |
 | 就緒逾時／`SERIAL_IO_FAILED` | 保留上方不含 Token 的訊息，檢查裝置、Driver 與 UART 設定；失敗時會清理本次子程序 |
 | 顯示已就緒但沒有新 Log | 確認 IPCAM 是否正在輸出；Ready 只證明接收端點可用 |
-| 拔除後 Channel lost／訂閱結束 | 停止後核對端點再啟動；本次不自動改選或重連同名 COM |
+| 拔除後 Channel lost／訂閱結束 | 選單模式清理後可手動重新選擇；固定端點模式仍退出，不自動重連同名 COM |
 
 ## 保留原手動模式與遠端界線
 
@@ -128,10 +133,25 @@ py -3 -m venv .venv
 
 回報 Windows／Python／Driver 版本及成功或失敗步驟，不附 Token。使用者已確認 Quickstart 與上述關閉重啟、重複啟動、MobaXterm 占用三項測試全部通過；這些範圍記為 Verified（使用者執行並回報）。既有手動 Gateway 同時存在的測試未另回報。
 
-## 新選單實機驗收（尚待執行）
+## 新選單實機驗收（接收與顏色已回報，其餘待測）
 
 - 沒有裝置時執行 `uart ports`，確認顯示空清單；雙擊 `run-uart.cmd` 後可重新整理或取消。
 - 插入 USB-UART，按 R 後核對描述、序號與 COM，確認 COM3／COM10 等數字排序正確。
 - 輸入無效編號、按 Enter 或 Ctrl+C 取消，確認沒有 Gateway 占用 COM。
 - 選擇裝置後確認 Ready、UART RX、Ctrl+C 清理及再次啟動；接收效果需有 IPCAM 或其他資料來源才能驗證。
 - 選擇期間拔除／換接裝置，確認不會將舊編號自動套到另一個裝置；讓 MobaXterm 占用選定端點，確認提示與原連線保護。
+
+
+## 居家實機補充
+
+使用者已回報實體接收與終端顏色正常，IPCAM 電源重新上電時仍持續顯示；USB 拔插時程式中斷。拔除後不自動重連屬目前設計，但尚未取得退出訊息與重新插入後的操作結果，不能將所有插拔／清理情境一併標為通過。30 分鐘持續接收仍待之後執行。
+
+## 新版手動恢復驗收（尚待 Win11 執行）
+
+1. 以 `local --select --terminal` 選擇並接收 UART 資料。
+2. 拔除 USB-UART，確認看到裝置失去連線的提示，以及本次 Gateway 清理後重新出現選單。若顯示其他錯誤，保留完整訊息，不一律當作 USB 遺失。
+3. 插回後按 R，核對現有 COM、描述及序號；重新輸入編號才開始監控。即使 COM 名稱相同，也不得自行啟動。
+4. 確認新的資料來源有輸出時能再接收；前一 Gateway 的歷史不會重播。
+5. 監控中按 Ctrl+C，確認整個程式結束；使用 `--duration 10` 時應在期限後清理並結束。
+
+這一輪先維持單 Channel、只讀與手動選擇；不加入自動重連、TX 或完整 TUI。

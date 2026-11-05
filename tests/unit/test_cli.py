@@ -41,6 +41,13 @@ class DisplayTests(unittest.TestCase):
 
 
 class WatchTests(unittest.IsolatedAsyncioTestCase):
+    async def test_device_lost_has_a_chinese_reason_and_keeps_ended_status(self):
+        client = self.client([{"event": "subscription_state", "data": {"state": "ended", "reason": "device_lost"}}])
+        with patch("sys.stderr", new_callable=io.StringIO) as output:
+            result = await watch_client(client, "a", duration=1, text_mode=True, replay=False)
+        self.assertEqual(result, 2)
+        self.assertIn("裝置已失去連線", output.getvalue())
+        client.unsubscribe.assert_awaited_once()
     async def test_output_budget_counts_utf8_and_inflight_write(self):
         entered, release = asyncio.Event(), asyncio.Event()
         writes = []

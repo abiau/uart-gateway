@@ -13,7 +13,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from uart_gateway.local_launcher import (
-    LauncherError, OwnedGateway, PortLock, _profile, process_options, wait_ready,
+    LauncherCleanupError, LauncherError, OwnedGateway, PortLock, _profile, process_options, wait_ready,
 )
 from uart_gateway.serial_backend import AdapterSelector
 
@@ -114,6 +114,17 @@ except LauncherError:
 
 
 class ReadyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failed_child_cleanup_has_a_distinct_fatal_error(self):
+        from uart_gateway.local_launcher import launch_local
+
+        owned = Mock()
+        owned.stop.side_effect = LauncherError("子程序未結束")
+        with patch("uart_gateway.local_launcher._check_listener"), \
+                patch("uart_gateway.local_launcher.OwnedGateway", return_value=owned), \
+                patch("uart_gateway.local_launcher.wait_ready", new=AsyncMock(side_effect=LauncherError("啟動失敗"))):
+            with self.assertRaisesRegex(LauncherCleanupError, "無法確認本次 Gateway 已清理"):
+                await launch_local("COM3", AsyncMock(), reporter=lambda _: None)
+        owned.stop.assert_called_once()
     async def test_ready_accepts_selected_identity_and_normalized_port(self):
         selector = AdapterSelector(port="com03", vid=1027, pid=24577,
                                    serial_number="expected", location="usb-1")

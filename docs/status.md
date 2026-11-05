@@ -13,10 +13,10 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：132 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：141 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
-| 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，Windows 選單與實體裝置待測 |
+| 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。長時間穩定性與資料完整性尚待驗證 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
@@ -317,3 +317,33 @@ Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限
 驗證：Linux／Python 3.12.14／pySerial 3.5，完整 132 項通過、無略過。新增 18 項枚舉／選單單元與 CLI 測試、4 項啟動器身分／設定測試及 3 項程序／PTY 整合。覆蓋快照變更、重複別名、無裝置、取消、選擇後真子程序只讀 RX、端點消失清理與真 CLI 選單 SIGINT；既有占用測試亦覆蓋選擇端點。另在允許本機事件迴圈喚醒的執行環境，以真 `uart ports` 確認無硬體時正常顯示空清單，未開 COM。
 
 狀態為 Implemented／自動化 Tested，尚未在 Win11 執行新 CMD 選單或以實體 USB-UART 測試選擇／插拔。沒有唯一序號時不能保證同名 COM 一定是同一 Adapter；也不能識別同 Adapter 換接另一塊板子。30 分鐘接收、公司 d3s1 及實體 IPCAM 驗證維持待測。操作與新驗收清單見 Windows Quickstart。完成後沿用使用者指定的 Git 交付方式保存至 origin/work，實際版本以 Git 紀錄為準。
+
+
+## 居家 USB-UART／IPCAM 接收與終端顏色結果
+
+使用者在新選單的現場測試脈絡中回報：「家裡有 usb-uart 與 ipcam，剛剛測試可以讀到資料。--terminal 也可正確顯示顏色。」居家本機實體 RX 與終端顏色記為 Verified（使用者執行並回報），不是 Agent 直接操作或取得完整 Log。未另外回報 COM 名稱、裝置型號、測試時長或所有選單步驟，不將本次成功推論為取消、重新整理、占用與插拔情境也已通過。
+
+家裡已有資料來源，接下來可先做 30 分鐘本機持續只讀接收；公司 d3s1 的遠端長時間路徑仍待可連線時驗證。看到資料不代表已量測零遺失。程式仍為 `d9bb714`，本次僅更新文件，沿用最近 132 項自動化通過證據，不重跑未變更程式；文件尚未 commit／push。
+
+
+## USB 拔插與 IPCAM 重新上電回報
+
+使用者回報 USB 拔插時程式中斷；IPCAM 電源重新上電時仍持續顯示資料；30 分鐘持續接收尚未測試，之後另找時間進行。這是使用者現場觀察，不是 Agent 直接執行。
+
+USB 拔除後停止監控符合目前 Channel 遺失時終止訂閱、不自動重連的政策；但未取得當時退出碼或錯誤輸出，不能據此宣稱已驗證完整正常清理、沒有 Traceback，或重新插入後可自動恢復。IPCAM 重上電後仍可顯示資料記為 Verified（使用者執行並回報），不推論特定控制線脈衝或零遺失。
+
+下一個建議切片是選單模式的中斷處理：清楚提示裝置已失去、釋放本次 Gateway，再由使用者選擇重新列出／選擇端點或離開，不自動沿用同名 COM。這僅為後續建議，尚未實作；既有腳本模式退出語意仍需保留。長時間測試繼續待測。本次僅更新文件，程式及最近 132 項自動化測試證據不變，文件尚未 commit／push。
+
+
+## 互動選單中斷後手動恢復（2026-11-05，Asia/Taipei）
+
+使用者要求進行下一步並詢問是否要做 Win11 Python Client。本輪沿用現有 SDK／CLI 與原模組化規劃，完成先前建議的手動恢復切片，不另建 Client、GUI 或 TUI Framework。
+
+- `local --select` 於裝置遺失／訂閱終止、已知啟動或連線錯誤後，等待本次 Gateway 清理，再重新枚舉與顯示選單；只有新的明確選擇才啟動，不沿用舊編號或裝置條件。
+- 裝置遺失有繁體中文提示；非裝置錯誤保留原錯誤原因，不偽裝成 USB 拔除。Ctrl+C／取消、正常 `--duration` 及參數錯誤離開流程；固定端點與遠端 watch 的退出語意保留。
+- 子程序無法確認清理時回報 `LOCAL_CLEANUP_FAILED` 並停止，不回選單啟動另一個 Gateway。
+- 新啟動建立新的 Token、Instance、Epoch 與 Ring；畫面明示舊歷史不保留。無 Wire API 變更，也沒有 Confirm、Lease、TX 或自動重連。
+
+驗證：Linux／Python 3.12.14／pySerial 3.5 完整 141 項通過、無略過，未出現 RuntimeWarning。新增 6 項選單恢復／退出測試、1 項中文裝置遺失提示、1 項清理失敗分類及 1 項真程序／PTY 完整恢復測試。後者實際收到第一個虛擬端點資料，模擬拔除，第二次選擇前確認舊子程序結束、臨時檔刪除與鎖釋放，再選另一端點接收；Token、Instance 與 Epoch 皆不同，兩次皆只授權 read。原非同步啟動器測試亦完整執行。
+
+本輪狀態為 Implemented／自動化 Tested；Win11 實體插拔後回選單與重新接收仍待使用者測試。先前居家接收、終端顏色及 IPCAM 重新上電的成功紀錄保留，30 分鐘接收繼續待測。操作見 Windows Quickstart。依使用者既有 Git 交付方式保存至 origin/work，實際版本以 Git 紀錄為準。
