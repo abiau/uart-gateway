@@ -20,6 +20,7 @@ src/uart_gateway/
     __init__.py                # 輕量公開入口，無 I/O 副作用
     serial_backend.py          # pySerial、裝置枚舉與 I/O
     cli.py                     # 參數、輸出與 SDK 操作
+    text_renderer.py           # 增量過濾基本排版與有限的 ANSI 顏色
     local_launcher.py          # 本機只讀啟動、就緒檢查與自己的子程序管理
     protocol/
         __init__.py
@@ -134,3 +135,15 @@ CD（持續交付）與發布流程留待可用版本形成後設計；目前不
 `tests/unit/test_local_launcher.py` 驗證跨程序端點鎖、Token 管理、就緒重試與失敗、權限與 UART 設定核對，以及只停止自己的子程序。`tests/integration/test_local_launcher.py` 在 POSIX 搭配 pySerial，以真子程序及 PTY 驗證 RX、正常／取消清理、缺少端點、重複啟動、既有 Gateway 保護、CLI 的 SIGINT 與立即重啟。
 
 完整測試沿用 `python -m unittest discover -s tests -v`。Windows 或未安裝 `[server]` 時，PTY 整合會明確略過，不能宣稱完整測試通過。Windows 的雙擊主控台、檔案鎖與實體 COM3 另按 [Quickstart](windows-quickstart.md) 驗收；自動化結果及尚未驗證範圍記於 [狀態](status.md)。
+
+## CLI 文字重播與取消
+
+SDK 每次排入事件後讓出執行機會，避免已緩衝的歷史重播長時間占住 Reader。事件數量與位元組上限不變；完全不消費或輸出持續過慢時，仍回報 `LocalDataLoss`，不默默刪除資料或擴大容量。
+
+`watch --text` 以 20 ms 為刷新目標，或累積達 16 Ki 字元時輸出。暫存上限為門檻加一個合法 RX 區塊；控制字元跳脫後仍有界。20 ms 不是系統即時性保證，會受排程與終端速度影響。跨區塊 UTF-8、沒有換行的文字、Replay／Live 標示與訂閱終止均需測試。
+
+批次在 await 前移出暫存，不因取消或部分輸出失敗而重試。一次執行緒工作完成 write 與 flush；Ctrl+C 或觀測期限取消時，等待已開始的輸出工作收斂，再傳遞取消。因此 OS 若阻塞 stdout，結束也會等待，不能宣稱 Python 能安全強殺該 I/O。原始錯誤必須保留，清理失敗附加於例外，不取代資料遺失／斷線原因；SDK 的 TimeoutError 也不能當作正常觀測結束。
+
+`watch --terminal` 與 `local --terminal` 共用上述批次輸出及只讀接收路徑；前者與 `--text` 互斥。`TerminalRenderer` 逐段處理文字，只轉送基本排版與驗證過的 SGR；CSI 參數最多保留 128 字元，OSC／DCS 等控制字串只保留解析狀態、不累積內容。缺口與訂閱終止會切斷解碼／控制序列狀態，結束時恢復顏色。TTY 檢查在連線之前，避免重導向輸出包含作用中的終端控制碼。
+
+測試涵蓋控制序列每個切割點、UTF-8 跨區塊、顏色與進度符號、未知控制碼、超長與未完成序列、原樣保留字面上的跳脫文字、取消／顏色重設，以及兩種模式的大量小區塊重播。真 CLI／PTY 另驗證互動輸出與管線拒絕；不能用位元組測試宣稱真實終端畫面已由 Agent 驗證。現場操作見 [Container 合併測試](remote-rx-test.md)。

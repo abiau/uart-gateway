@@ -11,6 +11,7 @@ import sys
 from .client import Client
 from .protocol.codec import binary_decode
 from .protocol.errors import ProtocolError, RemoteError
+from .text_renderer import RESET, TerminalRenderer
 
 
 class ChineseHelpFormatter(argparse.HelpFormatter):
@@ -45,12 +46,32 @@ def safe_text(text: str) -> str:
 
 
 async def display_text(text: str) -> None:
-    await asyncio.to_thread(sys.stdout.write, safe_text(text))
-    await asyncio.to_thread(sys.stdout.flush)
+    await _display(safe_text(text))
+
+
+async def _display(text: str) -> None:
+    """輸出已完成安全轉換或終端過濾的文字。"""
+    if not text:
+        return
+    stream = sys.stdout
+
+    def write() -> None:
+        stream.write(text)
+        stream.flush()
+
+    # 執行緒中的 write 無法取消；等待已開始的輸出收斂，避免清理時交錯寫入。
+    pending = asyncio.create_task(asyncio.to_thread(write))
+    try:
+        await asyncio.shield(pending)
+    except asyncio.CancelledError:
+        await pending
+        raise
 
 
 async def watch_client(client: Client, channel_id: str, *, duration: float | None,
-                       text_mode: bool, replay: bool) -> int:
+                       text_mode: bool, replay: bool, terminal_mode: bool = False) -> int:
+    text_mode = text_mode or terminal_mode
+    renderer = TerminalRenderer() if terminal_mode else None
     if replay:
         channel = await client.get_channel(channel_id)
         if channel["stream_epoch"] is None:
@@ -61,44 +82,117 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
         sub = await client.subscribe(channel_id)
     decoder = codecs.getincrementaldecoder("utf-8")(errors="backslashreplace")
     last_delivery = None
-    if text_mode:
-        print(json.dumps({"subscription": sub}, ensure_ascii=True), file=sys.stderr, flush=True)
-    else:
-        await output({"subscription": sub})
+    text_parts: list[str] = []
+    text_size = 0
+    output_failed = False
+    loop = asyncio.get_running_loop()
+    flush_at = loop.time() + 0.02
+
+    async def flush_text() -> None:
+        nonlocal text_size, flush_at, output_failed
+        if text_parts:
+            text = "".join(text_parts)
+            # await 前移出此批；取消或部分寫入失敗時都不能重送同一批文字。
+            text_parts.clear()
+            text_size = 0
+            try:
+                await (_display(text) if terminal_mode else display_text(text))
+            except Exception:
+                output_failed = True
+                raise
+        flush_at = loop.time() + 0.02
+
+    async def diagnostic(message: str) -> None:
+        await flush_text()
+        if terminal_mode:
+            await _display(RESET)
+        print(message, file=sys.stderr, flush=True)
+
+    failure: BaseException | None = None
+    observation = asyncio.timeout(duration)
     try:
-        async with asyncio.timeout(duration):
+        if text_mode:
+            await diagnostic(json.dumps({"subscription": sub}, ensure_ascii=True))
+        else:
+            await output({"subscription": sub})
+        async with observation:
             while True:
-                event = await client.next_event()
+                if text_parts:
+                    refresh = asyncio.timeout_at(flush_at)
+                    try:
+                        async with refresh:
+                            event = await client.next_event()
+                    except TimeoutError:
+                        if not refresh.expired():
+                            raise
+                        await flush_text()
+                        continue
+                else:
+                    event = await client.next_event()
                 if text_mode and event["event"] == "rx":
                     delivery = event["data"]["delivery"]
                     if delivery != last_delivery:
                         mode = "歷史重播" if delivery == "replay" else "即時接收"
-                        print(f"接收模式：{mode}", file=sys.stderr, flush=True)
+                        await diagnostic(f"接收模式：{mode}")
                         last_delivery = delivery
-                    await display_text(decoder.decode(binary_decode(event["data"]["data_b64"])))
+                    text = decoder.decode(binary_decode(event["data"]["data_b64"]))
+                    if renderer is not None:
+                        text = renderer.feed(text)
+                    text_parts.append(text)
+                    text_size += len(text)
+                    if text_size >= 16384 or loop.time() >= flush_at:
+                        await flush_text()
                 elif text_mode:
-                    print(json.dumps(event, ensure_ascii=True), file=sys.stderr, flush=True)
+                    if renderer is not None and event["event"] in ("gap", "subscription_state"):
+                        text_parts.append(renderer.feed(decoder.decode(b"", final=True)))
+                        text_parts.append(renderer.finish())
+                        decoder.reset()
+                    await diagnostic(json.dumps(event, ensure_ascii=True))
                 else:
                     await output(event)
                 if event["event"] == "subscription_state" and event["data"]["state"] == "ended":
                     return 2
-    except TimeoutError:
-        pass
+    except TimeoutError as exc:
+        if not observation.expired():
+            failure = exc
+            raise
+    except BaseException as exc:
+        failure = exc
+        raise
     finally:
-        if text_mode:
-            await display_text(decoder.decode(b"", final=True))
-        await client.unsubscribe(sub["subscription_id"])
+        try:
+            if text_mode and not output_failed:
+                tail = decoder.decode(b"", final=True)
+                if renderer is not None:
+                    tail = renderer.feed(tail) + renderer.finish()
+                if tail:
+                    text_parts.append(tail)
+                await flush_text()
+        except BaseException as exc:
+            if failure is None:
+                failure = exc
+                raise
+            failure.add_note(f"文字輸出清理另有錯誤：{exc}")
+        finally:
+            try:
+                await client.unsubscribe(sub["subscription_id"])
+            except BaseException as exc:
+                if failure is None:
+                    raise
+                failure.add_note(f"取消訂閱另有錯誤：{exc}")
     return 0
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command in ("watch", "local") and args.terminal and not sys.stdout.isatty():
+        raise ValueError("終端顯示需要互動式終端機；輸出到檔案或管線時請使用一般文字模式。")
     if args.command == "local":
         from .local_launcher import launch_local
         if args.host != "127.0.0.1" or args.token_file or args.token_env != "UART_GATEWAY_TOKEN":
             raise ValueError("本機啟動器只使用 Loopback 與自行產生的臨時認證")
         async def monitor(client: Client, channel_id: str) -> int:
             return await watch_client(client, channel_id, duration=args.duration,
-                                      text_mode=True, replay=True)
+                                      text_mode=True, replay=True, terminal_mode=args.terminal)
         return await launch_local(args.serial_port, monitor,
                                   gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
                                   startup_timeout=args.startup_timeout)
@@ -111,7 +205,7 @@ async def run(args: argparse.Namespace) -> int:
             await output(await client.list_channels())
         elif args.command == "watch":
             return await watch_client(client, args.channel, duration=args.duration,
-                                      text_mode=args.text, replay=args.replay)
+                                      text_mode=args.text, replay=args.replay, terminal_mode=args.terminal)
         elif args.command == "status":
             await output(await client.tx_status(args.channel, args.tx_id))
         else:
@@ -144,6 +238,7 @@ def main() -> None:
     local.add_argument("--port", dest="serial_port", default="COM3", help="本次使用的 Serial 端點")
     local.add_argument("--read-only", action="store_true", help="只讀模式（此版本固定只讀）")
     local.add_argument("--watch", action="store_true", help="持續監控 RX（此版本預設行為）")
+    local.add_argument("--terminal", action="store_true", help="以終端顯示換行、退格及顏色；過濾其他控制序列")
     local.add_argument("--gateway-port", type=int, help="本機 Gateway Port，預設 18081")
     local.add_argument("--startup-timeout", type=float, default=20, help="等待就緒的秒數")
     local.add_argument("--duration", type=float, help="監控秒數；省略則持續到 Ctrl+C")
@@ -158,7 +253,9 @@ def main() -> None:
             command.add_argument("--note")
         elif name == "watch":
             command.add_argument("--duration", type=float, default=10)
-            command.add_argument("--text", action="store_true", help="顯示 UTF-8 文字，跳脫控制字元；不改變原始 RX")
+            display = command.add_mutually_exclusive_group()
+            display.add_argument("--text", action="store_true", help="顯示 UTF-8 文字，跳脫控制字元；不改變原始 RX")
+            display.add_argument("--terminal", action="store_true", help="顯示換行、退格與 ANSI 顏色；過濾其他控制序列")
             command.add_argument("--replay", action="store_true", help="先讀此 Epoch 最早仍保留的資料，再接即時 RX")
         elif name == "send":
             command.add_argument("text")

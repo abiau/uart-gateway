@@ -64,6 +64,8 @@ py -3 -m venv .venv
 
 文字顯示使用增量 UTF-8，無效 bytes 與控制字元跳脫；CR 顯示成 `\r`，LF／TAB 保留，避免將 UART 的終端控制序列當作畫面命令。這不改動原始 RX bytes。此模式沒有持續磁碟錄製或零遺失保證。
 
+需要換行、退格進度符號與 ANSI 顏色時，可在支援 ANSI 的互動式終端使用 `uart local --port COM3 --read-only --watch --terminal`。這是可選模式，雙擊入口仍維持原本的跳脫顯示；未知控制序列不轉送。遠端 CLI 使用 `watch ch_uart_1 --replay --terminal`，取代 `--text`。新模式的實際 Windows 畫面尚待驗證；Container 合併測試包的安裝與驗收見 [遠端 RX 測試](remote-rx-test.md)。
+
 ## 失敗如何處理
 
 | 提示或現象 | 處理方式 |
@@ -82,7 +84,7 @@ py -3 -m venv .venv
 
 原 `uart-gatewayd --serial --config examples/gateway.com3.toml` 與 `uart watch` 仍可使用；手動 Gateway／Client 必須從受保護來源提供同一個 Token。範例只授予 read，Binding 為 unconfirmed 不妨礙 RX。`watch --duration 30 --replay --text` 可沿用文字監控；拿掉 `--text` 則輸出保留 bytes 的 JSON／Base64。
 
-本機啟動器自行管理臨時認證，不提供另一個視窗或遠端 Client 取用該 Token 的功能。需要本機／遠端共用 Gateway 時，仍採原有明確憑證及 SDK／CLI 連線模式；SSH Tunnel 整合、互動選 COM、多 Channel 啟動與 Windows TUI 留待後續。現有載入器上限仍為 4 個 Channel，未宣稱已支援 5～6 個 UART。
+本機啟動器自行管理臨時認證，不提供另一個視窗或遠端 Client 取用該 Token 的功能。需要本機／遠端共用 Gateway 時，仍採原有明確憑證及 SDK／CLI 連線模式。使用者已確認 dxan 經 SSH Tunnel 的只讀接收，重播與新顯示模式見遠端測試文件；互動選 COM、多 Channel 啟動與 Windows TUI 留待後續。現有載入器上限仍為 4 個 Channel，未宣稱已支援 5～6 個 UART。
 
 ## Win11 實機驗收清單
 

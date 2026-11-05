@@ -105,6 +105,8 @@ class Transport:
                         raise LocalDataLoss("SDK 事件佇列已滿，資料連續性中斷。")
                     self.event_used += size
                     self.events.put_nowait((message, size))
+                    # 已緩衝的重播也讓消費者取得執行機會，不放大有界佇列。
+                    await asyncio.sleep(0)
                 else:
                     raise ProtocolError("INVALID_FRAME", "Server 傳送了不合法訊息。")
         except asyncio.CancelledError:

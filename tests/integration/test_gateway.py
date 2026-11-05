@@ -5,6 +5,8 @@ import unittest
 from unittest.mock import patch
 
 from uart_gateway.client import Client, TxUncertain
+from uart_gateway.cli import watch_client, safe_text
+from uart_gateway.text_renderer import RESET
 from uart_gateway.client.transport import LocalDataLoss
 from uart_gateway.core.models import ChannelConfig
 from uart_gateway.fake_serial import FakeSerial
@@ -17,6 +19,29 @@ from tests.fakes import FakeClock, eventually
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_text_replay_small_chunks_preserves_output_with_slow_console(self):
+        import io
+        import time
+
+        class Console(io.StringIO):
+            def write(self, value):
+                time.sleep(0.001)
+                return super().write(value)
+
+        payload = (b"boot\r\n" + b"x" * 140) * 400
+        for offset in range(0, len(payload), 146):
+            self.gateway.channels["a"].ingest(payload[offset:offset + 146])
+        for terminal in (False, True):
+            client = await self.client(True)
+            console = Console()
+            with self.subTest(terminal=terminal), patch("sys.stdout", console), patch("sys.stderr", io.StringIO()):
+                result = await watch_client(client, "a", duration=1, text_mode=True, replay=True,
+                                            terminal_mode=terminal)
+            self.assertEqual(result, 0)
+            expected = payload.decode() if terminal else safe_text(payload.decode())
+            self.assertEqual(console.getvalue().replace(RESET, ""), expected)
+            self.assertIsNone(client.transport.failure)
+
     async def asyncSetUp(self):
         self.token, self.read_token = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
         self.ports = [FakeSerial(), FakeSerial()]
@@ -220,6 +245,17 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         self.ports[0].inject(b"overflow")
         with self.assertRaises(LocalDataLoss):
             await asyncio.wait_for(slow.next_event(), 1)
+        self.assertEqual((await healthy.get_channel("b"))["state"], "ready")
+
+    async def test_event_count_limit_still_rejects_a_consumer_that_never_reads(self):
+        slow, healthy = await self.client(), await self.client()
+        await slow.subscribe("a")
+        for _ in range(300):
+            self.gateway.channels["a"].ingest(b"x")
+        await eventually(lambda: slow.transport.failure is not None)
+        with self.assertRaises(LocalDataLoss):
+            await slow.next_event()
+        self.assertEqual(slow.transport.event_used, 0)
         self.assertEqual((await healthy.get_channel("b"))["state"], "ready")
 
     async def test_heartbeat_and_lease_context_renew_without_user_traffic(self):

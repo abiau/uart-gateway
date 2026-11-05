@@ -62,6 +62,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `server.config`、`server.app` | 驗證設定、組裝具體物件、啟停順序 | 組裝層可以知道具體 Backend，不把此依賴帶入 Core |
 | `client.transport`、`client.sdk` | 連線、版本、請求配對、訂閱、Lease 更新與重連 | Protocol；不依賴 Server 或 Windows Serial |
 | `cli`、未來 `tui`／工具介面 | 參數、顯示、使用者或 Agent 操作 | 只經 SDK 進入 Gateway；不複製協定實作 |
+| `text_renderer` | 終端模式的增量控制序列過濾與顏色驗證 | 純文字轉換，不依賴 Serial、Core 或 Server，不修改原始 RX |
 | `local_launcher` | 本機只讀啟動、就緒檢查與自己子程序的生命週期 | 建立既有 `server.app` 子程序，UART 操作只經 SDK；端點名稱正規化重用純函式，不直接存取 Serial |
 
 ```mermaid

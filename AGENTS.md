@@ -8,7 +8,7 @@
 
 建立可長期維護的 UART 開發工具：Windows 獨占實體 COM Port，Linux 的 CLI（命令列介面）、TUI（文字使用者介面）及未來 Agent 透過共同 Client SDK（用戶端開發套件）操作。
 
-Phase 0 基線已核准，Phase 1 第一、二批已實作；使用者已在 Win11 啟動 Gateway 並以 watch 接收 IPCAM 開機訊息。2026-11-05 暫停交接保存後，使用者新增 Windows 一鍵啟動器任務，授權先設計審查再實作、模擬測試與更新文件。此次範圍是薄層本機只讀啟動與自己子程序的清理，不新增 TX 或遠端接管。使用者已回報 Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護與 MobaXterm 占用交叉測試全部通過，並授權本次 commit／push；Linux Container／SSH Tunnel 整合留待後續。完整進度及驗證邊界以 status.md 為準。
+Phase 0 基線已核准，Phase 1 第一、二批已實作；使用者已在 Win11 啟動 Gateway 並以 watch 接收 IPCAM 開機訊息。2026-11-05 暫停交接保存後，使用者新增 Windows 一鍵啟動器任務，授權先設計審查再實作、模擬測試與更新文件。此次範圍是薄層本機只讀啟動與自己子程序的清理，不新增 TX 或遠端接管。使用者已回報 Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護與 MobaXterm 占用交叉測試全部通過，並授權本次 commit／push；使用者亦已確認 dxan 經 SSH Tunnel 收到 IPCAM UART。當前授權範圍是整合歷史重播修正與可選的基本終端顯示，提供合併版本現場驗證；不新增 TX 或進行 Tunnel 中斷測試。完整進度及驗證邊界以 status.md 為準。
 
 ## 開始工作前的閱讀順序
 

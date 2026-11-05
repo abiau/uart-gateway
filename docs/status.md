@@ -13,11 +13,11 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：77 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：101 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
-| SSH／Podman 遠端路徑 | Planned／待現場資訊 | 尚未以本版本庫驗證 Container 經 Tunnel 接收 UART |
+| SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | d3s1 的 dxan 容器經 Windows 反向 SSH Tunnel 收到 IPCAM UART 資訊；斷線恢復與長時間穩定性尚待驗證 |
 | Commit／Push（提交／推送） | 前次交接已保存 | `496ab13` 已保存前次 Phase 1 交接；本次啟動器依使用者明確授權 commit／push |
 
 狀態語意：`Planned` 為預計開發；`In Progress` 為正在進行；`Implemented` 為已有實作；`Tested` 為已執行具體測試並有結果；`Verified` 為在聲稱的真實條件下實際驗證。不可因 Implemented 就改成 Tested，也不能以模擬測試把 Windows 硬體標為 Verified。文件可標示「已建立／已檢查」，但不讓這些詞代表產品已實作。
@@ -208,3 +208,54 @@ Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限
 ### 下一步
 
 使用者已回報 [Windows Quickstart](windows-quickstart.md) 可用，並明確確認 Ctrl+C 後重新啟動、重複啟動保護及 MobaXterm 占用交叉測試三項全部通過。上述範圍更新為 Verified（使用者執行並回報），不是 Agent 直接操作 Windows，也不代表長時間零遺失或控制線量測完成。下一步接 Linux／SSH Tunnel；5～6 UART、多 Channel 啟動、互動選 Port、TUI、常駐錄製與實體 TX 均不在此次範圍。使用者已明確授權將此批程式、測試與實機結果文件 commit／push 至 origin/work。此次僅更新驗證紀錄，沿用前次 77 項全數通過的自動化結果，不重跑未變更的程式。
+
+
+## d3s1 Container 遠端 RX 實機結果
+
+使用者於本次對話回報：「在 d3s1 的 container 有收到 ipcam 透過 uart 傳輸的資訊」。此結果來自使用者現場操作，不是 Agent 直接連線或取得原始 UART Log。
+
+- Windows 以 `ssh victor.hu-vo@d3s1` 的既有目的地建立反向轉送；d3s1 的 `ss` 輸出確認 `127.0.0.1:18081` 接聽。
+- `dxan` 的 NetworkMode 為 `host`，不需要第二段 Container SSH 轉送；使用者已確認容器連到 `127.0.0.1:18081` 的 TCP 測試成功。
+- 容器使用 Python 3.14.4，安裝本版本庫 CLI 後，以既有只讀 Gateway、共用認證與 watch 流程接收 IPCAM UART 資訊成功。Python 3.14 的這次操作成功不代表完整自動化相容性矩陣已通過。
+- 已驗證路徑：dxan SDK／CLI → d3s1 Loopback → SSH 反向轉送 → Windows Loopback Gateway → COM3／IPCAM。維持只讀，未宣稱實體 TX 通過。
+- 尚未驗證：Tunnel 中斷／重建後重新認證與訂閱、Replay／Gap 邊界、長時間穩定性與零遺失。未取得原始 Log、資料量或測試時長。
+
+下一步先測停止及重建 SSH Tunnel，確認 CLI 能看見連線失敗，重建後以新 CLI 連線恢復只讀 RX。Gateway 保持執行，不自動重送 UART 指令；再安排長時間接收與多 UART 需求。此次僅更新文件，未重跑程式測試，也未 commit／push。
+
+
+## 遠端歷史重播 SDK 佇列溢位修正
+
+使用者尚未執行 Tunnel 中斷測試；在正常連線執行 `watch --duration 60 --replay --text` 時，訂閱快照的重播尾端為 58616，顯示少量歷史文字後出現 `LocalDataLoss：SDK 事件佇列已滿，資料連續性中斷。`。UART 內容中的系統關機訊息不是 d3s1 關機證據。先前遠端 RX 成功仍成立，但不能因此宣稱歷史重播與斷線恢復已通過。
+
+- 以真 TCP、Fake Serial 的 400 個 146-byte 歷史區塊及每次 write 延遲 1 ms 的顯示器重現同一個 LocalDataLoss；這是模擬近似條件，未取得使用者原始 Log。
+- SDK 收到事件後讓出執行機會；CLI 文字顯示改用有界批次，約 20 ms 或 16 Ki 字元刷新，保留增量解碼、安全控制字元顯示、模式切換與最終輸出。未改 Wire API、事件佇列容量或溢位失敗語意。
+- 修正後回歸測試核對整段 58400 bytes 的文字輸出完整一致；Linux／Python 3.12 完整 78 項測試通過。真正慢到超出有界容量的消費者仍應明確失敗，不保證任意慢速終端可無限接收。
+- 這是 Client／CLI 修正，Windows Gateway 不需因此重啟；dxan 的 Python 3.14 及原始 UART 重播需更新後重測。Tunnel 中斷情境仍未開始。
+
+本次程式、測試與文件尚未 commit／push。提供只含 Client／CLI 與回歸測試的修補檔供現場套用；未將 Token 或 UART 原始 Log 納入。
+
+
+### 重播修正複查與補強
+
+使用者要求再次檢查修正。新增測試在初版重播修正上實際重現以下問題，並完成修正：
+
+- 批次刷新 await 後才清空，取消時 finally 會再次送出相同文字；改為 await 前移出批次，不重試不明的部分輸出。
+- 取消 to_thread 不代表底層 stdout.write 已結束；改為單次工作完成 write／flush，取消時等該工作收斂，避免清理時交錯寫入。
+- 輸出失敗會跳過取消訂閱，或清理例外蓋掉原始 LocalDataLoss；現在仍嘗試清理，保留第一個錯誤，後續錯誤以例外附註保留。
+- 廣泛捕捉 TimeoutError 會把 SDK 心跳逾時當成正常結束；現在只接受自身觀測期限／刷新期限到期，SDK 逾時向上回報。
+
+驗證：Linux／Python 3.12.14／pySerial 3.5，完整 87 項測試通過、無略過。新增取消／期限中斷、輸出失敗、SDK 逾時、清理錯誤保留、部分行刷新、UTF-8 跨區塊與模式切換測試；另以真 TCP 確認完全不消費的 Client 仍觸發事件數量上限，其他 Client 可繼續操作。保留原有位元組上限測試。
+
+新版修補檔包含 Client／CLI 及兩個測試檔，提供以 `6aa8588` 為基準的完整 v2 與已套用初版後使用的增量版本，兩者均在隔離目錄檢查套用結果。20 ms 是刷新目標，實際延遲受排程與 stdout 影響；OS 阻塞輸出時取消仍會等待。未宣稱 dxan Python 3.14 或實體 UART 重測成功，未執行 Tunnel 中斷情境。此次尚未 commit／push。
+
+
+## 歷史重播與終端顯示合併版本
+
+使用者要求先完成「重播修正」與「基本終端顯示」，再一次現場測試。保留先前重播及取消／錯誤處理修正，新增 `watch --terminal` 與 `local --terminal`，不改 Gateway、V1 API Contract、認證或 UART 安全設定。原 `--text` 及雙擊入口仍保持控制字元跳脫，終端模式為明確選項，且在連線前要求 stdout 為 TTY。
+
+- `text_renderer.py` 是純文字增量過濾器：允許 CR／LF／BS／TAB 與重設、粗體、前景／背景 SGR 顏色；過濾其他 CSI、OSC、DCS、剪貼簿、標題與裝置查詢。
+- 支援控制序列跨區塊；CSI 參數暫存最多 128 字元，控制字串不累積內容。缺口、訂閱結束與關閉時不把殘留序列接到新資料，並重設顏色；不補送任何 UART 指令。
+- Linux／Python 3.12.14／pySerial 3.5 完整 101 項測試通過、無略過。兩種文字模式都通過 58400 bytes 小區塊重播與慢速輸出測試，原有 SDK 事件數量／位元組上限仍明確告警。
+- 新增 7 項過濾器單元、5 項 CLI 邊界及 2 項真 CLI／主控台 PTY 測試，包含顏色與進度符號、每個切割點、UTF-8、未知／超長序列、TTY 要求、取消後恢復顏色與缺口邊界。PTY 檢查控制位元組，未觀察使用者的實際終端畫面。
+
+提供完整 `uart-gateway-rx-terminal-test.zip` 快照，取代現場處理多版修補檔；以新目錄與獨立環境安裝，不覆蓋現有程式或認證。使用者後續明確要求 commit／push，改以 origin/work 供 dxan 直接拉取，測試包保留為替代方式。操作見 [Container 合併測試](remote-rx-test.md)。此版狀態是 Implemented／自動化 Tested；dxan Python 3.14、IPCAM 原始歷史與真實終端顯示仍待使用者驗證，Tunnel 中斷測試尚未開始。本次依使用者授權提交與推送，實際版本以 Git 紀錄為準；程式未再變更，沿用上述 101 項通過的結果。
