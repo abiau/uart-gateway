@@ -20,6 +20,7 @@ src/uart_gateway/
     __init__.py                # 輕量公開入口，無 I/O 副作用
     serial_backend.py          # pySerial、裝置枚舉與 I/O
     cli.py                     # 參數、輸出與 SDK 操作
+    local_launcher.py          # 本機只讀啟動、就緒檢查與自己的子程序管理
     protocol/
         __init__.py
         messages.py            # 線上資料模型
@@ -127,3 +128,9 @@ CD（持續交付）與發布流程留待可用版本形成後設計；目前不
 實體模式安裝 `python -m pip install -e '.[server]'`，再以 `uart-gatewayd --serial --config examples/gateway.com3.toml` 啟動。Gateway 的 `--list-ports` 只枚舉，不開啟裝置；CLI／SDK 仍不直接呼叫 Serial。Win11 只讀驗證見 [接收步驟](windows-quickstart.md)。
 
 新增測試分為 Driver 替身（開啟順序、控制線、匹配、錯誤、端點預留）、生命週期晚到結果，以及 POSIX PTY 的真 pySerial 整合。PTY 測試需要 `[server]` 與 POSIX，不能代替 Windows Driver 或 IPCAM 硬體證據。只有 Linux SDK 的環境不需要 pySerial，模組匯入也不開啟裝置。
+
+## 本機啟動器驗證
+
+`tests/unit/test_local_launcher.py` 驗證跨程序端點鎖、Token 管理、就緒重試與失敗、權限與 UART 設定核對，以及只停止自己的子程序。`tests/integration/test_local_launcher.py` 在 POSIX 搭配 pySerial，以真子程序及 PTY 驗證 RX、正常／取消清理、缺少端點、重複啟動、既有 Gateway 保護、CLI 的 SIGINT 與立即重啟。
+
+完整測試沿用 `python -m unittest discover -s tests -v`。Windows 或未安裝 `[server]` 時，PTY 整合會明確略過，不能宣稱完整測試通過。Windows 的雙擊主控台、檔案鎖與實體 COM3 另按 [Quickstart](windows-quickstart.md) 驗收；自動化結果及尚未驗證範圍記於 [狀態](status.md)。

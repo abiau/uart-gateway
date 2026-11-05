@@ -45,7 +45,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 
 ## 軟體模組與依賴
 
-以下名稱對應 [開發規劃](development.md) 中的候選 Python 結構；目前不建立原始碼目錄。
+以下名稱對應 [開發規劃](development.md) 的完整 Python 結構；實際完成範圍以 [狀態](status.md) 為準，尚未需要的模組不提前建立。
 
 | 模組 | 責任與輸入／輸出 | 依賴與邊界 |
 | --- | --- | --- |
@@ -62,6 +62,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `server.config`、`server.app` | 驗證設定、組裝具體物件、啟停順序 | 組裝層可以知道具體 Backend，不把此依賴帶入 Core |
 | `client.transport`、`client.sdk` | 連線、版本、請求配對、訂閱、Lease 更新與重連 | Protocol；不依賴 Server 或 Windows Serial |
 | `cli`、未來 `tui`／工具介面 | 參數、顯示、使用者或 Agent 操作 | 只經 SDK 進入 Gateway；不複製協定實作 |
+| `local_launcher` | 本機只讀啟動、就緒檢查與自己子程序的生命週期 | 建立既有 `server.app` 子程序，UART 操作只經 SDK；端點名稱正規化重用純函式，不直接存取 Serial |
 
 ```mermaid
 flowchart TB
@@ -82,6 +83,8 @@ flowchart TB
 ```
 
 圖中箭頭是程式依賴方向，不是資料傳送方向。`server/` 與 `gateway/` 合併為同一責任範圍；Session、Recorder 初期各用模組即可，不拆服務。DTO（資料傳輸物件）轉換放在 Server 邊界。
+
+`run-com3.cmd` 是本機薄入口，由 `cli local` 呼叫 `local_launcher` 管理一個 Gateway 子程序，再以同一 SDK 接收資料；CLI 不把 Server／Core 直接當作 UART 操作介面。它只維護自己建立的子程序，不接管既有 Gateway，也不改 API Contract。就緒、程序鎖、臨時認證與 EOF 關閉的設計理由見 [啟動器審查](local-launcher.md)。
 
 ## 身分與資料模型
 

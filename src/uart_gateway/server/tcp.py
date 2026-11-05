@@ -64,14 +64,16 @@ class Gateway:
         if host != "127.0.0.1":
             raise ValueError("此版本只允許 Loopback 接聽")
         try:
+            # 先保留接聽端點，避免 TCP Port 已占用時仍開啟 Serial。
+            self.listener = await asyncio.start_server(self._accept, host, port,
+                limit=self.limits.max_frame_bytes - 1, start_serving=False, reuse_address=False)
             for channel in self.channels.values():
                 if channel.config.auto_open_rx:
                     try:
                         await channel.start()
                     except DomainError as exc:
                         LOG.warning("通道 %s 開啟失敗：%s", channel.config.id, exc.code)
-            self.listener = await asyncio.start_server(self._accept, host, port,
-                                                       limit=self.limits.max_frame_bytes - 1)
+            await self.listener.start_serving()
         except BaseException:
             await self.close()
             raise

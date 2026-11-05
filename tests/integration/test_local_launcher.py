@@ -1,0 +1,234 @@
+"""真子程序與 POSIX PTY 啟動器測試；不是 Windows／COM3 驗收。"""
+
+import asyncio
+import importlib.util
+import os
+from pathlib import Path
+import secrets
+import signal
+import socket
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from uart_gateway.core.models import ChannelConfig
+from uart_gateway.local_launcher import LauncherError, OwnedGateway, PortLock, launch_local
+from uart_gateway.protocol.codec import binary_decode
+from uart_gateway.serial_backend import AdapterSelector, PySerialBackend
+from uart_gateway.core.models import SerialSettings
+from uart_gateway.server.auth import Principal
+from uart_gateway.server.tcp import Gateway
+from uart_gateway.client import Client
+from tests.fakes import eventually
+
+
+def free_port():
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+@unittest.skipUnless(os.name == "posix" and importlib.util.find_spec("serial") is not None,
+                     "需要 POSIX PTY 與 [server]；Windows 的 CMD／COM3 另行實測")
+class LauncherProcessTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.master, self.slave = os.openpty()
+        os.set_blocking(self.master, False)
+        self.endpoint = os.ttyname(self.slave)
+        self.temporary = tempfile.TemporaryDirectory()
+        self.lock_directory = Path(self.temporary.name) / "locks"
+        self.owned = []
+        self.messages = []
+        original_start = OwnedGateway.start
+
+        def record(owned):
+            self.owned.append(owned)
+            original_start(owned)
+
+        self.record_patch = patch.object(OwnedGateway, "start", record)
+        self.record_patch.start()
+
+    async def asyncTearDown(self):
+        self.record_patch.stop()
+        for owned in self.owned:
+            await asyncio.to_thread(owned.stop)
+        self.temporary.cleanup()
+        os.close(self.master)
+        os.close(self.slave)
+
+    async def launch(self, monitor, **options):
+        return await launch_local(self.endpoint, monitor, gateway_port=options.pop("gateway_port", free_port()),
+            startup_timeout=options.pop("startup_timeout", 5), lock_directory=self.lock_directory,
+            reporter=self.messages.append, **options)
+
+    def assert_reaped(self):
+        self.assertTrue(self.owned)
+        for owned in self.owned:
+            self.assertIsNotNone(owned.process.poll())
+            self.assertEqual(owned.process.returncode, 0)
+            profile = Path(owned.command[owned.command.index("--config") + 1])
+            self.assertFalse(profile.exists())
+        with PortLock(self.endpoint, self.lock_directory):
+            pass
+
+    async def test_real_startup_ready_readonly_rx_and_normal_shutdown(self):
+        async def monitor(client, channel_id):
+            status = await client.get_channel(channel_id)
+            self.assertEqual(status["state"], "ready")
+            self.assertEqual(status["binding"]["status"], "unconfirmed")
+            self.assertIsNone(status["tx"]["owner_session_id"])
+            self.assertEqual(client.auth["grants"], [{"channel_id": channel_id, "permissions": ["read"]}])
+            owned = self.owned[0]
+            profile = Path(owned.command[owned.command.index("--config") + 1])
+            self.assertNotIn(owned.token, profile.read_text(encoding="utf-8"))
+            self.assertNotIn(owned.token, repr(owned.command))
+            sub = await client.subscribe(channel_id)
+            payload = "模擬開機\n".encode("utf-8") + b"\x00\xff"
+            os.write(self.master, payload)
+            data = bytearray()
+            async with asyncio.timeout(2):
+                while len(data) < len(payload):
+                    event = await client.next_event()
+                    if event["event"] == "rx" and event["data"]["subscription_id"] == sub["subscription_id"]:
+                        data.extend(binary_decode(event["data"]["data_b64"]))
+            self.assertEqual(bytes(data), payload)
+            try:
+                self.assertEqual(os.read(self.master, 1024), b"")
+            except BlockingIOError:
+                pass
+            return 0
+
+        self.assertEqual(await self.launch(monitor), 0)
+        self.assert_reaped()
+        self.assertTrue(any("已就緒" in message for message in self.messages))
+
+    async def test_duplicate_launcher_cannot_start_another_child(self):
+        ready = asyncio.Event()
+        release = asyncio.Event()
+
+        async def monitor(*_):
+            ready.set()
+            await release.wait()
+            return 0
+
+        first = asyncio.create_task(self.launch(monitor))
+        try:
+            await asyncio.wait_for(ready.wait(), 5)
+            with self.assertRaisesRegex(LauncherError, "已有本機啟動器"):
+                await self.launch(monitor)
+            self.assertEqual(len(self.owned), 1)
+            self.assertIsNone(self.owned[0].process.poll())
+        finally:
+            release.set()
+            await first
+        self.assert_reaped()
+
+    async def test_restart_after_shutdown_reuses_rpc_and_serial(self):
+        port = free_port()
+
+        async def monitor(*_):
+            return 0
+
+        for _ in range(2):
+            self.assertEqual(await self.launch(monitor, gateway_port=port), 0)
+            self.assert_reaped()
+        self.assertEqual(len(self.owned), 2)
+
+    async def test_cancel_after_ready_gracefully_closes_child(self):
+        ready = asyncio.Event()
+
+        async def monitor(*_):
+            ready.set()
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(self.launch(monitor))
+        await asyncio.wait_for(ready.wait(), 5)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assert_reaped()
+
+    async def test_cancel_while_starting_also_cleans_child(self):
+        async def monitor(*_):
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(self.launch(monitor))
+        await eventually(lambda: bool(self.owned) and self.owned[0].process is not None)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assert_reaped()
+
+    async def test_existing_listener_is_untouched_and_no_child_created(self):
+        server = await asyncio.start_server(lambda r, w: w.close(), "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            with self.assertRaisesRegex(LauncherError, "已被使用"):
+                await self.launch(lambda *_: None, gateway_port=port)
+            self.assertFalse(self.owned)
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            writer.close()
+            await writer.wait_closed()
+            self.assertTrue(server.is_serving())
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    async def test_busy_serial_failure_preserves_original_gateway(self):
+        token = secrets.token_urlsafe(32)
+        original = Gateway([(ChannelConfig("original", "original"),
+            PySerialBackend(AdapterSelector(port=self.endpoint), SerialSettings()))],
+            (Principal("reader", token, {"original": frozenset({"read"})}),))
+        port = await original.start(port=0)
+        try:
+            with self.assertRaisesRegex(LauncherError, "MobaXterm"):
+                await self.launch(lambda *_: None)
+            self.assert_reaped()
+            async with await Client.connect("127.0.0.1", port, token) as client:
+                self.assertEqual((await client.get_channel("original"))["state"], "ready")
+        finally:
+            await original.close()
+
+    async def test_nonexistent_port_fails_without_monitor_and_reaps_child(self):
+        monitored = False
+
+        async def monitor(*_):
+            nonlocal monitored
+            monitored = True
+            return 0
+
+        with self.assertRaisesRegex(LauncherError, "找不到"):
+            await launch_local(str(Path(self.temporary.name) / "missing"), monitor,
+                gateway_port=free_port(), startup_timeout=5, lock_directory=self.lock_directory,
+                reporter=self.messages.append)
+        self.assertFalse(monitored)
+        self.assert_reaped()
+
+    async def test_cli_ctrl_c_stops_owned_gateway_process(self):
+        process = await asyncio.create_subprocess_exec(sys.executable, "-m", "uart_gateway.cli", "local",
+            "--port", self.endpoint, "--gateway-port", str(free_port()), "--read-only", "--watch",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
+        gateway_pid = None
+        output = []
+        try:
+            async with asyncio.timeout(5):
+                while True:
+                    line = (await process.stderr.readline()).decode("utf-8")
+                    self.assertTrue(line, repr(output))
+                    output.append(line)
+                    if "PID " in line:
+                        gateway_pid = int(line.rsplit("PID ", 1)[1])
+                    if "已就緒；" in line:
+                        break
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 5)
+            self.assertEqual(process.returncode, 130, stderr.decode())
+            self.assertIn("已清理本次", stderr.decode())
+            self.assertFalse(stdout)
+            self.assertIsNotNone(gateway_pid)
+            self.assertFalse(Path(f"/proc/{gateway_pid}").exists())
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()

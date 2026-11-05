@@ -1,76 +1,95 @@
-# Win11 COM3 首輪接收驗證
+# Win11 COM3 一鍵只讀接收
 
 ## 目前已知與驗證範圍
 
-使用者已確認 COM3 接著 IPCAM；只有 TX／RX／GND，DTR／RTS 未接，使用 115200／8N1／無流控。2026-11-05 使用者實際執行本版本庫後，回報 Gateway 可啟動且 uart.exe watch 能讀到 IPCAM 開機訊息，因此 Win11 本機 RX 已驗證。此處保留重現流程；Agent 未遠端操作 Win11，實體 TX／插拔與 SSH 路徑仍待驗證。
+使用者已確認 COM3 接著 IPCAM；只有 TX／RX／GND，DTR／RTS 未接，使用 115200／8N1／無流控。2026-11-05 使用者以原手動流程啟動 Gateway，並用 `uart.exe watch` 收到 IPCAM 開機訊息；這是既有 Win11 本機 RX 的實機證據。
 
-本次先在 Win11 本機執行 Gateway 與 CLI，確認 Serial RX；尚不配置 SSH／Podman。COM3 範例只授予 `read` 權限，無法 Confirm、取得 Lease 或 TX，不會補送換行或 IPCAM 指令。DTR／RTS 設為 false；控制線沒有接到板子，但仍不宣稱 Driver 開啟瞬間沒有脈衝。
+新增的一鍵啟動器已在 Linux 以自動化替身、真子程序及 POSIX PTY（虛擬 Serial）測試；後續使用者已回報 Win11 Quickstart、Ctrl+C 後重啟、重複啟動及 MobaXterm 占用交叉測試全部通過。實機證據來自使用者執行回報，並非 Agent 直接操作 Windows。設計選擇與程序生命週期見 [啟動器設計審查](local-launcher.md)。
 
-## 取得程式與安裝
+本次固定只讀：不 Confirm、不取得 TX Lease、不補換行、不發送 IPCAM 指令。DTR／RTS 沿用 false，不新增控制線操作；軟體設定不能證明 Driver 開啟瞬間沒有脈衝。
 
-可使用 origin/work 的完整程式，或先前提供的 `uart-gateway-win11-test.zip` 測試快照。此次交接已將程式與測試納入 Git 保存；若使用 Git 工作目錄，直接進入目錄安裝即可，不需要再解壓。測試包不含 Linux 虛擬環境、Git 資料或真實憑證。
+## 首次安裝或更新
 
-下載到預設 Downloads 後，開啟 PowerShell，在新的測試目錄解壓。若目錄已存在，請換一個新名稱，不要覆蓋其他工作。
+先取得包含根目錄 `run-com3.cmd` 的這次程式。先前的 `uart-gateway-win11-test.zip` 不含新啟動器；本次快照名稱為 `uart-gateway-launcher-test.zip`。若使用 Git 工作目錄，請在包含這次變更的目錄安裝。
+
+使用測試包時，可在 PowerShell 解壓至全新目錄；若目錄已存在，請換名稱，保留原有工作。
 
 ```powershell
-$UartRoot = Join-Path $env:USERPROFILE 'uart-gateway-win11-test'
-$UartArchive = Join-Path $env:USERPROFILE 'Downloads\uart-gateway-win11-test.zip'
+$UartRoot = Join-Path $env:USERPROFILE 'uart-gateway-launcher-test'
+$UartArchive = Join-Path $env:USERPROFILE 'Downloads\uart-gateway-launcher-test.zip'
 Expand-Archive -LiteralPath $UartArchive -DestinationPath $UartRoot
 Set-Location $UartRoot
+```
+
+在專案根目錄執行一次安裝；已有 `.venv` 時可略過建立環境，只重新安裝專案。
+
+```powershell
 py -3 --version
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e '.[server]'
 .\.venv\Scripts\uart-gatewayd.exe --list-ports
 ```
 
-需要 Python 3.12 以上。若 `py -3` 選到舊版本，先以 `py -0p` 查看，再指定已安裝的 3.12 以上版本。此處直接使用虛擬環境的執行檔，不需要變更 PowerShell Execution Policy（執行原則）或執行 Activate.ps1。
+需要 Python 3.12 以上。若 `py -3` 選到舊版，先用 `py -0p` 查看，再指定已安裝的 3.12 以上版本。直接使用虛擬環境的執行檔，不必執行 Activate.ps1 或變更 PowerShell Execution Policy（執行原則）。安裝會取得 setuptools／pySerial；下載失敗時保留錯誤，勿停用 TLS 驗證。
 
-安裝會取得 setuptools／pySerial；若公司網路阻擋套件下載，保留錯誤訊息另行處理，不停用 TLS 驗證。`--list-ports` 只枚舉，不開啟 COM；應可找到 `port` 為 `COM3` 的紀錄。缺少序號不會自動選其他裝置，實際開啟仍固定本次指定的 COM3。
+`--list-ports` 只枚舉，不開啟 COM；核對目前仍為 COM3。啟動器不會擅自改選其他裝置。
 
-## 啟動只讀 Gateway
+## 日常使用：雙擊啟動
 
-保持同一個 PowerShell 視窗，建立本次臨時 Token。啟動的新視窗會繼承環境變數，Token 不放進命令列、設定檔或輸出。
+1. 關閉 MobaXterm 的 COM3 Serial 連線。若舊手動 Gateway 仍在執行，先在它的視窗按 Ctrl+C 正常停止；啟動器不會接管或結束它。
+2. 在檔案總管雙擊專案根目錄的 `run-com3.cmd`。它會開啟獨立 Python 監控視窗。
+3. 等待「COM3 已就緒；只讀 RX 監控中」。這表示 SDK 已完成認證，Channel 為 ready、端點正確、UART 為 115200／8N1／無流控且權限只有 read；不是等待固定秒數就宣稱成功。
+4. IPCAM 有輸出時即可看到 UART Log。先顯示這次 Gateway 仍保留的歷史資料，再接即時 RX；模式會明示。無新資料不代表 Port 開啟失敗，且無法讀回先前被 MobaXterm 接走的內容。
+5. 在監控視窗按 Ctrl+C。啟動器會關閉 SDK，通知本次 Gateway 正常釋放 Serial，等待子程序結束後退出。一般正常關閉後該視窗會結束；需要檢查清理訊息時，使用下方 PowerShell 方式。
 
-```powershell
-$env:UART_GATEWAY_TOKEN = & .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(32))"
-$UartGateway = Start-Process -FilePath (Resolve-Path '.\.venv\Scripts\python.exe').Path -ArgumentList @('-m','uart_gateway.server.app','--serial','--config','examples/gateway.com3.toml') -WorkingDirectory (Get-Location).Path -PassThru
-```
+每次啟動均產生新的臨時 Token，只保留於啟動器記憶體與其 Gateway 子程序環境；不需手動建立 Token，也不寫入原始碼、設定或命令列。臨時 TOML 只有秘密參照，結束時刪除。既有 PowerShell 的 Token 環境變數不會被修改。
 
-等待新視窗顯示 `Gateway 已接聽 127.0.0.1:18081`。這只代表 TCP 已啟動，不保證 COM 已成功開啟；下一步必須看 Channel 狀態。Gateway 初始只有 RX，Binding 為 unconfirmed。
+同一使用者重複啟動同一端點會被程序鎖擋下；占用中的 COM 另由既有 Serial 獨占機制保護。錯誤視窗會提示原因並等待 Enter，讓你讀完後關閉。只會清理本次建立的 Gateway，不以程序名稱或 Port 反查並終止其他程式。
 
-## 在原 PowerShell 視窗查看資料
+## 在既有 PowerShell 啟動
 
-```powershell
-.\.venv\Scripts\uart.exe channels | ConvertFrom-Json | ConvertTo-Json -Depth 8
-.\.venv\Scripts\uart.exe watch ch_uart_1 --duration 30 --replay --text
-```
-
-成功條件：
-
-- Channel 為 `ch_uart_1`、`state` 為 `ready`、`adapter.port` 為 `COM3`，UART 設定為 115200／8N1／無流控。
-- `binding.status` 為 `unconfirmed` 是預期行為，接收不需要 Confirm。
-- IPCAM 產生新資料時，watch 顯示文字。若 IPCAM 已開機且目前安靜，30 秒沒有新 Log 不能單獨判定故障；Gateway 不能取回 MobaXterm 先前已讀取的資料。
-- `--replay` 先顯示此 Epoch 最早仍保留的資料，再接即時接收；stderr 會標示模式。這不保證從開機起完整保存，也不能回復 Ring 已淘汰的紀錄。
-- `--text` 使用增量 UTF-8 顯示，無效 bytes 與控制字元跳脫；CR 會顯示成 `\r`，LF／TAB 保留。拿掉 `--text` 可保存完整 JSON Lines／Base64，兩者沒有改動原始 RX bytes。
-
-若需保留這次接收紀錄，可另執行下列命令；這是 CLI 事件輸出，不是尚待完成的 Gateway 常駐 Recorder。
+這個方式方便保留 Ctrl+C 後的輸出；與雙擊使用同一套 Python 啟動器。
 
 ```powershell
-.\.venv\Scripts\uart.exe watch ch_uart_1 --duration 30 | Out-File -Encoding utf8 -FilePath uart-com3-rx.local.jsonl
+.\.venv\Scripts\uart.exe local --port COM3 --read-only --watch
 ```
 
-不要重開 MobaXterm 同時操作 COM3。測試完成後，在 Gateway 新視窗按 Ctrl+C 正常關閉。原 PowerShell 關閉後，這次 Token 不再保留；若更換視窗，需明確提供相同 Token 才能連線。
+可改指定 COM Port；此版本固定只讀並持續監控，`--read-only`／`--watch` 用來明示操作意圖。預設 Gateway 只綁定 `127.0.0.1:18081`。若其他端點的 Gateway 使用 18081，可為這次指定另一個 TCP Port；這不允許兩個 Gateway 同時開啟 COM3。
 
-## 失敗如何解讀
+```powershell
+.\.venv\Scripts\uart.exe local --port COM3 --read-only --watch --gateway-port 18082
+```
 
-| 現象 | 最小檢查與處理 |
+`--startup-timeout 20` 控制就緒等待秒數，`--duration 30` 可在監控 30 秒後正常清理。從 PowerShell 手動執行不需 `--pause-on-error`；這是雙擊入口保留錯誤視窗的選項。
+
+文字顯示使用增量 UTF-8，無效 bytes 與控制字元跳脫；CR 顯示成 `\r`，LF／TAB 保留，避免將 UART 的終端控制序列當作畫面命令。這不改動原始 RX bytes。此模式沒有持續磁碟錄製或零遺失保證。
+
+## 失敗如何處理
+
+| 提示或現象 | 處理方式 |
 | --- | --- |
-| `PORT_BUSY` | 確認其他 Serial Terminal 已退出；Windows 的占用與部分權限失敗可能都回同一類錯誤，不能單靠代碼判定哪個程序占用 |
-| `DEVICE_MISSING` | 重跑只枚舉的 `--list-ports`，核對 COM 是否改名、USB 是否仍連接 |
-| `SERIAL_IO_FAILED` | 保留 Channel 的 last_error 及 Gateway 訊息，核對 Driver／設定；不自動重送命令 |
-| `AUTH_FAILED` | 確認 CLI 仍在啟動 Gateway 的原 PowerShell，沒有重新產生不同 Token |
-| TCP 無法連線 | 檢查 Gateway 新視窗與 18081 是否已被占用；不改成對外綁定 |
-| `ready` 但看不到新資料 | 確認 IPCAM 是否正在輸出；無新 bytes 不等於 Port 開啟失敗 |
-| 拔除後 Channel 為 lost | 這是預期保護；不自動換接同名 COM。首輪只讀設定可正常停止 Gateway，核對端點後重新啟動 |
+| 找不到專案虛擬環境／套件 | 在此目錄完成首次安裝；雙擊入口不會自動下載套件 |
+| 此端點已有本機啟動器執行中 | 使用原監控視窗，或在原視窗按 Ctrl+C 後重試；不刪鎖檔搶占 |
+| 127.0.0.1:18081 已被使用 | 原 Gateway 不會被接管；自行正常停止它，或為不同 COM 指定 `--gateway-port` |
+| COM3 無法獨占開啟／`PORT_BUSY` | 關閉 MobaXterm 或其他 Serial 連線後重試；部分 Windows 權限失敗也可能歸為此類，不代表能識別占用程序 |
+| 找不到 COM3／`DEVICE_MISSING` | 用 `--list-ports` 核對 USB-UART 與 COM 名稱，再用 CLI 指定正確端點 |
+| Gateway 提早結束 | 查看上方 Gateway 訊息，確認 `[server]` 已安裝與 Python 版本；不會進入假的就緒狀態 |
+| 就緒逾時／`SERIAL_IO_FAILED` | 保留上方不含 Token 的訊息，檢查裝置、Driver 與 UART 設定；失敗時會清理本次子程序 |
+| 顯示已就緒但沒有新 Log | 確認 IPCAM 是否正在輸出；Ready 只證明接收端點可用 |
+| 拔除後 Channel lost／訂閱結束 | 停止後核對端點再啟動；本次不自動改選或重連同名 COM |
 
-使用者已回報本機 watch 接收成功，進度記為 Verified（使用者執行並回報）。後續若需診斷，可補充 list-ports、channels 與相關 Log，但勿附上 Token。下一步是 Linux／SSH Tunnel 整合，本機 RX 成功不代表遠端路徑或實體 TX 已驗證。
+## 保留原手動模式與遠端界線
+
+原 `uart-gatewayd --serial --config examples/gateway.com3.toml` 與 `uart watch` 仍可使用；手動 Gateway／Client 必須從受保護來源提供同一個 Token。範例只授予 read，Binding 為 unconfirmed 不妨礙 RX。`watch --duration 30 --replay --text` 可沿用文字監控；拿掉 `--text` 則輸出保留 bytes 的 JSON／Base64。
+
+本機啟動器自行管理臨時認證，不提供另一個視窗或遠端 Client 取用該 Token 的功能。需要本機／遠端共用 Gateway 時，仍採原有明確憑證及 SDK／CLI 連線模式；SSH Tunnel 整合、互動選 COM、多 Channel 啟動與 Windows TUI 留待後續。現有載入器上限仍為 4 個 Channel，未宣稱已支援 5～6 個 UART。
+
+## Win11 實機驗收清單
+
+- 完成安裝後雙擊，核對 COM3 就緒與 IPCAM 真實 RX；若需確認重播／即時，記錄當時 IPCAM 是否有輸出。
+- 保持第一個視窗，再雙擊一次；第二次應提示已有啟動器，第一個仍可接收。
+- 在第一個視窗按 Ctrl+C，再啟動一次；應可重新開啟 COM3。之後關閉啟動器，以 MobaXterm 確認 COM 已釋放。
+- 讓 MobaXterm 占用 COM3 再雙擊；應顯示占用提示並清理失敗的子程序，MobaXterm 不受影響。
+- 保持原手動 Gateway，再雙擊；應提示 18081 被使用，原服務仍正常。
+
+回報 Windows／Python／Driver 版本及成功或失敗步驟，不附 Token。使用者已確認 Quickstart 與上述關閉重啟、重複啟動、MobaXterm 占用三項測試全部通過；這些範圍記為 Verified（使用者執行並回報）。既有手動 Gateway 同時存在的測試未另回報。

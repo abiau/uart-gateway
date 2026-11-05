@@ -13,7 +13,9 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 - 主協定採 TCP、JSON Lines 與 Base64，保留任意 UART bytes。
 - 不直接對公司網路暴露 Gateway；SSH Tunnel 之外仍有應用層認證與授權。
 
-目前已提供 **Fake Serial、pySerial Backend、Gateway、SDK 與 CLI**。Linux 虛擬端點已驗證真 pySerial；使用者亦已在 Win11 啟動 Gateway，透過 watch 讀到 IPCAM 開機訊息。[Win11 COM3 接收步驟](docs/windows-quickstart.md) 使用只讀設定，不發送 UART 命令。
+目前已提供 **Fake Serial、pySerial Backend、Gateway、SDK、CLI 與本機一鍵啟動器**。安裝後可雙擊根目錄的 `run-com3.cmd`，自動等待 COM3 就緒並監控 RX；Ctrl+C 只清理本次 Gateway。也可執行 `uart local --port COM3 --read-only --watch`，不需手動提供 Token。[Win11 COM3 接收步驟](docs/windows-quickstart.md) 包含安裝、錯誤排除與實機驗收清單。
+
+Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win11 手動 watch 已讀到 IPCAM 開機訊息。使用者亦已回報新 Quickstart、關閉後重啟、重複啟動及 MobaXterm 占用交叉測試通過。
 
 ## 部署簡介
 
@@ -23,7 +25,7 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 ## 目前階段
 
-Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。Win11 成果由使用者實際執行並回報；下一步是 Linux Container／SSH Tunnel 整合。實體 TX、插拔、長時間穩定性與完整 Phase 1 驗收尚未完成。
+Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。依新增需求完成本機只讀啟動器與模擬測試，使用者已確認 Win11 啟動器實機測試通過，下一步進行 Linux Container／SSH Tunnel 整合。實體 TX、插拔、長時間穩定性與完整 Phase 1 驗收尚未完成。
 
 七份 ADR（架構決策紀錄）均為 `Accepted`（已正式接受）。數值預設、具體協定契約及建議操作政策已接受為初始基線；尚未取得的現場資訊不視為已驗證。最新證據與待回答事項以 [目前狀態](docs/status.md) 為準。
 
@@ -36,6 +38,8 @@ Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 
 | [部署規格](docs/deployment.md) | Windows、SSH、d3s1、Podman 與證據邊界 |
 | [設定規格](docs/configuration.md) | 設定參數、候選預設、合法範圍及安全性 |
 | [開發規範](docs/development.md) | 未來 Python 結構、開發與測試方式 |
+| [啟動器設計審查](docs/local-launcher.md) | CMD／PowerShell／Python 比較、就緒判定與子程序清理 |
+| [Win11 一鍵接收](docs/windows-quickstart.md) | 安裝、雙擊、CLI、疑難排解與實機驗收 |
 | [開發路線圖](docs/roadmap.md) | Phase 0–4 範圍、前置條件與驗收 |
 | [目前狀態及核准清單](docs/status.md) | 實際進度、差異、文件檢查與待決事項 |
 | [協定 V1](docs/protocol/v1.md) | 唯一線上格式規範草案，含完整欄位與範例 |
@@ -92,6 +96,6 @@ python -m unittest discover -s tests -v
 
 第一批 Linux／Python 3.12 執行 41 項測試全數通過，包含真 TCP 與模擬裝置；已安裝的兩個命令入口亦完成端到端操作。測試需要建立 `127.0.0.1` 暫時 Socket；禁止 Socket 的沙箱需取得對應執行權限，不能將略過整合測試當成通過。
 
-本次最新驗證為 Linux／Python 3.12／pySerial 3.5，58 項測試全部通過，包含 3 項真 pySerial PTY 整合。另以安裝後的 CLI 驗證實體 Serial 模式、只讀拒絕 TX 與文字接收；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
+本次最新驗證為 Linux／Python 3.12／pySerial 3.5，77 項測試全部通過，包含既有 3 項真 pySerial PTY 整合及新增 9 項啟動器程序／PTY 整合。覆蓋就緒、RX、失敗、重複啟動、既有服務保護、Ctrl+C 清理與關閉後立即重啟；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
 
 目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟及生命週期等待期限；其他尚未支援欄位明確拒絕。持續錄製／稽核、完整設定、Win11 USB 行為與 SSH／Podman 尚未驗證。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。

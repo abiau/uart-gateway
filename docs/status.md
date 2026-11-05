@@ -8,16 +8,17 @@
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
-| 本機 Repository（版本庫） | 已建立 | 分支 `work`；Phase 0 提交 `33eedba`；Phase 1 程式、測試與文件納入本次交接提交，版本以 Git 紀錄為準 |
+| 本機 Repository（版本庫） | 已建立 | 分支 `work`；Phase 0 提交 `33eedba`、Phase 1 提交 `496ab13`；本次啟動器變更依使用者授權提交並推送，版本以 Git 紀錄為準 |
 | 初步架構審查 | 已完成審查 | 依使用者需求分析，當時無現有程式可審閱 |
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12／pySerial 3.5：58 項通過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：77 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
+| 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Planned／待現場資訊 | 尚未以本版本庫驗證 Container 經 Tunnel 接收 UART |
-| Commit／Push（提交／推送） | 本次交接保存 | 使用者已授權將 Phase 1 程式、測試與文件提交並推送 origin/work；實際版本以 Git 紀錄及本次回報為準 |
+| Commit／Push（提交／推送） | 前次交接已保存 | `496ab13` 已保存前次 Phase 1 交接；本次啟動器依使用者明確授權 commit／push |
 
 狀態語意：`Planned` 為預計開發；`In Progress` 為正在進行；`Implemented` 為已有實作；`Tested` 為已執行具體測試並有結果；`Verified` 為在聲稱的真實條件下實際驗證。不可因 Implemented 就改成 Tested，也不能以模擬測試把 Windows 硬體標為 Verified。文件可標示「已建立／已檢查」，但不讓這些詞代表產品已實作。
 
@@ -172,7 +173,7 @@ Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限
 
 下一步保持現有 Gateway 執行，確認目前 Windows 到 d3s1 的 SSH 連線與 Forward 命令，再將 Container SDK／CLI 接到同一個只讀 Channel。Gateway 仍僅綁定 127.0.0.1:18081，不因遠端整合改成公開 Listener。Q-13／Q-14 的網路資訊仍待提供；本次未修改 SSH／Podman 或發送 UART 指令。
 
-## 暫停與下次接續（2026-11-05）
+## 暫停與下次接續（2026-11-05，歷史紀錄）
 
 使用者要求中斷進度，明日再繼續，並明確授權 commit 與 push。本次保存 Phase 1 第一、二批程式、58 項已通過的測試、範例與文件；不繼續實作或修改部署。Win11 COM3 本機 RX 已由使用者實際執行確認。
 
@@ -184,3 +185,26 @@ Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限
 4. 若 Gateway 在休息期間已關閉，依 Win11 接收步驟正常重啟，並讓 Client 使用與新 Gateway 相同的認證資料；不得假設舊程序、Token、Session 或 Epoch 仍存在。
 
 尚未完成：實體 TX／插拔、遠端 Tunnel、常駐錄製／稽核及完整 Phase 1 驗收。本次不重跑未變更程式的測試；沿用最近一次 58 項通過與 Win11 使用者回報，另檢查提交範圍、文件連結及空白格式。
+
+## Windows 一鍵啟動器（2026-11-05）
+
+使用者新增任務，明確要求先完成設計審查，再實作一鍵啟動、模擬測試與更新 Quickstart；因此從前述暫停狀態恢復此範圍工作。比較 CMD、PowerShell 與 Python 後，採薄 CMD 入口加 Python 程序管理，理由與界線見 [設計審查](local-launcher.md)。沒有修改 V1 API Contract（介面契約）。
+
+### 已實作
+
+- `run-com3.cmd`：使用專案 `.venv`，開啟獨立 Python 監控視窗，失敗時保留繁體中文原因。
+- `uart local --port COM3 --read-only --watch`：固定 115200／8N1／無流控與既有 DTR／RTS false；重用 Gateway、設定載入器、SDK 與 watch 文字顯示，不呼叫 Confirm、Lease 或 TX。
+- 每次產生高熵臨時 Token，僅在記憶體及本次子程序環境使用；臨時 TOML 只有秘密參照，命令列不帶 Token，父程序環境不被修改。
+- 每端點程序鎖、既有 Listener 檢查、SDK 認證及 Channel 就緒查詢；占用／缺少端點／逾時／提早退出均失敗，不以固定 Sleep 當作成功。
+- Gateway 先保留 TCP Socket 再開啟 Serial。以本次專屬 stdin 管道 EOF 通知子程序正常關閉；逾時才停止自己持有的子程序，不掃描或終止其他 Gateway。
+
+### 自動化證據與限制
+
+- `.venv/bin/python -m unittest discover -s tests -v`：Linux／Python 3.12.14／pySerial 3.5，77 項通過、無略過。
+- 新增 19 項測試：9 項啟動器單元、9 項真子程序／PTY 整合及 1 項錯誤視窗停留測試；另強化既有測試，確認 TCP Port 已占用時不開啟 Serial。
+- 覆蓋跨程序同端點鎖、臨時認證不進檔案／參數、未就緒重試、只讀權限與 UART 設定核對、二進位 RX、占用與缺少端點、重複啟動、取消／Ctrl+C、正常回收、失敗回收及立即重啟。占用測試確認原 Gateway 仍 ready。
+- Windows 的 CMD 雙擊、`msvcrt` 實際鎖定、主控台 Ctrl+C、MobaXterm 占用與實體 COM3 均未由 Agent 執行。先前手動 Win11 RX 成功不代表新啟動器已實機驗證。
+
+### 下一步
+
+使用者已回報 [Windows Quickstart](windows-quickstart.md) 可用，並明確確認 Ctrl+C 後重新啟動、重複啟動保護及 MobaXterm 占用交叉測試三項全部通過。上述範圍更新為 Verified（使用者執行並回報），不是 Agent 直接操作 Windows，也不代表長時間零遺失或控制線量測完成。下一步接 Linux／SSH Tunnel；5～6 UART、多 Channel 啟動、互動選 Port、TUI、常駐錄製與實體 TX 均不在此次範圍。使用者已明確授權將此批程式、測試與實機結果文件 commit／push 至 origin/work。此次僅更新驗證紀錄，沿用前次 77 項全數通過的自動化結果，不重跑未變更的程式。

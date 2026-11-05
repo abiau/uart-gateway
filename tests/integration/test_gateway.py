@@ -170,11 +170,13 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         writer.close()
         await writer.wait_closed()
 
-    async def test_bind_failure_closes_previously_started_channels(self):
-        second = Gateway([(ChannelConfig("other", "other"), FakeSerial())],
+    async def test_bind_failure_does_not_open_serial_and_closes_channels(self):
+        backend = FakeSerial()
+        second = Gateway([(ChannelConfig("other", "other"), backend)],
             (Principal("operator", self.token, {"other": frozenset({"read"})}),))
-        with self.assertRaises(OSError):
+        with patch.object(backend, "open", wraps=backend.open) as opened, self.assertRaises(OSError):
             await second.start(port=self.port)
+        opened.assert_not_called()
         self.assertEqual(second.channels["other"].state, "closed")
         self.assertFalse(second.channels["other"].running)
 

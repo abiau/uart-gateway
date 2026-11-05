@@ -6,6 +6,8 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import sys
+import threading
 import tomllib
 
 from uart_gateway.core.models import ChannelConfig, DomainError, SerialSettings
@@ -92,13 +94,28 @@ def load(path: Path, *, fake: bool = True) -> tuple[Gateway, str, int]:
     return Gateway(channels, tuple(principals), lifecycle_timeout=lifecycle_ms / 1000), host, port
 
 
-async def run(path: Path, *, fake: bool = True) -> None:
+async def run(path: Path, *, fake: bool = True, shutdown_on_stdin_eof: bool = False) -> None:
     gateway, host, port = load(path, fake=fake)
     try:
         await gateway.start(host, port)
         mode = "模擬（Fake Serial，未開啟 COM）" if fake else "實體 Serial（尚未 Confirm，不允許 TX）"
         print(f"Gateway 已接聽 {host}:{port}；模式：{mode}。", flush=True)
-        await asyncio.Event().wait()
+        shutdown = asyncio.Event()
+        if shutdown_on_stdin_eof:
+            loop = asyncio.get_running_loop()
+
+            def watch_parent() -> None:
+                try:
+                    while sys.stdin.buffer.read(1):
+                        pass
+                finally:
+                    try:
+                        loop.call_soon_threadsafe(shutdown.set)
+                    except RuntimeError:
+                        pass
+
+            threading.Thread(target=watch_parent, daemon=True).start()
+        await shutdown.wait()
     finally:
         await gateway.close()
 
@@ -110,6 +127,7 @@ def main() -> None:
     modes.add_argument("--serial", action="store_true", help="選擇實體 Serial")
     modes.add_argument("--list-ports", action="store_true", help="只枚舉裝置，不開啟 COM")
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--shutdown-on-stdin-eof", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
         if args.list_ports:
@@ -117,7 +135,7 @@ def main() -> None:
             return
         if args.config is None:
             parser.error("啟動 Gateway 需要 --config")
-        asyncio.run(run(args.config, fake=args.fake))
+        asyncio.run(run(args.config, fake=args.fake, shutdown_on_stdin_eof=args.shutdown_on_stdin_eof))
     except KeyboardInterrupt:
         pass
     except (OSError, ValueError, ProtocolError, DomainError) as exc:
