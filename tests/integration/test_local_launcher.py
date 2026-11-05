@@ -329,7 +329,11 @@ class InteractiveRecoveryTests(unittest.TestCase):
                 self.assertFalse(config.exists())
                 with PortLock(first_port):
                     pass
-            self.assertLessEqual(choices, 2)
+                # 模擬殘留或誤按的 Enter：只能重新整理，不能離開或建立第二個 Gateway。
+                return ""
+            if choices == 3:
+                self.assertEqual(len(owned), 1)
+            self.assertLessEqual(choices, 3)
             return "1"
 
         async def monitor(client, channel_id, **options):
@@ -374,7 +378,7 @@ class InteractiveRecoveryTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as result:
                     main()
             self.assertEqual(result.exception.code, 0)
-            self.assertEqual(choices, 2)
+            self.assertEqual(choices, 3)
             self.assertEqual(len(owned), 2)
             self.assertNotEqual(instances[0], instances[1])
             self.assertNotEqual(epochs[0], epochs[1])

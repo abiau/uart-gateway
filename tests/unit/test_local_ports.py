@@ -61,6 +61,22 @@ class PortMenuTests(unittest.TestCase):
         self.assertEqual(selected.port, "COM8")
         self.assertTrue(any("未找到" in line for line in self.messages))
 
+    def test_recovery_enter_refreshes_then_requires_explicit_selection(self):
+        self.inventory.side_effect = [[device("COM5")], [device("COM3")], [device("COM3")]]
+        read = Mock(side_effect=["", "1"])
+        selected = choose_port(read=read, report=self.messages.append, recovering=True)
+        self.assertEqual(selected.port, "COM3")
+        self.assertEqual(read.call_count, 2)
+        self.assertTrue(any("Enter 重新整理" in line for line in self.messages))
+
+    def test_recovery_enter_does_not_cancel_but_q_or_eof_can_exit(self):
+        for answers in (["", "Q"], [EOFError()]):
+            with self.subTest(answers=repr(answers)):
+                read = Mock(side_effect=answers)
+                self.assertIsNone(choose_port(read=read, report=self.messages.append, recovering=True))
+                self.assertEqual(read.call_count, len(answers))
+        self.assertTrue(any("輸入來源已結束（EOF）" in line for line in self.messages))
+
     def test_disappearing_device_does_not_reuse_its_index(self):
         self.inventory.side_effect = [[device()], [device("COM8")]]
         self.assertIsNone(self.choose(["1", "q"]))
@@ -179,8 +195,17 @@ class LocalPortCliTests(unittest.TestCase):
                 patch("sys.stderr", new_callable=io.StringIO) as output:
             self.assertEqual(self.invoke(["local", "--select"]), 0)
         self.assertEqual(choose.call_count, 2)
+        self.assertEqual([call.kwargs["recovering"] for call in choose.call_args_list], [False, True])
         self.assertEqual([call.args[0] for call in launch.call_args_list], ["COM3", "COM8"])
         self.assertIn("前次記憶體歷史不保留", output.getvalue())
+
+    def test_eof_exit_has_a_distinct_message_instead_of_user_cancel(self):
+        with patch("uart_gateway.local_ports.list_adapter_details", return_value=[device()]), \
+                patch("sys.stdin.isatty", return_value=True), patch("builtins.input", side_effect=EOFError()), \
+                patch("sys.stderr", new_callable=io.StringIO) as output:
+            self.assertEqual(self.invoke(["local", "--select"]), 0)
+        self.assertIn("輸入來源已結束（EOF）", output.getvalue())
+        self.assertNotIn("已取消", output.getvalue())
 
     def test_launch_or_connection_failure_returns_to_choice_until_cancelled(self):
         for error in (LauncherError("端點被占用"), ConnectionError("連線已中斷")):

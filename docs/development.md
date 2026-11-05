@@ -164,3 +164,6 @@ SDK 每次排入事件後讓出執行機會，避免已緩衝的歷史重播長�
 `_run_selected` 在同步選單與每次 `asyncio.run` 之間協調，不能在事件迴圈裡呼叫 input 或留下等待 input 的執行緒。監控結束碼 2 或已知啟動／連線錯誤，必須等 `launch_local` 清理完成後才重新選擇；取消、正常期限、參數錯誤或 `LauncherCleanupError` 均離開流程。未知程式錯誤不當作可重試的裝置故障。固定端點與遠端 watch 的既有退出碼保留。
 
 單元測試覆蓋新的明確選擇、改選端點、開啟／連線失敗、取消、參數預檢與清理失敗防護。`InteractiveRecoveryTests` 使用真 Gateway 子程序、pySerial／PTY 與 SDK，在收到第一筆資料後關閉 PTY master 模擬拔除；第二次選擇前檢查舊程序已結束、臨時設定已移除、鎖可取得，再選另一個端點驗證 RX 與新的 Token／Instance／Epoch。這不代表 Win11 插拔恢復或 30 分鐘接收已驗證。
+
+
+恢復選單以 `recovering=True` 區分輸入語意：初次 Enter 取消，恢復期間 Enter 只刷新；Q／Ctrl+C 離開，EOF 明確提示後結束，不重讀 EOF。回歸測試覆蓋恢復選單的空白 Enter、新清單明確選擇與 EOF 訊息；真程序／PTY 恢復測試在舊 Gateway 結束後先輸入空白，確認沒有退出或建立第二個 Gateway，再以編號選新端點並接收。

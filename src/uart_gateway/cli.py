@@ -286,10 +286,11 @@ def _run_selected(args: argparse.Namespace) -> int:
         raise ValueError("終端顯示需要互動式終端機；請移除 --terminal 再選擇裝置。")
     validate_local_settings(args.gateway_port if args.gateway_port is not None else args.port,
                             args.startup_timeout)
+    recovering = False
     while True:
-        args.selected_adapter = choose_port()
+        args.selected_adapter = choose_port(recovering=recovering)
         if args.selected_adapter is None:
-            print("已取消，未啟動新的 Gateway。", file=sys.stderr, flush=True)
+            print("已離開選單，未啟動新的 Gateway。", file=sys.stderr, flush=True)
             return 0
         args.serial_port = args.selected_adapter.port
         try:
@@ -301,6 +302,7 @@ def _run_selected(args: argparse.Namespace) -> int:
         else:
             if result != 2:
                 return result
+        recovering = True
         print("本次流程已結束，已返回裝置選單；請重新選擇端點或取消離開。\n"
               "重新啟動會建立新的資料流，前次記憶體歷史不保留。", file=sys.stderr, flush=True)
 

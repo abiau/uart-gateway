@@ -13,7 +13,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：141 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：144 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -347,3 +347,14 @@ USB 拔除後停止監控符合目前 Channel 遺失時終止訂閱、不自動�
 驗證：Linux／Python 3.12.14／pySerial 3.5 完整 141 項通過、無略過，未出現 RuntimeWarning。新增 6 項選單恢復／退出測試、1 項中文裝置遺失提示、1 項清理失敗分類及 1 項真程序／PTY 完整恢復測試。後者實際收到第一個虛擬端點資料，模擬拔除，第二次選擇前確認舊子程序結束、臨時檔刪除與鎖釋放，再選另一端點接收；Token、Instance 與 Epoch 皆不同，兩次皆只授權 read。原非同步啟動器測試亦完整執行。
 
 本輪狀態為 Implemented／自動化 Tested；Win11 實體插拔後回選單與重新接收仍待使用者測試。先前居家接收、終端顏色及 IPCAM 重新上電的成功紀錄保留，30 分鐘接收繼續待測。操作見 Windows Quickstart。依使用者既有 Git 交付方式保存至 origin/work，實際版本以 Git 紀錄為準。
+
+
+## 恢復選單空白 Enter 與 EOF 區分（2026-11-05，Asia/Taipei）
+
+使用者提供 Win11 實機輸出：COM3 Ready 後收到 `subscription_state` 的 `device_lost`，出現中文遺失提示、本次 Gateway 清理及返回選單的訊息；COM3 已不在新清單。之後顯示空白輸入與「已取消」，程式退出。這份紀錄可確認已返回選單，不能單憑舊版統一取消訊息分辨空白 Enter 或 EOF，也不據此宣稱 USB 重新插入後接收已通過。
+
+本輪改善輸入語意：初次選單仍允許 Enter 取消；裝置／連線錯誤後的恢復選單 Enter 改為重新整理，不退出、不自動選端點。Q／Ctrl+C 可離開；若實際是 EOF，明確顯示輸入來源已結束後退出，避免默默當成使用者取消或無限重試輸入。
+
+驗證：Linux／Python 3.12.14／pySerial 3.5 完整 144 項通過、無略過、無 RuntimeWarning。新增 3 項空白輸入、明確選擇及 EOF 訊息測試，並將真 Gateway／PTY 完整恢復測試加入「返回選單先輸入空白，再輸入編號」；空白時原 Gateway 已結束且沒有第二個 Gateway，明確選擇後才建立新資料流。SDK、Core、Serial Backend 與 Wire Contract 不變。
+
+此修正仍待 Win11 重測。若退出時出現 EOF 新提示，需再確認該終端的輸入狀態；沒有假定已證明原本空白輸入的來源。沿用使用者指定的 Git 交付方式保存至 origin/work，實際版本以 Git 紀錄為準。

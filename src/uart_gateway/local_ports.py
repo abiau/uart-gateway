@@ -40,7 +40,8 @@ def list_ports() -> list[str]:
 
 
 def choose_port(*, read: Callable[[], str] | None = None,
-                report: Callable[[str], None] | None = None) -> AdapterSelector | None:
+                report: Callable[[str], None] | None = None,
+                recovering: bool = False) -> AdapterSelector | None:
     """在事件迴圈與 Gateway 啟動之前執行；取消不留下 input 執行緒。"""
     if not sys.stdin.isatty():
         raise ValueError("互動選擇需要終端機輸入；請使用 uart ports 查看，並以 --port 明確指定端點。")
@@ -53,14 +54,16 @@ def choose_port(*, read: Callable[[], str] | None = None,
             for line in port_lines(entries):
                 report(line)
             redraw = False
-        report("輸入裝置編號；R 重新整理；Q 或直接 Enter 取消：")
+        report("輸入裝置編號；R 或 Enter 重新整理；Q 或 Ctrl+C 離開：" if recovering else
+               "輸入裝置編號；R 重新整理；Q 或直接 Enter 取消：")
         try:
             answer = read().strip()
         except EOFError:
+            report("輸入來源已結束（EOF），無法繼續等待選擇；請在互動式終端重新執行。")
             return None
-        if not answer or answer.casefold() == "q":
+        if answer.casefold() == "q" or (not answer and not recovering):
             return None
-        if answer.casefold() == "r":
+        if answer.casefold() == "r" or (not answer and recovering):
             entries, redraw = _inventory(), True
             continue
         if not (answer.isascii() and answer.isdigit() and len(answer) <= 6
