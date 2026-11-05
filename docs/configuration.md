@@ -8,7 +8,7 @@
 
 ## 目前實際支援範圍
 
-啟動必須明確選擇 `--fake` 或 `--serial`，只枚舉使用 `--list-ports`，不開啟 COM。共通欄位為 `network.bind_host/port`、`gateway.lifecycle_timeout_ms`、`channels[].id/label/target_note/auto_open_rx/auto_reconnect` 與 Principal 設定；`auto_reconnect` 目前僅接受 false。實體模式另接受完整 `channels[].adapter` 與 `channels[].serial` 欄位；模擬模式不接受這兩組設定，避免誤認已開啟真裝置。其餘未支援欄位明確拒絕，容量與期限採基線預設。
+啟動必須明確選擇 `--fake` 或 `--serial`，只枚舉使用 `--list-ports`，不開啟 COM。共通欄位為 `network.bind_host/port`、`gateway.lifecycle_timeout_ms`、`channels[].id/label/target_note/auto_open_rx/auto_reconnect`、Principal 與下述錄製設定；`auto_reconnect` 目前僅接受 false。實體模式另接受完整 `channels[].adapter` 與 `channels[].serial` 欄位；模擬模式不接受這兩組設定，避免誤認已開啟真裝置。其餘未支援欄位明確拒絕，容量與期限採基線預設。
 
 Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開啟端點；不用 flush 等待或額外傳送 bytes。每次開啟重新以全部 Selector 條件匹配，模糊或不符時拒絕；只有明確 Port 且沒有其他條件時，允許枚舉缺少 Metadata 的端點。COM 名稱不是永久身分。Windows 使用 pySerial 的原生獨占開啟，POSIX 使用 exclusive，程序內另以端點預留防止不同 Channel 重複開啟。
 
@@ -137,6 +137,24 @@ Payload（負載）上限以下皆指解碼後原始 bytes。數值均為候選�
 Server 不接受 Client 任意指定 Lease TTL；以握手公布值為準。SDK 的慢速接收佇列也需有界，候選沿用 Subscription Queue 上限並回報本地缺口，不默默刪除資料。
 
 ## Recording 與 Audit
+
+### 本輪已實作的 RX 錄製參數
+
+預設關閉；手動 Gateway 的 TOML 加上 `[recording]` 可啟用，Fake／Serial 模式共用。`uart local --record-dir 路徑` 將路徑轉為絕對路徑，再產生這組既有伺服器設定；不將錄製目錄持久寫入本機端點 Profile。遠端 Client 不可透過 API 啟停錄製，檔案保存在 Gateway 所在電腦。
+
+| 欄位 | 預設／限制 |
+| --- | --- |
+| `recording.enabled` | false，必須是布林值；停用時拒絕其餘錄製欄位，避免誤認啟用 |
+| `recording.directory` | 啟用時必填，絕對路徑字串；每次每通道建立新 Capture，不覆寫 |
+| `recording.queue_bytes` | 1048576；65536～16777216；另固定 1024 項上限，包括正在寫入的資料 |
+| `recording.segment_bytes` | 67108864；65536～67108864；包含 Header／Footer |
+| `recording.max_capture_bytes` | 1073741824；分段上限～1073741824；本次單通道 Capture 的所有分段實際 bytes 合計上限 |
+
+容量或磁碟失敗停止該錄製並使用既有 `RECORDING_IO_FAILED` 原因，佇列滿使用 `RECORDING_OVERFLOW`；詳細中文原因放 Gateway 診斷。原 RX 及其他通道繼續。Launcher 明確要求錄製卻啟動失敗時會顯示錯誤並清理本次程序，避免誤以為已保存。Runtime 失敗由 CLI 顯示健康事件，不自動重試或清除檔案。
+
+實際格式及完整性以 [錄製規格](recording.md) 為準。本輪不提供年齡淘汰或跨 Capture 的磁碟總量管理，**不接受**下表候選的 `retention_days/max_bytes_per_channel/include_tx_payload`；未知欄位仍拒絕。
+
+### 尚未全部實作的保留與稽核基線
 
 Recording（UART 錄製）與 Audit（操作稽核）分開。Recorder 失敗不阻塞 RX，但使 Capture 不完整。
 

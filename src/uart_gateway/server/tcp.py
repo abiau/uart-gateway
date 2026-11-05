@@ -8,13 +8,14 @@ import time
 from uart_gateway.core.channel import Channel, TxStore
 from uart_gateway.core.models import ChannelConfig, Context, DomainError, Event, new_id, utc_now
 from uart_gateway.core.ports import SerialPort
-from uart_gateway.protocol.codec import binary_decode, read_frame
+from uart_gateway.protocol.codec import binary_decode, binary_encode, read_frame
 from uart_gateway.protocol.errors import ProtocolError
 from uart_gateway.protocol.messages import request, uint, validate_params
 from .auth import Principal, authenticate
 from .config import Limits
 from .session import Session
 from .views import event_message, snapshot, tx_result, unavailable
+from .recording import Recorder, RecordingConfig
 
 LOG = logging.getLogger(__name__)
 
@@ -28,7 +29,8 @@ class Gateway:
     def __init__(self, channels: list[tuple[ChannelConfig, SerialPort]], principals: tuple[Principal, ...],
                  *, limits: Limits | None = None, clock: Callable[[], float] = time.monotonic,
                  max_clients: int = 8, connection_queue_bytes: int = 1048576,
-                 subscription_queue_bytes: int = 262144, lifecycle_timeout: float = 10):
+                 subscription_queue_bytes: int = 262144, lifecycle_timeout: float = 10,
+                 recording: RecordingConfig | None = None):
         if not channels or len(channels) > 4 or len({c.id for c, _ in channels}) != len(channels):
             raise ValueError("通道數量或識別不合法")
         if len({c.label for c, _ in channels}) != len(channels) or not principals:
@@ -46,7 +48,9 @@ class Gateway:
         self.channels = {cfg.id: Channel(cfg, port, self.store, self.notify,
             ring_bytes=self.limits.rx_ring_bytes, tx_items=self.limits.max_tx_queue_items,
             tx_bytes=self.limits.max_tx_queue_bytes, lease_ttl=self.limits.lease_ttl_ms / 1000,
-            clock=clock, lifecycle_timeout=lifecycle_timeout) for cfg, port in channels}
+            clock=clock, lifecycle_timeout=lifecycle_timeout, observe=self._observe) for cfg, port in channels}
+        self.recorders = {cid: Recorder(recording, self.store.instance, cid,
+            lambda health, cid=cid: self._recording_changed(cid, health)) for cid in self.channels} if recording else {}
         self.max_clients = max_clients
         self.connection_queue_bytes, self.subscription_queue_bytes = connection_queue_bytes, subscription_queue_bytes
         self.handlers: set[asyncio.Task] = set()
@@ -58,7 +62,31 @@ class Gateway:
         if session is not None and not session.closed:
             if event.kind == "subscription_state":
                 session.drop_subscription(event.data["subscription_id"])
-            session.send(event_message(event, self.channels[event.channel_id]))
+            recorder = self.recorders.get(event.channel_id)
+            session.send(event_message(event, self.channels[event.channel_id], recording=recorder.health if recorder else None))
+
+    def snapshot(self, channel: Channel) -> dict:
+        recorder = self.recorders.get(channel.config.id)
+        return snapshot(channel, recording=recorder.health if recorder else None)
+
+    def _recording_changed(self, cid: str, health: dict) -> None:
+        channel = self.channels[cid]
+        recipients = set(channel.subscriptions.values())
+        if channel.lease.owner:
+            recipients.add(channel.lease.owner)
+        for session in recipients:
+            self.notify(session, channel.event("recording_state", health))
+
+    def _observe(self, event: Event) -> None:
+        recorder = self.recorders.get(event.channel_id)
+        if recorder is None:
+            return
+        if event.kind == "rx":
+            recorder.rx({"timestamp_utc": event.timestamp, "binding_revision": str(event.revision),
+                "stream_epoch": event.epoch, "seq": event.data["seq"], "offset": event.data["offset"],
+                "next_offset": event.data["next_offset"], "data_b64": binary_encode(event.data["payload"])})
+        elif event.kind == "channel_state":
+            recorder.channel_state(self.snapshot(self.channels[event.channel_id]))
 
     async def start(self, host: str = "127.0.0.1", port: int = 18081) -> int:
         if host != "127.0.0.1":
@@ -67,6 +95,8 @@ class Gateway:
             # 先保留接聽端點，避免 TCP Port 已占用時仍開啟 Serial。
             self.listener = await asyncio.start_server(self._accept, host, port,
                 limit=self.limits.max_frame_bytes - 1, start_serving=False, reuse_address=False)
+            for cid, recorder in self.recorders.items():
+                await recorder.start(self.snapshot(self.channels[cid]))
             for channel in self.channels.values():
                 if channel.config.auto_open_rx:
                     try:
@@ -89,7 +119,6 @@ class Gateway:
     async def close(self) -> None:
         if self.listener:
             self.listener.close()
-            await self.listener.wait_closed()
         if self.maintenance:
             self.maintenance.cancel()
             await asyncio.gather(self.maintenance, return_exceptions=True)
@@ -97,8 +126,12 @@ class Gateway:
             session.abort()
         if self.handlers:
             await asyncio.gather(*list(self.handlers), return_exceptions=True)
+        if self.listener:
+            # Python 的 Server.wait_closed 可能等待所有已接受連線；先關閉 Session。
+            await self.listener.wait_closed()
         for channel in self.channels.values():
             await channel.stop()
+        await asyncio.gather(*(recorder.close() for recorder in self.recorders.values()))
 
     async def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         task = asyncio.current_task()
@@ -157,7 +190,7 @@ class Gateway:
                         count = req.params.get("limit", 16)
                         selected, rest = remaining[:count], remaining[count:]
                         cursor = (new_id(), rest) if rest else None
-                        result = {"channels": [snapshot(self.channels[cid]) for cid in selected],
+                        result = {"channels": [self.snapshot(self.channels[cid]) for cid in selected],
                                   "next_cursor": cursor[0] if cursor else None}
                     else:
                         result, after = await self._dispatch(session, principal, req.method, req.params)
@@ -203,11 +236,11 @@ class Gateway:
         principal.require(cid, permission)
         channel = self.channels[cid]
         if method == "channel.get":
-            result = {"channel": snapshot(channel)}
+            result = {"channel": self.snapshot(channel)}
         elif method == "binding.rebind":
             recipients = await channel.rebind(context(params))
             after = [(owner, channel.event("channel_state", {})) for owner in recipients]
-            result = {"channel": snapshot(channel)}
+            result = {"channel": self.snapshot(channel)}
         elif method == "binding.confirm":
             if channel.state in ("opening", "draining"):
                 raise DomainError("CHANNEL_BUSY", "通道的生命週期操作尚未結束。")
@@ -227,7 +260,7 @@ class Gateway:
             finally:
                 self.pending_labels.pop(label, None)
             after = [(owner, channel.event("channel_state", {})) for owner in recipients]
-            result = {"channel": snapshot(channel)}
+            result = {"channel": self.snapshot(channel)}
         elif method == "rx.subscribe":
             count = sum(owner == session.id for c in self.channels.values() for owner in c.subscriptions.values())
             if count >= self.limits.max_subscriptions:

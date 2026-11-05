@@ -24,7 +24,7 @@ def unavailable(channel_id: str, instance: str, tx_id: str, current: str) -> dic
             "completed_at": None, "retained_for_ms": 0, "status_origin": "unavailable"}
 
 
-def snapshot(channel: Channel) -> dict:
+def snapshot(channel: Channel, *, recording: dict | None = None) -> dict:
     channel.expire()
     return {"channel_id": channel.config.id, "label": channel.config.label,
         "target_note": channel.config.target_note, "state": channel.state,
@@ -38,19 +38,19 @@ def snapshot(channel: Channel) -> dict:
         "tx": {"state": "blocked" if channel.blocked else
                "leased" if channel.lease.owner else "quiescing" if channel.inflight else "idle",
                "owner_session_id": channel.lease.owner},
-        "recording": {"state": "disabled", "integrity": "not_recording"},
+        "recording": recording if recording is not None else {"state": "disabled", "integrity": "not_recording"},
         "last_error": None if channel.last_error is None else
             {"code": channel.last_error[0], "message": channel.last_error[1]}}
 
 
-def event_message(event: Event, channel: Channel) -> dict:
+def event_message(event: Event, channel: Channel, *, recording: dict | None = None) -> dict:
     data = dict(event.data)
     if event.kind == "rx":
         data["data_b64"] = binary_encode(data.pop("payload"))
     elif event.kind == "tx_result":
         data = {"tx": tx_result(data["record"], channel.store)}
     elif event.kind == "channel_state":
-        data = {"channel": snapshot(channel)}
+        data = {"channel": snapshot(channel, recording=recording)}
     return {"type": "event", "event": event.kind, "channel_id": event.channel_id,
             "binding_revision": str(event.revision), "stream_epoch": event.epoch,
             "timestamp_utc": event.timestamp, "data": data}

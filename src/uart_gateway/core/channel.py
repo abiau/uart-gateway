@@ -52,7 +52,7 @@ class Channel:
                  emit: Callable[[str, Event], None], *, ring_bytes: int = 4194304,
                  tx_items: int = 16, tx_bytes: int = 65536, lease_ttl: float = 15,
                  clock: Callable[[], float] = time.monotonic,
-                 lifecycle_timeout: float = 10):
+                 lifecycle_timeout: float = 10, observe: Callable[[Event], None] | None = None):
         self.config, self.port, self.store, self.emit = config, port, store, emit
         self.clock = clock
         self.gate = threading.RLock()
@@ -75,6 +75,7 @@ class Channel:
         self.tasks: list[asyncio.Task] = []
         self.lifecycle_timeout = lifecycle_timeout
         self.operation: asyncio.Task | None = None
+        self.observe = observe or (lambda event: None)
 
     async def _device_operation(self, function: Callable[[], None]) -> None:
         if self.operation is not None:
@@ -141,6 +142,7 @@ class Channel:
         self.epoch = new_id()
         self.ring.clear()
         self.ring_used = self.offset = self.sequence = 0
+        self.observe(self.event("channel_state", {}))
 
     async def start(self) -> None:
         if self.state != "closed":
@@ -149,10 +151,14 @@ class Channel:
         self.confirmed = False
         try:
             await self._device_operation(self.port.open)
+        except DomainError:
+            self.observe(self.event("channel_state", {}))
+            raise
         except OSError as exc:
             code = getattr(exc, "code", "SERIAL_IO_FAILED")
             self.state = "lost" if code == "DEVICE_MISSING" else "faulted"
             self.last_error = (code, str(exc) if hasattr(exc, "code") else "裝置開啟失敗。")
+            self.observe(self.event("channel_state", {}))
             raise DomainError(*self.last_error) from exc
         self.last_error = None
         self.state, self.running = "ready", True
@@ -174,6 +180,7 @@ class Channel:
             self.state = "faulted"
             self.last_error = ("SERIAL_IO_FAILED", "裝置關閉失敗。")
         self.epoch = None
+        self.observe(self.event("channel_state", {}))
 
     def confirm(self, expected: Context, label: str, note: str | None) -> set[str]:
         with self.gate:
@@ -216,6 +223,7 @@ class Channel:
         self.state, self.epoch = "closed", None
         self.ring.clear()
         self.ring_used = 0
+        self.observe(self.event("channel_state", {}))
         return recipients
 
     def expire(self) -> None:
@@ -325,6 +333,8 @@ class Channel:
         chunk = Chunk(self.offset, self.sequence, payload)
         self.offset += len(payload)
         self.sequence += 1
+        self.observe(self.event("rx", {"seq": str(chunk.seq), "offset": str(chunk.offset),
+            "next_offset": str(self.offset), "payload": chunk.data}, timestamp=chunk.timestamp))
         self.ring.append(chunk)
         self.ring_used += len(payload) + 256
         while self.ring and self.ring_used > self.ring_bytes:
@@ -351,6 +361,7 @@ class Channel:
                         self.state, self.epoch, self.running = "lost", None, False
                         self.last_error = ("DEVICE_MISSING", "裝置已失去連線。")
                         self.wakeup.set()
+                    self.observe(self.event("channel_state", {}))
                     for session in recipients:
                         self.emit(session, self.event("channel_state", {}))
                 break

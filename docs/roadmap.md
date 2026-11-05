@@ -30,6 +30,8 @@ Phase 0 已於 2026-11-03 由使用者核准；Phase 1 第一批於 2026-11-05 �
 
 Phase 1 的 Core 一開始就是多 Channel 模型，不使用全域 Serial／Buffer／TX Lock（鎖）。「一個實體驗證目標」不代表只能表示一個 Channel。Q-06 已接受 V1 不納入 Raw TCP 的建議。
 
+RX 錄製切片已加入 Gateway 端有界 Queue、分段、每 Capture 容量限制、健康事件與離線檢查；啟用方式及格式見 [錄製規格](recording.md)。尚未完成跨 Capture 年齡／磁碟總量保留、Audit 與 Win11 錄製驗收，不將本切片視為整個 Phase 1 完成。使用者目前無雙 UART，雙實體測試延後至公司，不阻擋單 UART 錄製開發。
+
 建議驗收情境：
 
 | 情境 | 必須觀察的結果 |

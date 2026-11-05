@@ -107,7 +107,38 @@ Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清�
 
 目前通過的是 Linux／Mock 枚舉／兩個 PTY 的自動化測試。**Win11 雙實體 UART、CMD 雙擊與 30 分鐘持續接收尚未驗證**；五至六條 UART 與完整 TUI 仍待後續容量評估。
 
-## 固定 COM3 的雙擊流程
+## 保存 RX 錄製（單 UART 可測，Win11 實機待驗證）
+
+在 PowerShell 執行下列命令，選擇家裡的 USB-UART，即可一邊看 Log、一邊讓 Gateway 保存原始 RX：
+
+```powershell
+.\.venv\Scripts\uart.exe local --select --read-only --watch --terminal --record-dir .\recordings
+```
+
+要固定 COM3 時，將 `--select` 換成 `--port COM3`。要在 30 秒後正常關閉可加 `--duration 30`；按 Ctrl+C 亦會關閉本次 Gateway 並等待檔案收尾。啟動時會顯示錄製位置，每次執行都是新的 Capture，不覆寫舊檔。未指定 `--record-dir` 時不錄製；雙擊既有 CMD 的預設亦不錄製。
+
+目錄例如 `recordings\capture-執行個體ID\ch_uart_1`，每條 Channel 分開保存。`recordings` 已被 Git 忽略。保存原始 bytes 與裝置／UART／Epoch 快照，不受 `--terminal` 顏色或文字顯示影響；UART 內容可能包含板子的帳密，分享前請自行確認內容。
+
+停止錄製後可用以下 PowerShell 找出最新一組並檢查：
+
+```powershell
+$UartCapture = Get-ChildItem .\recordings -Directory -Filter 'capture-*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+.\.venv\Scripts\uart.exe recording-info (Join-Path $UartCapture.FullName 'ch_uart_1')
+```
+
+此命令只讀錄製檔，不需要 Token、不開啟 UART。應顯示正常收尾、RX bytes 及「對已觀測資料無已知缺口」；退出碼 0 表示這些檢查通過，2 表示不完整或連續性未知，1 為參數／檔案等操作失敗。請在 Capture 已停止後檢查；錄製中尚未出現最終 Footer 屬預期。
+
+檔案是 JSONL，`data_b64` 可還原任意 bytes，不能直接當成純文字 Log。格式、容量及判讀見 [RX 錄製規格](recording.md)。預設每段 64 MiB、本次每通道最多 1 GiB；超過上限停止該條錄製並告警，RX 監控繼續。這一版不自動刪除舊 Capture，請自行管理磁碟空間。
+
+單 UART 驗收建議：
+
+1. 啟動並讓 IPCAM 產生新 Log，按 Ctrl+C，執行 `recording-info` 核對 RX bytes 大於零且正常收尾。
+2. 再錄製一輪，中途拔除 USB，確認畫面提示裝置遺失；關閉後檢查應顯示連續性未知，不能顯示無已知缺口。
+3. 再次啟動應建立不同的 Capture，前次檔案仍保留。選單重新啟動時，記憶體歷史會重建，已保存的檔案保留。
+
+目前已通過 Linux Fake Serial、真 Gateway／SDK 及 PTY 的自動化錄製測試；尚未操作 Win11 實體 UART 錄製。雙 UART 實機驗證依使用者指示延後到公司；30 分鐘持續接收仍待測。
+
+## 固定 COM3 的日常操作
 
 1. 關閉 MobaXterm 的 COM3 Serial 連線。若舊手動 Gateway 仍在執行，先在它的視窗按 Ctrl+C 正常停止；啟動器不會接管或結束它。
 2. 在檔案總管雙擊專案根目錄的 `run-com3.cmd`。它會開啟獨立 Python 監控視窗。

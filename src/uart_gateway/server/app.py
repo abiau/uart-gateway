@@ -17,6 +17,7 @@ from uart_gateway.protocol.messages import identifier, text
 from uart_gateway.protocol.errors import ProtocolError
 from .auth import Principal
 from .tcp import Gateway
+from .recording import RecordingConfig
 
 
 def _keys(value: object, required: set[str], optional: set[str] = frozenset()) -> None:
@@ -38,7 +39,20 @@ def secret(reference: str) -> str:
 
 def load(path: Path, *, fake: bool = True) -> tuple[Gateway, str, int]:
     config = tomllib.loads(path.read_text(encoding="utf-8"))
-    _keys(config, {"channels", "auth"}, {"network", "gateway"})
+    _keys(config, {"channels", "auth"}, {"network", "gateway", "recording"})
+    recording = config.get("recording", {})
+    _keys(recording, set(), {"enabled", "directory", "queue_bytes", "segment_bytes", "max_capture_bytes"})
+    enabled = recording.get("enabled", False)
+    if type(enabled) is not bool:
+        raise ValueError("錄製 enabled 必須為布林值。")
+    recording_settings = None
+    if enabled:
+        if not isinstance(recording.get("directory"), str) or not recording["directory"]:
+            raise ValueError("啟用錄製必須指定目錄。")
+        recording_settings = RecordingConfig(Path(recording["directory"]), **{
+            key: value for key, value in recording.items() if key not in ("enabled", "directory")})
+    elif set(recording) - {"enabled"}:
+        raise ValueError("停用錄製時請移除其餘錄製參數，避免誤認已啟用。")
     gateway_config = config.get("gateway", {})
     _keys(gateway_config, set(), {"lifecycle_timeout_ms"})
     lifecycle_ms = gateway_config.get("lifecycle_timeout_ms", 10000)
@@ -91,7 +105,8 @@ def load(path: Path, *, fake: bool = True) -> tuple[Gateway, str, int]:
             raise ValueError("認證權限型別不合法")
         principals.append(Principal(entry["id"], secret(entry["token_secret_ref"]),
             {cid: frozenset(entry["permissions"]) for cid in entry["channels"]}))
-    return Gateway(channels, tuple(principals), lifecycle_timeout=lifecycle_ms / 1000), host, port
+    return Gateway(channels, tuple(principals), lifecycle_timeout=lifecycle_ms / 1000,
+                   recording=recording_settings), host, port
 
 
 async def run(path: Path, *, fake: bool = True, shutdown_on_stdin_eof: bool = False) -> None:

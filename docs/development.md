@@ -1,6 +1,14 @@
 # 開發規範
 
-## 兩條 UART 切片的驗證
+## Gateway RX 錄製驗證
+
+`tests/unit/test_recording.py` 注入慢磁碟、佇列滿、容量滿、部分寫入、刷新錯誤及損壞檔案，確認記憶體包含寫入中資料、輪替與總容量有界，未知部分寫入不重送，沒有最終 Footer 不宣稱完整。另測二進位 bytes、Epoch／位移缺口、裝置失去、正常多段雜湊與重複關閉。
+
+`tests/integration/test_recording.py` 使用真 Gateway、SDK、Fake Serial 測無 Client 錄製、兩個 Client 重播不重複寫入、Client 關閉後繼續、錄製失敗的 API 健康事件、兩路 RX 隔離及關閉活躍 Client 後收尾。真 CLI／PTY 測啟動錄製、RX、SIGINT、最終檔案檢查與 Serial 釋放。沒有實體 UART TX，未操作 Win11 硬體。
+
+關閉順序為停止 Listener 接受新連線，取消維護、關閉 Session 並等待 Handler，再等待 Listener 關閉；Python 3.12 的 `wait_closed` 可能等待既有連線，不能排在 Session 清理之前。所有 Channel 停止並送出最後狀態後，才等待 Recorder 排空並收尾。
+
+## 兩條 UART 切片測試紀錄
 
 `tests/unit/test_local_profile.py` 覆蓋配置往返與拒絕未知／認證欄位、檔案及欄位界限、避免覆寫、唯一序號重找 COM、模糊／變更身分、重複端點與名稱、整組取消、CLI 參數及分來源顏色狀態；另驗證單條 SDK 接收失敗不停止另一條，而共用 Writer 失敗會結束全組並關閉連線。持久配置不保存秘密，SDK／Wire Contract 不變。
 

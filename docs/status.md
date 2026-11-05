@@ -13,12 +13,13 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：163 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial 雙 PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：182 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY 與錄製故障注入 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
 | USB 遺失後回到選單並停留 | Verified（使用者執行並回報） | `34842cd` 後使用者回報正常；不推論所有 EOF 情境或重新插回接收皆通過 |
 | 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與單路遺失隔離；新增 19 項測試通過，Win11 雙實體 UART 待驗證 |
+| Gateway RX 錄製及離線檢查 | Implemented／自動化 Tested | 明確啟用、原始 bytes／快照、輪替／容量／有界佇列、健康事件與檔案完整性檢查；Win11 單實體錄製待驗證 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。長時間穩定性與資料完整性尚待驗證 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
@@ -385,3 +386,18 @@ USB 拔除後停止監控符合目前 Channel 遺失時終止訂閱、不自動�
 另檢查 95 個文件相對連結、Markdown 程式區塊、CLI 繁體中文說明、CMD CRLF 與 Git 空白格式。本機配置上限兩條，原 Server 載入器與 Gateway 建構器四條上限維持；五至六條仍需容量評估。Win11 雙 USB-UART、CMD 雙擊、實體 COM 重編與 30 分鐘接收皆待測，不宣稱零遺失或完整 Phase 1 已完成。前次單通道實機成功紀錄保留。
 
 本輪狀態為 Implemented／自動化 Tested，並納入前次尚未提交的 Win11 選單停留回報。依使用者既有 Git 交付方式保存至 `origin/work`，實際提交以 Git 紀錄為準；操作與待執行驗收見 Windows Quickstart。
+
+## 單 UART 可接續的 RX 錄製（2026-11-05，Asia/Taipei）
+
+使用者表示手邊沒有兩個 UART，雙實體驗證需延後到公司；此項維持待測，不視為失敗或成功。使用者接續核准只讀 RX 錄製。本輪先完成 `recording.md` 的檔案格式與生命週期設計，再實作 Gateway 端錄製，不依賴 Client 存活、顯示模式或 Replay。
+
+- `uart local --record-dir 路徑` 明確啟用；手動 Gateway 可使用 `[recording]`。預設不錄製，不把錄製選項或 Token 寫入持久端點 Profile。
+- 每次／每通道新建 Capture，JSONL 保存原始 bytes（Base64）、裝置／UART／Binding 快照、Epoch、位移與序號，記錄裝置遺失及生命週期。Replay 不重複寫入。
+- 每通道佇列 1024 項／預設 1 MiB，包括寫入中資料；預設每段 64 MiB、每次每通道 1 GiB，達上限停止該錄製並告警，不覆蓋舊檔。跨 Capture 保留與 Audit 尚未實作。
+- 磁碟 I/O 在工作執行緒執行，溢位／磁碟錯誤以既有 Snapshot.recording 與 recording_state、中文診斷回報，RX 與其他通道繼續。裝置遺失為 unknown，已知缺口／寫檔失敗為 incomplete；不宣稱 UART 前段零遺失。
+- 分段有 SHA-256 與最後收尾標記；`uart recording-info <Channel目錄>` 離線檢查，不需要 Token、不連線 UART。正常結束等待排空、flush／fsync；沒有最終 Footer 或檔案損壞不得標為無已知缺口，已知外部錄製失敗訊息仍優先於離線檢查。
+- 故障測試發現 Python 3.12 在仍有 Client 時，先等待 Listener.wait_closed 可能卡住清理；已改為先停止接聽、清理 Session／Handler，再等待 Listener，最後停止 Channel 並收尾 Recorder。新增回歸確認活躍 Client 存在時亦可完成。
+
+驗證：Linux／Python 3.12.14／pySerial 3.5，完整 **182 項通過、無略過、無 RuntimeWarning**。新增 12 項單元與 7 項整合，覆蓋二進位、乾淨輪替與容量失敗、慢磁碟／佇列滿、部分寫入、fsync 錯誤、位移與 Epoch、損壞／缺 Footer／尾端部分行、無 Client、Replay 與 Client 關閉、兩路 RX／錄製故障隔離、API 健康事件、設定驗證及真 CLI／PTY SIGINT 收尾。另以無 Token 的真 CLI 檢查正常與損壞 Capture，核對中文輸出及 0／2 退出碼；檔案都在暫存目錄，未加入版本庫。
+
+文件、CLI 繁體中文說明及 101 個相對連結／程式區塊檢查通過。此輪為 Implemented／自動化 Tested，Win11 單實體錄製、雙 UART 與 30 分鐘持續接收皆待使用者驗證；未操作公司 d3s1 或實體 COM3，無新增 UART TX、Confirm、Lease 或控制線操作。沿用既有 Git 交付方式保存至 `origin/work`，實際版本以提交紀錄為準。

@@ -207,6 +207,8 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
                             text_parts.append(renderer.finish())
                             decoder.reset()
                         await diagnostic(json.dumps(event, ensure_ascii=True))
+                        if event["event"] == "recording_state" and event["data"]["state"] in ("failed", "degraded"):
+                            await diagnostic("錄製已失敗或連續性不明；RX 監控仍持續，請檢查 Gateway 錄製訊息。")
                     else:
                         sink.put(json.dumps(event, ensure_ascii=True, separators=(",", ":")) + "\n")
                     if event["event"] == "subscription_state" and event["data"]["state"] == "ended":
@@ -371,6 +373,16 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "recording-info":
+        from .recording_info import inspect_capture
+        result = await asyncio.to_thread(inspect_capture, args.directory)
+        states = {"no_known_gap": "對已觀測資料無已知缺口", "unknown": "連續性未知", "incomplete": "資料不完整"}
+        print(f"錄製檢查：{states[result['integrity']]}；正常收尾：{'是' if result['closed_cleanly'] else '否'}；"
+              f"分段：{result['segments']}；RX 區塊：{result['rx_chunks']}；RX bytes：{result['rx_bytes']}", flush=True)
+        for issue in result["issues"]:
+            print(f"注意：{issue}", flush=True)
+        print("此結果不代表 UART／USB／Driver 前段零遺失。", flush=True)
+        return 0 if result["integrity"] == "no_known_gap" else 2
     if args.command in ("watch", "local") and args.terminal and not sys.stdout.isatty():
         raise ValueError("終端顯示需要互動式終端機；輸出到檔案或管線時請使用一般文字模式。")
     if args.command == "ports":
@@ -400,7 +412,7 @@ async def run(args: argparse.Namespace) -> int:
 
             return await launch_channels(channels, monitor_group,
                 gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
-                startup_timeout=args.startup_timeout)
+                startup_timeout=args.startup_timeout, record_directory=args.record_dir)
         selector = getattr(args, "selected_adapter", None)
         if args.select and selector is None:
             raise ValueError("尚未完成端點選擇，請使用 uart local --select 進入選單。")
@@ -409,7 +421,8 @@ async def run(args: argparse.Namespace) -> int:
                                       text_mode=True, replay=True, terminal_mode=args.terminal)
         return await launch_local(args.serial_port, monitor,
                                   gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
-                                  startup_timeout=args.startup_timeout, selector=selector)
+                                  startup_timeout=args.startup_timeout, selector=selector,
+                                  record_directory=args.record_dir)
     token = (Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file
              else os.environ.get(args.token_env, ""))
     if not token:
@@ -449,6 +462,8 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("channels", help="列出通道")
     commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
+    inspect = commands.add_parser("recording-info", help="離線檢查一個 Channel 的錄製目錄，不連線 UART")
+    inspect.add_argument("directory", type=Path, help="包含 000001.jsonl 等分段的 Channel 目錄")
     local = commands.add_parser("local", help="啟動自己的只讀 Gateway 並監控 RX")
     source = local.add_mutually_exclusive_group()
     source.add_argument("--port", dest="serial_port", default="COM3", help="本次使用的 Serial 端點，預設 COM3")
@@ -456,6 +471,7 @@ def main() -> None:
     source.add_argument("--profile", type=Path, help="重用本機配置；啟動前重新核對裝置條件")
     local.add_argument("--count", type=int, choices=(1, 2), default=1, help="互動選擇 UART 數量，預設 1；目前最多 2")
     local.add_argument("--save-profile", type=Path, help="將互動選擇保存至新配置檔，建議使用 .local.toml 副檔名")
+    local.add_argument("--record-dir", type=Path, help="啟用 Gateway RX 錄製，保存至指定目錄下的新 Capture")
     local.add_argument("--read-only", action="store_true", help="只讀模式（此版本固定只讀）")
     local.add_argument("--watch", action="store_true", help="持續監控 RX（此版本預設行為）")
     local.add_argument("--terminal", action="store_true", help="顯示允許的顏色；單通道保留退格，多通道跳脫 CR／退格")

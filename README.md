@@ -95,15 +95,17 @@ uart-gatewayd --fake --config examples/gateway.fake.toml
 
 ## 測試與目前限制
 
+可用 `uart local --select --read-only --watch --terminal --record-dir ./recordings` 啟用 Gateway RX 錄製，單 UART 即可使用。各通道保存原始 bytes 與裝置／Epoch 快照，分段及佇列有界；錄製故障會告警，RX 繼續。停止後以 `uart recording-info 錄製的Channel目錄` 檢查正常收尾、位移與雜湊。操作見 [Windows Quickstart](docs/windows-quickstart.md)，格式及限制見 [錄製規格](docs/recording.md)。雙 UART 實機依使用者指示延後到公司，單 UART 錄製與 30 分鐘接收亦尚待實測。
+
 ```sh
 python -m unittest discover -s tests -v
 ```
 
 第一批 Linux／Python 3.12 執行 41 項測試全數通過，包含真 TCP 與模擬裝置；已安裝的兩個命令入口亦完成端到端操作。測試需要建立 `127.0.0.1` 暫時 Socket；禁止 Socket 的沙箱需取得對應執行權限，不能將略過整合測試當成通過。
 
-本次最新驗證為 Linux／Python 3.12／pySerial 3.5，163 項測試全部通過、無略過。包含原單通道測試及新增 19 項配置／選單／顯示、雙 PTY 程序整合；覆蓋雙路接收、單路遺失隔離、占用失敗、重複啟動、既有服務保護、Ctrl+C 清理、配置重用與雙路重播遇到暫時輸出停頓。這不是 Win11 硬體證據；未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
+本次最新驗證為 Linux／Python 3.12／pySerial 3.5，182 項測試全部通過、無略過。原 163 項包含單／雙通道、重播、占用、清理與配置；新增 19 項錄製單元／整合驗證二進位、輪替、容量、慢磁碟／溢位／錯誤、來源遺失、無 Client、活躍連線關閉、離線完整性及真 CLI／PTY SIGINT 收尾。這不是 Win11 硬體證據；未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
 
-目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟及生命週期等待期限；其他尚未支援欄位明確拒絕。持續錄製／稽核、完整設定與 Win11 USB 插拔尚未驗證；SSH／Podman 的只讀 RX 與手動斷線恢復已由使用者實際執行確認。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。互動啟動器可在清理後手動重選端點，並非自動恢復原工作階段。
+目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟、生命週期等待期限與基本 RX 錄製；其他尚未支援欄位明確拒絕。錄製的跨 Capture 保留管理、稽核、完整設定與 Win11 錄製尚未驗證；SSH／Podman 的只讀 RX 與手動斷線恢復已由使用者實際執行確認。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。互動啟動器可在清理後手動重選端點，並非自動恢復原工作階段。
 
 
 ## 遠端重播與終端顯示

@@ -58,7 +58,8 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `server.tcp` | Frame（訊框）、連線、Dispatch（派送）與輸出排程 | Protocol、Session 與 Core；不得自行實作 Lease |
 | `server.auth` | Principal（認證身分）與 Channel ACL（通道存取規則） | 設定與認證資料；不信任自報的 Client ID |
 | `server.session` | 連線所屬身分、訂閱、Heartbeat（心跳）與清理 | 呼叫 Core 釋放資源；不是 RX 必經的轉呼叫層 |
-| `server.recording` | 非同步錄製、輪替、完整性與 Audit（稽核） | Core 事件與檔案系統；不得阻塞 UART Reader |
+| `server.recording` | 非同步 RX 錄製、分段、容量限制與完整性 | Core 事件與檔案系統；不得阻塞 UART Reader；Audit 尚未實作 |
+| `recording_info` | 本機 Capture 的格式／雜湊／位移與收尾檢查 | 只讀檔案，不連線、不操作 UART；不是磁碟 Replay API |
 | `server.config`、`server.app` | 驗證設定、組裝具體物件、啟停順序 | 組裝層可以知道具體 Backend，不把此依賴帶入 Core |
 | `client.transport`、`client.sdk` | 連線、版本、請求配對、訂閱、Lease 更新與重連 | Protocol；不依賴 Server 或 Windows Serial |
 | `cli`、未來 `tui`／工具介面 | 參數、顯示、使用者或 Agent 操作 | 只經 SDK 進入 Gateway；不複製協定實作 |
@@ -218,7 +219,7 @@ DTR／RTS（控制線）可能連到 Reset 或 Boot Mode（開機模式）；開
 
 ## Recorder 與錯誤隔離
 
-分開處理一般診斷 Log、UART Recording（錄製）與 Audit。Recorder 在 Gateway 端執行，不依附 Client 存活；是否預設啟用與保留量尚待核准。錄製格式不直接等於線上協定，使用獨立 `recording_format_version`；具體檔案格式在 Phase 1 實作前補足，不宣稱目前可讀寫。
+分開處理一般診斷 Log、UART Recording（錄製）與 Audit。Recorder 在 Gateway 端執行，不依附 Client 存活；目前預設關閉，明確指定目錄才啟用。Core 的非阻塞事件觀察回呼每個 RX Chunk 只通知一次，不經訂閱／重播路徑。Server 為每條 Channel 建立有界錄製 Writer，檔案 I/O 在執行緒執行；Reader 不等待磁碟。已實作的 RX 格式使用獨立 `recording_format_version`，見 [錄製規格](recording.md)；Audit 與跨 Capture 保留管理仍待實作。
 
 每段 Capture 保存目標快照、設定、Instance／Epoch、起訖範圍、已知 Gap 及正常結束標記。磁碟失敗、Recorder Queue 溢位或非正常結束時，完整性為不完整或未知；診斷／協定健康狀態必須可見。磁碟無法寫入時不能只靠在同一磁碟寫錯誤紀錄。
 

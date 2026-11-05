@@ -82,9 +82,11 @@ def _profile(port: str, gateway_port: int, selector: AdapterSelector | None = No
     return _gateway_profile((LocalChannel(CHANNEL_ID, "local_uart", selector or AdapterSelector(port=port)),), gateway_port)
 
 
-def _gateway_profile(channels: tuple[LocalChannel, ...], gateway_port: int) -> str:
+def _gateway_profile(channels: tuple[LocalChannel, ...], gateway_port: int, record_directory: Path | None = None) -> str:
     """只有秘密參照；UART 預設仍由原設定載入器提供。"""
-    return f'''[network]
+    recording = (f'[recording]\nenabled = true\ndirectory = {json.dumps(str(record_directory), ensure_ascii=False)}\n\n'
+                 if record_directory else "")
+    return recording + f'''[network]
 bind_host = "127.0.0.1"
 port = {gateway_port}
 {channel_tables(channels, gateway=True)}
@@ -232,7 +234,8 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
                        gateway_port: int = 18081, startup_timeout: float = 20,
                        lock_directory: Path | None = None,
                        selector: AdapterSelector | None = None,
-                       reporter: Callable[[str], None] | None = None) -> int:
+                       reporter: Callable[[str], None] | None = None,
+                       record_directory: Path | None = None) -> int:
     if not isinstance(port, str) or not 1 <= len(port.encode("utf-8")) <= 256 or not port.isprintable():
         raise LauncherError("Serial 端點名稱不合法。")
     validate_local_settings(gateway_port, startup_timeout)
@@ -244,14 +247,16 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
         return await monitor(clients[0], channels[0].id)
 
     return await launch_channels((channel,), single, gateway_port=gateway_port,
-        startup_timeout=startup_timeout, lock_directory=lock_directory, reporter=reporter)
+        startup_timeout=startup_timeout, lock_directory=lock_directory, reporter=reporter,
+        record_directory=record_directory)
 
 
 async def launch_channels(channels: tuple[LocalChannel, ...],
                           monitor: Callable[[tuple[Client, ...], tuple[LocalChannel, ...]], Awaitable[int]], *,
                           gateway_port: int = 18081, startup_timeout: float = 20,
                           lock_directory: Path | None = None,
-                          reporter: Callable[[str], None] | None = None) -> int:
+                          reporter: Callable[[str], None] | None = None,
+                          record_directory: Path | None = None) -> int:
     validate_channels(channels)
     validate_local_settings(gateway_port, startup_timeout)
     report = reporter or (lambda message: print(message, file=sys.stderr, flush=True))
@@ -262,7 +267,8 @@ async def launch_channels(channels: tuple[LocalChannel, ...],
         _check_listener(gateway_port)
         with tempfile.TemporaryDirectory(prefix="uart-gateway-local-") as directory:
             profile = Path(directory) / "gateway.toml"
-            profile.write_text(_gateway_profile(channels, gateway_port), encoding="utf-8")
+            record_directory = record_directory.absolute() if record_directory is not None else None
+            profile.write_text(_gateway_profile(channels, gateway_port, record_directory), encoding="utf-8")
             owned = OwnedGateway(profile, secrets.token_urlsafe(32), reporter=report)
             clients: list[Client] = []
             tasks: list[asyncio.Task] = []
@@ -280,6 +286,12 @@ async def launch_channels(channels: tuple[LocalChannel, ...],
                     clients.append(client)
                     if client.instance != clients[0].instance:
                         raise LauncherError("監控連線的 Gateway Instance 不一致，已停止本次啟動。")
+                    if record_directory is not None:
+                        health = (await client.get_channel(channel.id))["recording"]
+                        if health["state"] not in ("recording", "degraded"):
+                            raise LauncherError("RX 可用，但錄製啟動失敗；請查看錄製錯誤並檢查目錄與磁碟。")
+                if record_directory is not None:
+                    report(f"RX 錄製目錄：{record_directory / ('capture-' + clients[0].instance)}；請留意錄製健康狀態。")
                 report(f"{ports} 已就緒；只讀 RX 監控中，按 Ctrl+C 關閉本次 Gateway。")
                 tasks = [asyncio.create_task(monitor(tuple(clients), channels)), asyncio.create_task(_exited(owned))]
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
