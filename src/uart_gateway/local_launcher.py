@@ -17,7 +17,7 @@ import threading
 
 from .client import Client
 from .protocol.errors import ProtocolError, RemoteError
-from .serial_backend import port_key
+from .serial_backend import AdapterSelector, port_key
 
 CHANNEL_ID = "ch_uart_1"
 
@@ -65,9 +65,15 @@ class PortLock:
             self.file = None
 
 
-def _profile(port: str, gateway_port: int) -> str:
+def _profile(port: str, gateway_port: int, selector: AdapterSelector | None = None) -> str:
     """只有秘密參照；UART 預設仍由原設定載入器提供。"""
     quoted = json.dumps(port, ensure_ascii=False)
+    conditions = ""
+    if selector is not None:
+        for name in ("vid", "pid", "serial_number", "location"):
+            value = getattr(selector, name)
+            if value is not None:
+                conditions += f"{name} = {json.dumps(value, ensure_ascii=False)}\n"
     return f'''[network]
 bind_host = "127.0.0.1"
 port = {gateway_port}
@@ -79,7 +85,7 @@ auto_open_rx = true
 auto_reconnect = false
 [channels.adapter]
 port = {quoted}
-[channels.serial]
+{conditions}[channels.serial]
 dtr = false
 rts = false
 
@@ -173,7 +179,8 @@ def _channel_failure(channel: dict, port: str) -> LauncherError:
     return LauncherError(f"{port} 尚未就緒（{code}）：{error.get('message', '請檢查裝置、Driver 與 UART 設定。')}")
 
 
-async def wait_ready(owned: OwnedGateway, port: str, gateway_port: int, timeout: float) -> Client:
+async def wait_ready(owned: OwnedGateway, port: str, gateway_port: int, timeout: float,
+                     selector: AdapterSelector | None = None) -> Client:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while loop.time() < deadline:
@@ -191,6 +198,9 @@ async def wait_ready(owned: OwnedGateway, port: str, gateway_port: int, timeout:
                     actual_port = channel["adapter"].get("port")
                     if not actual_port or port_key(actual_port) != port_key(port):
                         raise LauncherError("Gateway 就緒端點與指定端點不同，已停止本次啟動。")
+                    if selector is not None and any(value is not None and channel["adapter"].get(name) != value
+                            for name, value in vars(selector).items() if name != "port"):
+                        raise LauncherError("Gateway 裝置資訊與所選端點不同，已停止本次啟動，請重新選擇。")
                     settings = channel["serial"]
                     if (settings["dtr"] or settings["rts"] or settings["baudrate"] != 115200
                             or settings["bytesize"] != 8 or settings["parity"] != "none"
@@ -220,6 +230,7 @@ async def _exited(owned: OwnedGateway) -> None:
 async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int]], *,
                        gateway_port: int = 18081, startup_timeout: float = 20,
                        lock_directory: Path | None = None,
+                       selector: AdapterSelector | None = None,
                        reporter: Callable[[str], None] | None = None) -> int:
     if not isinstance(port, str) or not 1 <= len(port.encode("utf-8")) <= 256 or not port.isprintable():
         raise LauncherError("Serial 端點名稱不合法。")
@@ -227,12 +238,14 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
         raise LauncherError("Gateway Port 必須為 1024 至 65535。")
     if not math.isfinite(startup_timeout) or not 0 < startup_timeout <= 300:
         raise LauncherError("就緒等待時間必須大於零且不超過 300 秒。")
+    if selector is not None and (not selector.port or port_key(selector.port) != port_key(port)):
+        raise LauncherError("所選裝置的端點與啟動端點不一致。")
     report = reporter or (lambda message: print(message, file=sys.stderr, flush=True))
     with PortLock(port, lock_directory):
         _check_listener(gateway_port)
         with tempfile.TemporaryDirectory(prefix="uart-gateway-local-") as directory:
             profile = Path(directory) / "gateway.toml"
-            profile.write_text(_profile(port, gateway_port), encoding="utf-8")
+            profile.write_text(_profile(port, gateway_port, selector), encoding="utf-8")
             owned = OwnedGateway(profile, secrets.token_urlsafe(32), reporter=report)
             client = None
             tasks: list[asyncio.Task] = []
@@ -240,7 +253,7 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
                 report(f"正在啟動 {port} 的只讀 Gateway，等待認證與 Channel 就緒……")
                 owned.start()
                 report(f"本次建立的 Gateway 程序：PID {owned.process.pid}")
-                client = await wait_ready(owned, port, gateway_port, startup_timeout)
+                client = await wait_ready(owned, port, gateway_port, startup_timeout, selector)
                 report(f"{port} 已就緒；只讀 RX 監控中，按 Ctrl+C 關閉本次 Gateway。")
                 tasks = [asyncio.create_task(monitor(client, CHANNEL_ID)), asyncio.create_task(_exited(owned))]
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)

@@ -10,7 +10,14 @@
 
 ## 首次安裝或更新
 
-先取得包含根目錄 `run-com3.cmd` 的這次程式。先前的 `uart-gateway-win11-test.zip` 不含新啟動器；本次快照名稱為 `uart-gateway-launcher-test.zip`。若使用 Git 工作目錄，請在包含這次變更的目錄安裝。
+建議使用 Git 的 `work` 分支取得最新版，安裝後根目錄有固定 COM3 的 `run-com3.cmd` 與互動選擇的 `run-uart.cmd`。先前提供的 ZIP 屬當時快照，不包含之後所有功能；若要測本輪選單，請從 Git 更新。
+
+```powershell
+git status --short
+git pull --ff-only origin work
+```
+
+若拉取失敗，保留本地變更與錯誤，不用 reset 強制覆蓋。下方 ZIP 解壓流程僅供使用先前測試包的情況；Git 工作目錄可直接進行安裝。
 
 使用測試包時，可在 PowerShell 解壓至全新目錄；若目錄已存在，請換名稱，保留原有工作。
 
@@ -33,6 +40,30 @@ py -3 -m venv .venv
 需要 Python 3.12 以上。若 `py -3` 選到舊版，先用 `py -0p` 查看，再指定已安裝的 3.12 以上版本。直接使用虛擬環境的執行檔，不必執行 Activate.ps1 或變更 PowerShell Execution Policy（執行原則）。安裝會取得 setuptools／pySerial；下載失敗時保留錯誤，勿停用 TLS 驗證。
 
 `--list-ports` 只枚舉，不開啟 COM；核對目前仍為 COM3。啟動器不會擅自改選其他裝置。
+
+## 列出與互動選擇 COM Port
+
+在專案根目錄執行以下命令，只列出本機端點、裝置描述、序號、VID／PID 與位置，不需要 Token，也不會啟動 Gateway 或測試開啟端點：
+
+```powershell
+.\.venv\Scripts\uart.exe ports
+```
+
+需要選擇端點時，可雙擊 `run-uart.cmd`，或在 PowerShell 執行：
+
+```powershell
+.\.venv\Scripts\uart.exe local --select --read-only --watch
+```
+
+輸入清單編號才會啟動，只有一個裝置也不會自動選取。`R` 重新整理，`Q`、直接 Enter、EOF 或 Ctrl+C 可取消；取消時不建立 Gateway。沒有 USB-UART 時仍可查看空清單、重新整理及取消，在家不需連到公司 d3s1。
+
+清單以 COM 數字排序（例如 COM3 在 COM10 之前），裝置未提供的資訊會明示。輸入無效編號不會開啟端點。選擇後再次枚舉；端點消失、身分資訊變更或重複時會要求重新選擇，不把原編號套用到另一個裝置。啟動時也將可用身分條件交給既有 Gateway 載入器檢查。
+
+枚舉不代表 COM 未被占用。實際開啟時若被 MobaXterm 占用，仍由原啟動器顯示錯誤並清理本次子程序。COM 名稱與序號不能證明轉接器後面的板子身分，這些檢查不取代人工核對接線。
+
+`--select` 與 `--port` 不能同時使用；`uart local` 未指定兩者時仍預設 COM3。想直接指定端點或自動執行腳本，使用 `--port COM8` 等明確名稱。互動選單需要終端機輸入，不接受以管線送入編號。需要顏色與退格顯示時，可在互動式 ANSI 終端加上 `--terminal`。
+
+新選單、CMD 雙擊與實體插拔尚未在 Win11 驗證，既有 COM3 快捷方式的實機成功不代表新功能也已通過。此版僅啟動一個 Channel，不加入多 UART 啟動、遠端枚舉或完整 TUI。
 
 ## 日常使用：雙擊啟動
 
@@ -74,7 +105,8 @@ py -3 -m venv .venv
 | 此端點已有本機啟動器執行中 | 使用原監控視窗，或在原視窗按 Ctrl+C 後重試；不刪鎖檔搶占 |
 | 127.0.0.1:18081 已被使用 | 原 Gateway 不會被接管；自行正常停止它，或為不同 COM 指定 `--gateway-port` |
 | COM3 無法獨占開啟／`PORT_BUSY` | 關閉 MobaXterm 或其他 Serial 連線後重試；部分 Windows 權限失敗也可能歸為此類，不代表能識別占用程序 |
-| 找不到 COM3／`DEVICE_MISSING` | 用 `--list-ports` 核對 USB-UART 與 COM 名稱，再用 CLI 指定正確端點 |
+| 找不到 COM3／`DEVICE_MISSING` | 用 `uart ports` 或 `--list-ports` 核對 USB-UART 與 COM 名稱，再重新選擇或明確指定端點 |
+| 所選端點已消失、資訊改變或無法唯一識別 | 依重新顯示的清單再次選擇，核對轉接器；不沿用原編號自動開啟 |
 | Gateway 提早結束 | 查看上方 Gateway 訊息，確認 `[server]` 已安裝與 Python 版本；不會進入假的就緒狀態 |
 | 就緒逾時／`SERIAL_IO_FAILED` | 保留上方不含 Token 的訊息，檢查裝置、Driver 與 UART 設定；失敗時會清理本次子程序 |
 | 顯示已就緒但沒有新 Log | 確認 IPCAM 是否正在輸出；Ready 只證明接收端點可用 |
@@ -84,7 +116,7 @@ py -3 -m venv .venv
 
 原 `uart-gatewayd --serial --config examples/gateway.com3.toml` 與 `uart watch` 仍可使用；手動 Gateway／Client 必須從受保護來源提供同一個 Token。範例只授予 read，Binding 為 unconfirmed 不妨礙 RX。`watch --duration 30 --replay --text` 可沿用文字監控；拿掉 `--text` 則輸出保留 bytes 的 JSON／Base64。
 
-本機啟動器自行管理臨時認證，不提供另一個視窗或遠端 Client 取用該 Token 的功能。需要本機／遠端共用 Gateway 時，仍採原有明確憑證及 SDK／CLI 連線模式。使用者已確認 dxan 經 SSH Tunnel 的只讀接收，重播與新顯示模式見遠端測試文件；互動選 COM、多 Channel 啟動與 Windows TUI 留待後續。現有載入器上限仍為 4 個 Channel，未宣稱已支援 5～6 個 UART。
+本機啟動器自行管理臨時認證，不提供另一個視窗或遠端 Client 取用該 Token 的功能。需要本機／遠端共用 Gateway 時，仍採原有明確憑證及 SDK／CLI 連線模式。使用者已確認 dxan 經 SSH Tunnel 的只讀接收，重播與新顯示模式見遠端測試文件；本輪只新增本機單端點選擇，多 Channel 啟動與 Windows TUI 留待後續。現有載入器上限仍為 4 個 Channel，未宣稱已支援 5～6 個 UART。
 
 ## Win11 實機驗收清單
 
@@ -95,3 +127,11 @@ py -3 -m venv .venv
 - 保持原手動 Gateway，再雙擊；應提示 18081 被使用，原服務仍正常。
 
 回報 Windows／Python／Driver 版本及成功或失敗步驟，不附 Token。使用者已確認 Quickstart 與上述關閉重啟、重複啟動、MobaXterm 占用三項測試全部通過；這些範圍記為 Verified（使用者執行並回報）。既有手動 Gateway 同時存在的測試未另回報。
+
+## 新選單實機驗收（尚待執行）
+
+- 沒有裝置時執行 `uart ports`，確認顯示空清單；雙擊 `run-uart.cmd` 後可重新整理或取消。
+- 插入 USB-UART，按 R 後核對描述、序號與 COM，確認 COM3／COM10 等數字排序正確。
+- 輸入無效編號、按 Enter 或 Ctrl+C 取消，確認沒有 Gateway 占用 COM。
+- 選擇裝置後確認 Ready、UART RX、Ctrl+C 清理及再次啟動；接收效果需有 IPCAM 或其他資料來源才能驗證。
+- 選擇期間拔除／換接裝置，確認不會將舊編號自動套到另一個裝置；讓 MobaXterm 占用選定端點，確認提示與原連線保護。

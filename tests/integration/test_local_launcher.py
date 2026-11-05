@@ -14,9 +14,10 @@ from unittest.mock import patch
 
 from uart_gateway.core.models import ChannelConfig
 from uart_gateway.local_launcher import LauncherError, OwnedGateway, PortLock, launch_local
+from uart_gateway.local_ports import choose_port
 from uart_gateway.protocol.codec import binary_decode
-from uart_gateway.serial_backend import AdapterSelector, PySerialBackend
-from uart_gateway.core.models import SerialSettings
+from uart_gateway.serial_backend import AdapterDetails, AdapterSelector, PySerialBackend
+from uart_gateway.core.models import AdapterInfo, SerialSettings
 from uart_gateway.server.auth import Principal
 from uart_gateway.server.tcp import Gateway
 from uart_gateway.client import Client
@@ -32,6 +33,67 @@ def free_port():
 @unittest.skipUnless(os.name == "posix" and importlib.util.find_spec("serial") is not None,
                      "需要 POSIX PTY 與 [server]；Windows 的 CMD／COM3 另行實測")
 class LauncherProcessTests(unittest.IsolatedAsyncioTestCase):
+    def select(self, endpoint):
+        with patch("sys.stdin.isatty", return_value=True), \
+                patch("uart_gateway.local_ports.list_adapter_details", return_value=[AdapterDetails(AdapterInfo(port=endpoint), "虛擬端點")]):
+            return choose_port(read=lambda: "1", report=self.messages.append)
+
+    async def test_selected_virtual_port_ready_rx_and_shutdown(self):
+        selected = self.select(self.endpoint)
+
+        async def monitor(client, channel_id):
+            channel = await client.get_channel(channel_id)
+            self.assertEqual(channel["state"], "ready")
+            self.assertEqual(client.auth["grants"], [{"channel_id": channel_id, "permissions": ["read"]}])
+            await client.subscribe(channel_id)
+            os.write(self.master, b"selected RX\n")
+            async with asyncio.timeout(2):
+                received = b""
+                while len(received) < len(b"selected RX\n"):
+                    event = await client.next_event()
+                    if event["event"] == "rx":
+                        received += binary_decode(event["data"]["data_b64"])
+            self.assertEqual(received, b"selected RX\n")
+            return 0
+
+        self.assertEqual(await self.launch(monitor, selector=selected), 0)
+        self.assert_reaped()
+
+    async def test_selected_port_removed_before_open_reaps_child(self):
+        link = Path(self.temporary.name) / "selected-serial"
+        link.symlink_to(self.endpoint)
+        selected = self.select(str(link))
+        link.unlink()
+        from unittest.mock import AsyncMock
+        monitor = AsyncMock()
+        with self.assertRaisesRegex(LauncherError, "找不到"):
+            await launch_local(str(link), monitor, selector=selected, gateway_port=free_port(),
+                startup_timeout=5, lock_directory=self.lock_directory, reporter=self.messages.append)
+        monitor.assert_not_awaited()
+        self.assert_reaped()
+
+    async def test_cli_select_ctrl_c_during_input_starts_no_gateway(self):
+        process = await asyncio.create_subprocess_exec(sys.executable, "-m", "uart_gateway.cli", "local", "--select",
+            stdin=self.slave, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, start_new_session=True)
+        output = []
+        try:
+            async with asyncio.timeout(5):
+                while True:
+                    line = (await process.stderr.readline()).decode()
+                    self.assertTrue(line, repr(output))
+                    output.append(line)
+                    if "輸入裝置編號" in line:
+                        break
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = await asyncio.wait_for(process.communicate(), 3)
+            self.assertEqual(process.returncode, 130, stderr.decode())
+            self.assertFalse(stdout)
+            self.assertNotIn("本次建立的 Gateway", "".join(output) + stderr.decode())
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+
     async def asyncSetUp(self):
         self.master, self.slave = os.openpty()
         os.set_blocking(self.master, False)
@@ -182,9 +244,10 @@ class LauncherProcessTests(unittest.IsolatedAsyncioTestCase):
             (Principal("reader", token, {"original": frozenset({"read"})}),))
         port = await original.start(port=0)
         try:
-            with self.assertRaisesRegex(LauncherError, "MobaXterm"):
-                await self.launch(lambda *_: None)
-            self.assert_reaped()
+            for selected in (None, self.select(self.endpoint)):
+                with self.subTest(interactive=selected is not None), self.assertRaisesRegex(LauncherError, "MobaXterm"):
+                    await self.launch(lambda *_: None, selector=selected)
+                self.assert_reaped()
             async with await Client.connect("127.0.0.1", port, token) as client:
                 self.assertEqual((await client.get_channel("original"))["state"], "ready")
         finally:

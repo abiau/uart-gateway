@@ -39,7 +39,17 @@ Windows 子程序群組不跟父程序同時處理 Ctrl+C；POSIX 子程序另�
 
 顯示沿用現有 SDK 與文字 Renderer（顯示器），先明示重播保留資料再接即時 RX。缺口、斷線與 Channel 終止必須可見；無資料不當作失敗，Ready 不等於板子一定正在輸出。
 
-未來可在這個封裝入口加裝置選單或交由 TUI（文字介面）使用，但本次沒有互動枚舉、多 Channel 啟動、遠端接管或 TUI Framework（框架）。5～6 個 UART 仍需另驗證並調整既有 Gateway 的通道上限，不因新增啟動器就宣稱支援。
+原啟動器未包含互動選單；本輪擴充如下。仍不加入多 Channel 啟動、遠端接管或 TUI Framework（框架）。5～6 個 UART 仍需另驗證並調整既有 Gateway 的通道上限，不因新增選單就宣稱支援。
+
+## 本輪：本機端點列出與選擇
+
+- `uart ports` 只枚舉並顯示本機端點、描述、VID／PID、序號與位置，不需要 Token、不開啟 Serial、不啟動 Gateway。枚舉結果不代表端點未被其他程式占用。
+- `uart local --select` 與 `--port` 互斥；原本不加參數的 COM3 行為保留。新增 `run-uart.cmd`，固定 COM3 的 `run-com3.cmd` 不變。全部沿用只讀啟動與既有監控。
+- 選單在 `asyncio.run` 之前同步讀取互動輸入，沒有等待 input 的背景執行緒。只在 stdin 為 TTY 時允許選擇；支援編號、重新整理與取消，只有一個裝置也不自動開啟。清單輸出跳脫控制字元。
+- 選擇編號後再次枚舉，要求端點仍唯一且已知身分欄位未改變。變更或消失時重新顯示選單，不把原編號套用到另一個裝置。啟動時再以既有 Adapter Selector 的 Port 與可用 VID／PID、序號、位置交集匹配。
+- 裝置描述只屬本機 UI Metadata（顯示資訊），不加入 Core 或協定快照。重用原 Backend 的枚舉來源，不新增遠端枚舉 API。開啟後仍由 SDK 檢查 Ready、端點、只讀權限與 UART 安全設定。
+
+這只能縮小選擇與開啟之間的競爭窗口，不能證明無序號的同名 COM 一定是原 Adapter，也不能辨識同 Adapter 換接不同板子。取消或輸入無效時不建立 Gateway；占用與開啟失敗由原啟動器處理。Windows 枚舉、CMD 選單與實體插拔需另行驗證，居家先做 Mock 與 PTY 測試。
 
 ## 驗證界線
 

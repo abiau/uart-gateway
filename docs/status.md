@@ -13,9 +13,10 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：107 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：132 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
+| 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，Windows 選單與實體裝置待測 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。長時間穩定性與資料完整性尚待驗證 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
@@ -302,3 +303,17 @@ Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限
 使用者目前在家，無法連到公司的 d3s1，明確要求先 commit／push。此次保存遠端 RX、歷史重播、顏色／換行、再次監控及 Tunnel 中斷後手動恢復的實機回報，並同步部署與測試文件。只改文件，檢查內部連結與空白格式；未重跑未變更的程式測試。
 
 30 分鐘持續接收尚未執行，留待可連回公司環境時驗證；不將目前無法連線視為 Gateway 故障。居家可接續的建議是以 Mock 裝置清單與 Fake Serial 開發 COM Port 列出／選擇，仍維持單 Channel 與只讀；此功能尚未開始實作，需依後續任務進行。此次依使用者授權提交並推送 origin/work，實際版本以 Git 紀錄為準。
+
+
+## 居家開發：本機 COM Port 列出與選擇（2026-11-05，Asia/Taipei）
+
+使用者在保存交接後明確要求開始實作下一步。本輪完成本機端點列出與單端點互動選擇，沿用 Gateway、SDK、只讀權限、UART 安全設定、程序鎖與清理；沒有新增 TX、遠端枚舉 API、多 Channel 啟動或 TUI Framework。
+
+- `uart ports` 顯示本機 Port、描述、序號、VID／PID 與位置，不開啟 Serial、不啟動 Gateway、不需要 Token；空清單是正常結果。
+- `uart local --select` 與 `--port` 互斥；新增 `run-uart.cmd`。原固定 COM3 入口及未指定端點時的 COM3 預設保留。
+- 只有明確輸入編號才啟動，即使只有一個裝置也不自動開啟。支援重新整理、無效輸入、Enter／Q／EOF／Ctrl+C 取消；互動輸入在 asyncio 啟動之前，不留下 input 執行緒。
+- 選定後重驗端點唯一性與身分；消失或改變時重新選擇，不沿用舊編號。可用的完整 VID／PID、序號與位置條件進入既有 Selector，再於開啟及 Ready 階段核對。描述是本機 UI Metadata，不改 Core 或 Wire Model。
+
+驗證：Linux／Python 3.12.14／pySerial 3.5，完整 132 項通過、無略過。新增 18 項枚舉／選單單元與 CLI 測試、4 項啟動器身分／設定測試及 3 項程序／PTY 整合。覆蓋快照變更、重複別名、無裝置、取消、選擇後真子程序只讀 RX、端點消失清理與真 CLI 選單 SIGINT；既有占用測試亦覆蓋選擇端點。另在允許本機事件迴圈喚醒的執行環境，以真 `uart ports` 確認無硬體時正常顯示空清單，未開 COM。
+
+狀態為 Implemented／自動化 Tested，尚未在 Win11 執行新 CMD 選單或以實體 USB-UART 測試選擇／插拔。沒有唯一序號時不能保證同名 COM 一定是同一 Adapter；也不能識別同 Adapter 換接另一塊板子。30 分鐘接收、公司 d3s1 及實體 IPCAM 驗證維持待測。操作與新驗收清單見 Windows Quickstart。完成後沿用使用者指定的 Git 交付方式保存至 origin/work，實際版本以 Git 紀錄為準。

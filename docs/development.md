@@ -22,6 +22,7 @@ src/uart_gateway/
     cli.py                     # 參數、輸出與 SDK 操作
     text_renderer.py           # 增量過濾基本排版與有限的 ANSI 顏色
     local_launcher.py          # 本機只讀啟動、就緒檢查與自己的子程序管理
+    local_ports.py             # 只讀枚舉顯示、互動選擇及快照重驗
     protocol/
         __init__.py
         messages.py            # 線上資料模型
@@ -151,3 +152,9 @@ SDK 每次排入事件後讓出執行機會，避免已緩衝的歷史重播長�
 `watch --terminal` 與 `local --terminal` 共用上述批次輸出及只讀接收路徑；前者與 `--text` 互斥。`TerminalRenderer` 逐段處理文字，只轉送基本排版與驗證過的 SGR；CSI 參數最多保留 128 字元，OSC／DCS 等控制字串只保留解析狀態、不累積內容。缺口與訂閱終止會切斷解碼／控制序列狀態，結束時恢復顏色。TTY 檢查在連線之前，避免重導向輸出包含作用中的終端控制碼。
 
 測試涵蓋控制序列每個切割點、UTF-8 跨區塊、顏色與進度符號、未知控制碼、超長與未完成序列、原樣保留字面上的跳脫文字、取消／顏色重設，以及兩種模式的大量小區塊重播。真 CLI／PTY 另驗證互動輸出與管線拒絕；不能用位元組測試宣稱真實終端畫面已由 Agent 驗證。現場操作見 [Container 合併測試](remote-rx-test.md)。
+
+## 本機端點選擇驗證
+
+`tests/unit/test_local_ports.py` 用 Mock 清單驗證描述與自然排序、未提供資訊、控制字元跳脫、無裝置、無效輸入、重新整理、取消／EOF／Ctrl+C、同名端點變更及重複端點。選單在事件迴圈建立前輸入；測試確認取消不建立迴圈或 Gateway。`uart ports` 不讀取認證、不建立 SDK 連線或 Serial Handle。
+
+`test_local_launcher.py` 的單元測試驗證所選身分完整進入既有 TOML 載入器與 SDK Ready 檢查；整合測試用 POSIX PTY 驗證選擇後真子程序 RX、端點消失清理、占用保護與選單輸入期間 SIGINT。描述只放在 Backend 的本機顯示資料，Core／Wire Model 不增加欄位。這些測試不代替 Windows 枚舉、CMD 選單或 USB 插拔實測。

@@ -15,6 +15,8 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 目前已提供 **Fake Serial、pySerial Backend、Gateway、SDK、CLI 與本機一鍵啟動器**。安裝後可雙擊根目錄的 `run-com3.cmd`，自動等待 COM3 就緒並監控 RX；Ctrl+C 只清理本次 Gateway。也可執行 `uart local --port COM3 --read-only --watch`，不需手動提供 Token。[Win11 COM3 接收步驟](docs/windows-quickstart.md) 包含安裝、錯誤排除與實機驗收清單。
 
+本機端點可用 `uart ports` 只讀列出；雙擊 `run-uart.cmd` 或執行 `uart local --select --read-only --watch` 可互動選擇，再沿用既有只讀啟動流程。支援重新整理與取消，不會預設開啟第一個裝置。這一輪已完成 Mock／PTY 測試，Windows 新選單與實體裝置驗證仍待執行。
+
 Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win11 手動 watch 已讀到 IPCAM 開機訊息。使用者亦已回報新 Quickstart、關閉後重啟、重複啟動及 MobaXterm 占用交叉測試通過。
 
 ## 部署簡介
@@ -25,7 +27,7 @@ Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win1
 
 ## 目前階段
 
-Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。使用者亦已確認 dxan 遠端 RX、歷史重播、終端顏色／換行與再次監控成功；SSH Tunnel 中斷時 CLI 顯示斷線、Gateway 保持執行，重建 Tunnel 後手動重連與重播成功。下一步驗證較長時間的持續接收。實體 TX、插拔、資料完整性量測與完整 Phase 1 驗收尚未完成。
+Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。使用者亦已確認 dxan 遠端 RX、歷史重播、終端顏色／換行與再次監控成功；SSH Tunnel 中斷時 CLI 顯示斷線、Gateway 保持執行，重建 Tunnel 後手動重連與重播成功。居家接續已新增本機端點列出與互動選擇，待 Windows 驗證；較長時間接收留待公司環境。實體 TX、插拔、資料完整性量測與完整 Phase 1 驗收尚未完成。
 
 七份 ADR（架構決策紀錄）均為 `Accepted`（已正式接受）。數值預設、具體協定契約及建議操作政策已接受為初始基線；尚未取得的現場資訊不視為已驗證。最新證據與待回答事項以 [目前狀態](docs/status.md) 為準。
 
@@ -97,9 +99,9 @@ python -m unittest discover -s tests -v
 
 第一批 Linux／Python 3.12 執行 41 項測試全數通過，包含真 TCP 與模擬裝置；已安裝的兩個命令入口亦完成端到端操作。測試需要建立 `127.0.0.1` 暫時 Socket；禁止 Socket 的沙箱需取得對應執行權限，不能將略過整合測試當成通過。
 
-本次最新驗證為 Linux／Python 3.12／pySerial 3.5，107 項測試全部通過，包含既有 3 項真 pySerial PTY 整合及 9 項啟動器程序／PTY 整合。覆蓋就緒、RX、失敗、重複啟動、既有服務保護、Ctrl+C 清理、立即重啟，以及重播、文字輸出取消與錯誤保留；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
+本次最新驗證為 Linux／Python 3.12／pySerial 3.5，132 項測試全部通過，包含既有 3 項真 pySerial PTY 整合及 12 項啟動器程序／PTY 整合。覆蓋枚舉／選擇、身分變更、就緒、RX、失敗、重複啟動、既有服務保護、Ctrl+C 清理、立即重啟，以及重播、文字輸出取消與錯誤保留；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
 
-目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟及生命週期等待期限；其他尚未支援欄位明確拒絕。持續錄製／稽核、完整設定、Win11 USB 插拔與遠端斷線恢復尚未驗證；SSH／Podman 的只讀 RX 路徑已由使用者實際執行確認。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。
+目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟及生命週期等待期限；其他尚未支援欄位明確拒絕。持續錄製／稽核、完整設定與 Win11 USB 插拔尚未驗證；SSH／Podman 的只讀 RX 與手動斷線恢復已由使用者實際執行確認。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。
 
 
 ## 遠端重播與終端顯示

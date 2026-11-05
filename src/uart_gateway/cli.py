@@ -256,19 +256,32 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
                         failure.add_note(f"畫面輸出清理另有錯誤：{exc}")
 
 
+def _check_local_args(args: argparse.Namespace) -> None:
+    if args.host != "127.0.0.1" or args.token_file or args.token_env != "UART_GATEWAY_TOKEN":
+        raise ValueError("本機列出／啟動只使用此電腦，不接受遠端位址或外部認證選項。")
+
+
 async def run(args: argparse.Namespace) -> int:
     if args.command in ("watch", "local") and args.terminal and not sys.stdout.isatty():
         raise ValueError("終端顯示需要互動式終端機；輸出到檔案或管線時請使用一般文字模式。")
+    if args.command == "ports":
+        from .local_ports import list_ports
+        _check_local_args(args)
+        for line in await asyncio.to_thread(list_ports):
+            print(line, flush=True)
+        return 0
     if args.command == "local":
         from .local_launcher import launch_local
-        if args.host != "127.0.0.1" or args.token_file or args.token_env != "UART_GATEWAY_TOKEN":
-            raise ValueError("本機啟動器只使用 Loopback 與自行產生的臨時認證")
+        _check_local_args(args)
+        selector = getattr(args, "selected_adapter", None)
+        if args.select and selector is None:
+            raise ValueError("尚未完成端點選擇，請使用 uart local --select 進入選單。")
         async def monitor(client: Client, channel_id: str) -> int:
             return await watch_client(client, channel_id, duration=args.duration,
                                       text_mode=True, replay=True, terminal_mode=args.terminal)
         return await launch_local(args.serial_port, monitor,
                                   gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
-                                  startup_timeout=args.startup_timeout)
+                                  startup_timeout=args.startup_timeout, selector=selector)
     token = (Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file
              else os.environ.get(args.token_env, ""))
     if not token:
@@ -307,8 +320,11 @@ def main() -> None:
     secrets.add_argument("--token-env", default="UART_GATEWAY_TOKEN", help="Token 所在的環境變數名稱")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("channels", help="列出通道")
+    commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
     local = commands.add_parser("local", help="啟動自己的只讀 Gateway 並監控 RX")
-    local.add_argument("--port", dest="serial_port", default="COM3", help="本次使用的 Serial 端點")
+    source = local.add_mutually_exclusive_group()
+    source.add_argument("--port", dest="serial_port", default="COM3", help="本次使用的 Serial 端點，預設 COM3")
+    source.add_argument("--select", action="store_true", help="列出本機裝置並互動選擇，不自動開啟第一個端點")
     local.add_argument("--read-only", action="store_true", help="只讀模式（此版本固定只讀）")
     local.add_argument("--watch", action="store_true", help="持續監控 RX（此版本預設行為）")
     local.add_argument("--terminal", action="store_true", help="以終端顯示換行、退格及顏色；過濾其他控制序列")
@@ -339,6 +355,16 @@ def main() -> None:
     if args.command in ("watch", "local") and args.duration is not None and not args.duration > 0:
         parser.error("觀測時間必須大於零")
     try:
+        if args.command == "local" and args.select:
+            from .local_ports import choose_port
+            _check_local_args(args)
+            if args.terminal and not sys.stdout.isatty():
+                raise ValueError("終端顯示需要互動式終端機；請移除 --terminal 再選擇裝置。")
+            args.selected_adapter = choose_port()
+            if args.selected_adapter is None:
+                print("已取消，未啟動 Gateway。", file=sys.stderr, flush=True)
+                raise SystemExit(0)
+            args.serial_port = args.selected_adapter.port
         raise SystemExit(asyncio.run(run(args)))
     except (RemoteError, ProtocolError, OSError, ValueError, TimeoutError) as exc:
         print(f"操作失敗：{getattr(exc, 'code', type(exc).__name__)}：{exc}", file=sys.stderr)

@@ -66,15 +66,28 @@ def _serial_module():
         raise SerialBackendError("SERIAL_IO_FAILED", "尚未安裝 pySerial，請安裝專案的 [server] 選用依賴。") from exc
 
 
-def list_adapters() -> list[AdapterInfo]:
+@dataclass(frozen=True)
+class AdapterDetails:
+    """本機顯示資訊；描述不加入 Core 模型或線上快照。"""
+
+    adapter: AdapterInfo
+    description: str | None = None
+
+
+def list_adapter_details() -> list[AdapterDetails]:
     _serial_module()
     try:
         ports = importlib.import_module("serial.tools.list_ports").comports()
-        return sorted((AdapterInfo(port=p.device, vid=p.vid, pid=p.pid,
-                        serial_number=p.serial_number, location=p.location) for p in ports),
-                      key=lambda info: info.port or "")
+        return sorted((AdapterDetails(AdapterInfo(port=p.device, vid=p.vid, pid=p.pid,
+                        serial_number=p.serial_number, location=p.location),
+                        getattr(p, "description", None)) for p in ports),
+                      key=lambda info: info.adapter.port or "")
     except OSError as exc:
         raise SerialBackendError("SERIAL_IO_FAILED", "無法枚舉 Serial 裝置。") from exc
+
+
+def list_adapters() -> list[AdapterInfo]:
+    return [entry.adapter for entry in list_adapter_details()]
 
 
 def _open_error(exc: OSError) -> SerialBackendError:

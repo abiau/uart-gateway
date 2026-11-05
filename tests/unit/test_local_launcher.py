@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from uart_gateway.local_launcher import (
     LauncherError, OwnedGateway, PortLock, _profile, process_options, wait_ready,
 )
+from uart_gateway.serial_backend import AdapterSelector
 
 
 def ready_channel():
@@ -30,6 +31,23 @@ def candidate(channel=None):
 
 
 class LockAndProcessTests(unittest.TestCase):
+    def test_selected_identity_is_preserved_in_existing_config_loader(self):
+        from uart_gateway.server.app import load
+
+        selector = AdapterSelector(port="COM8", vid=1027, pid=24577,
+                                   serial_number='id"\\末', location="usb-1")
+        profile = _profile("COM8", 18081, selector)
+        parsed = tomllib.loads(profile)
+        self.assertEqual(parsed["channels"][0]["adapter"], vars(selector))
+        self.assertEqual(parsed["auth"]["principals"][0]["permissions"], ["read"])
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"UART_GATEWAY_TOKEN": secrets.token_urlsafe(32)}):
+            path = Path(directory) / "gateway.toml"
+            path.write_text(profile)
+            gateway, _, _ = load(path, fake=False)
+        self.assertEqual(gateway.channels["ch_uart_1"].port.selector, selector)
+        self.assertFalse(gateway.channels["ch_uart_1"].port.settings.dtr)
+        self.assertFalse(gateway.channels["ch_uart_1"].port.settings.rts)
+
     def test_lock_blocks_duplicate_alias_in_another_process_then_releases(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -96,6 +114,35 @@ except LauncherError:
 
 
 class ReadyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ready_accepts_selected_identity_and_normalized_port(self):
+        selector = AdapterSelector(port="com03", vid=1027, pid=24577,
+                                   serial_number="expected", location="usb-1")
+        client = candidate()
+        client.get_channel.return_value["adapter"].update(vars(selector))
+        with patch("uart_gateway.local_launcher.Client.connect", new=AsyncMock(return_value=client)):
+            self.assertIs(await wait_ready(self.owned(), "COM3", 18081, 1, selector), client)
+        client.close.assert_not_awaited()
+
+    async def test_ready_rejects_changed_selected_identity(self):
+        selector = AdapterSelector(port="COM3", vid=1027, pid=24577,
+                                   serial_number="expected", location="usb-1")
+        for field in ("vid", "pid", "serial_number", "location"):
+            client = candidate()
+            client.get_channel.return_value["adapter"].update(vars(selector))
+            client.get_channel.return_value["adapter"][field] = None
+            with self.subTest(field=field), patch("uart_gateway.local_launcher.Client.connect", new=AsyncMock(return_value=client)):
+                with self.assertRaisesRegex(LauncherError, "裝置資訊"):
+                    await wait_ready(self.owned(), "COM3", 18081, 1, selector)
+            client.close.assert_awaited_once()
+
+    async def test_mismatched_selected_port_starts_no_process(self):
+        from uart_gateway.local_launcher import launch_local
+
+        with patch("uart_gateway.local_launcher.OwnedGateway.start") as start:
+            with self.assertRaisesRegex(LauncherError, "端點不一致"):
+                await launch_local("COM3", AsyncMock(), selector=AdapterSelector(port="COM8"))
+        start.assert_not_called()
+
     def owned(self, exited=False):
         return SimpleNamespace(process=SimpleNamespace(poll=lambda: 1 if exited else None), token="unused")
 
