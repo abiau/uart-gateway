@@ -13,10 +13,12 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：144 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：163 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial 雙 PTY |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
+| USB 遺失後回到選單並停留 | Verified（使用者執行並回報） | `34842cd` 後使用者回報正常；不推論所有 EOF 情境或重新插回接收皆通過 |
+| 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與單路遺失隔離；新增 19 項測試通過，Win11 雙實體 UART 待驗證 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。長時間穩定性與資料完整性尚待驗證 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
@@ -358,3 +360,28 @@ USB 拔除後停止監控符合目前 Channel 遺失時終止訂閱、不自動�
 驗證：Linux／Python 3.12.14／pySerial 3.5 完整 144 項通過、無略過、無 RuntimeWarning。新增 3 項空白輸入、明確選擇及 EOF 訊息測試，並將真 Gateway／PTY 完整恢復測試加入「返回選單先輸入空白，再輸入編號」；空白時原 Gateway 已結束且沒有第二個 Gateway，明確選擇後才建立新資料流。SDK、Core、Serial Backend 與 Wire Contract 不變。
 
 此修正仍待 Win11 重測。若退出時出現 EOF 新提示，需再確認該終端的輸入狀態；沒有假定已證明原本空白輸入的來源。沿用使用者指定的 Git 交付方式保存至 origin/work，實際版本以 Git 紀錄為準。
+
+
+## Win11 恢復選單停留結果
+
+使用者於 `34842cd` 更新後回報可正常運作，拔除 USB-UART 後仍出現更新後的選單。此項「USB 遺失後返回並停留於恢復選單」記為 Verified（使用者執行並回報）；未將此訊息擴大解讀為 30 分鐘持續接收、全部 EOF 情境或多 UART 驗收通過。
+
+下一個建議方向是多 UART 的配置與操作設計：維持單一 Gateway／多 Channel，先以兩個 Mock 端點驗證同時接收及故障隔離，再逐步向使用者目標的 5～6 個 UART 做容量評估。現有載入器上限仍為 4，尚未調整；不以新增多個獨立 Gateway 取代既有多 Channel 架構，也不預先建立完整 TUI。此為建議，尚未實作。
+
+本次僅更新使用者實機回報，程式仍為 `34842cd`，沿用最近 144 項自動化通過證據；文件變更尚未 commit／push。
+
+## 兩條只讀 UART 啟動、配置與隔離（2026-11-05，Asia/Taipei）
+
+使用者接受下一步建議並明確要求實作。本輪先完成 `local-launcher.md` 的設計審查，再沿用既有 Gateway、SDK、設定載入器與 `watch_client` 完成兩條切片：
+
+- `local --select --count 2` 依序選擇不同端點並命名；`run-dual-uart.cmd` 為薄雙擊入口。單端點命令及選單恢復流程保留。
+- `--save-profile` 保存新配置，`--profile` 重用名稱與裝置條件；不包含 Token、權限或確認資格。有序號且其他條件唯一符合時可解析目前 COM；模糊、不符或兩條解析到同一端點則拒絕。既有檔案不覆蓋。
+- 取得全部端點鎖後只建立一個 Gateway；兩條全部 Ready 且權限／UART 設定正確才監控。啟動失敗清理整組，既有 Listener 或占用端點的程序不受影響。
+- 各 Channel 使用一條 SDK Session，共用原有有界畫面 Writer。每批／每行有來源標記；UTF-8 與顏色狀態分開。多通道 CR／BS 跳脫顯示，避免改寫其他來源，原單通道 `--terminal` 不變。
+- 運行中單路遺失或 SDK 接收失敗，另一條繼續；全部停止才清理並回選單。共用輸出失敗或 Gateway 整體退出則結束整組，Ctrl+C 清理所有自有連線及唯一子程序。沒有自動重連、TX、Confirm、Lease 或控制線新增操作。
+
+驗證：Linux／Python 3.12.14／pySerial 3.5，完整 **163 項通過、無略過、無 RuntimeWarning**，執行 `python -W error::RuntimeWarning -m unittest discover -s tests -v`。新增 11 項單元與 8 項真程序／PTY 整合測試：配置與選單界限、COM 重編／模糊／重複、來源與顏色隔離、單 SDK 失敗／共用 Writer 失敗、兩路 RX、單路拔除後另一條收到新資料且 Epoch 不變、第二條占用撤銷、重複啟動、部分鎖取得失敗後釋放、既有 Listener 保護、取消與真 CLI SIGINT，以及兩路各 56400 bytes 重播遇到 200 ms 顯示停頓。完整測試沒有操作 Windows 實體 COM。
+
+另檢查 95 個文件相對連結、Markdown 程式區塊、CLI 繁體中文說明、CMD CRLF 與 Git 空白格式。本機配置上限兩條，原 Server 載入器與 Gateway 建構器四條上限維持；五至六條仍需容量評估。Win11 雙 USB-UART、CMD 雙擊、實體 COM 重編與 30 分鐘接收皆待測，不宣稱零遺失或完整 Phase 1 已完成。前次單通道實機成功紀錄保留。
+
+本輪狀態為 Implemented／自動化 Tested，並納入前次尚未提交的 Win11 選單停留回報。依使用者既有 Git 交付方式保存至 `origin/work`，實際提交以 Git 紀錄為準；操作與待執行驗收見 Windows Quickstart。

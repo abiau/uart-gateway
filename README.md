@@ -17,6 +17,8 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 本機端點可用 `uart ports` 只讀列出；雙擊 `run-uart.cmd` 或執行 `uart local --select --read-only --watch` 可互動選擇，再沿用既有只讀啟動流程。支援重新整理與取消，不會預設開啟第一個裝置。中斷後的恢復選單可按 Enter 重新整理，輸入 Q 或按 Ctrl+C 離開；輸入結束會另行明示 EOF。這一輪已完成 Mock／PTY 測試；使用者亦已回報居家 USB-UART／IPCAM 接收成功、`--terminal` 顏色正確。使用者另回報 USB 拔插會中斷監控、IPCAM 重新上電仍可顯示；本輪新增中斷清理後回到選單、由使用者重新選擇的流程，完整 Windows 插拔恢復仍待驗證。
 
+使用者後續已確認 USB 拔除後能返回並停留於恢復選單。最新切片新增 `uart local --select --count 2 --read-only --watch --terminal` 與 `run-dual-uart.cmd`，以**一個 Gateway** 同時接收兩條 UART，畫面標明 Channel／名稱；一路遺失時另一路繼續。可用 `--save-profile bench.local.toml` 保存名稱與裝置條件，下次以 `--profile bench.local.toml` 重新核對後啟動。多通道畫面顏色獨立，CR／退格採跳脫顯示；完整步驟見 [Windows Quickstart](docs/windows-quickstart.md)。目前為 Mock／雙 PTY 自動化 Tested，Win11 雙實體 UART 尚未驗證。
+
 Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win11 手動 watch 已讀到 IPCAM 開機訊息。使用者亦已回報新 Quickstart、關閉後重啟、重複啟動及 MobaXterm 占用交叉測試通過。
 
 ## 部署簡介
@@ -99,7 +101,7 @@ python -m unittest discover -s tests -v
 
 第一批 Linux／Python 3.12 執行 41 項測試全數通過，包含真 TCP 與模擬裝置；已安裝的兩個命令入口亦完成端到端操作。測試需要建立 `127.0.0.1` 暫時 Socket；禁止 Socket 的沙箱需取得對應執行權限，不能將略過整合測試當成通過。
 
-本次最新驗證為 Linux／Python 3.12／pySerial 3.5，144 項測試全部通過，包含既有 3 項真 pySerial PTY 整合及 13 項啟動器程序／PTY 整合。覆蓋枚舉／選擇、身分變更、就緒、RX、失敗、重複啟動、既有服務保護、Ctrl+C 清理、立即重啟，以及重播、文字輸出取消與錯誤保留；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
+本次最新驗證為 Linux／Python 3.12／pySerial 3.5，163 項測試全部通過、無略過。包含原單通道測試及新增 19 項配置／選單／顯示、雙 PTY 程序整合；覆蓋雙路接收、單路遺失隔離、占用失敗、重複啟動、既有服務保護、Ctrl+C 清理、配置重用與雙路重播遇到暫時輸出停頓。這不是 Win11 硬體證據；未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
 
 目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟及生命週期等待期限；其他尚未支援欄位明確拒絕。持續錄製／稽核、完整設定與 Win11 USB 插拔尚未驗證；SSH／Podman 的只讀 RX 與手動斷線恢復已由使用者實際執行確認。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。互動啟動器可在清理後手動重選端點，並非自動恢復原工作階段。
 

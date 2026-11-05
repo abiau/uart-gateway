@@ -22,6 +22,26 @@ Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開�
 
 ## Gateway 與網路
 
+### 本機啟動器配置（已實作）
+
+`uart local --select --count 2 --save-profile bench.local.toml` 保存的是本機選擇配置，與 `uart-gatewayd --config` 的伺服器配置分開。前者沒有 network、auth、UART 修改或控制線選項；啟動器驗證後才轉為既有伺服器 TOML，Serial 固定 115200／8N1／無流控、DTR／RTS false。直接交給伺服器的完整設定格式不變。
+
+| 欄位 | 格式與限制 |
+| --- | --- |
+| `version` | 整數 1 |
+| `channels` | 1～2 個通道；不是將 Server／Gateway 的四條上限改為兩條 |
+| `channels[].id` | 1～64 個 ASCII 英數字、底線或連字號；不重複。選單產生 `ch_uart_1`、`ch_uart_2` |
+| `channels[].label` | 1～128 UTF-8 bytes、非全空白、可顯示且不重複的名稱；不是板子識別 |
+| `channels[].adapter` | 必含 `port`，其他可含 `vid`／`pid`（成對）、`serial_number`、`location`，限制沿用下表；拒絕未知欄位 |
+
+檔案上限 64 KiB，可讀 UTF-8／UTF-8 BOM；不允許 Token、權限、Confirm 或 Session 等額外欄位。保存時只建立新檔，不覆蓋既有配置；若後續監控失敗回到選單，重新選擇不會覆蓋首次保存的檔案。建議使用已被 Git 忽略的 `*.local.toml`，保存位置由使用者明確指定。
+
+`--profile` 每次重新枚舉：有序號時暫不以舊 COM 篩選，以序號及其餘已存條件唯一定位後採用目前 COM；位置、VID／PID 條件仍必須符合。無序號時必須符合原 COM 與其他已存條件，不自動跟隨重編 COM。不存在、模糊或兩條解析到同一端點時，要求重新選擇。若只有 Port 可用，不能證明同名 Port 仍是原轉接器；即使有序號也不能識別轉接器換接另一塊板子。配置不因解析到新 COM 而被自動改寫。
+
+全部端點鎖與 Ready 核對完成才開始監控；任一啟動失敗撤銷本次整組。啟動後單條失去連線只停止其訂閱，其餘繼續；沒有自動恢復該條。`--select` 在全組因錯誤停止且清理完成後返回選單；`--profile` 則退出。到達正常 `--duration` 期限或 Ctrl+C 結束整組。有限觀測中某條提前停止但其餘持續至期限時正常退出，提前停止原因仍保留於畫面。
+
+### 伺服器參數基線
+
 | 參數名稱 | 型別 | 預設值／狀態 | 合法範圍 | 必要性 | 用途 | 安全性注意事項 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `gateway.instance_name` | string | 建議 `uart-gateway` | 1–64 UTF-8 bytes | 可省略 | 人類識別名稱 | 不當作認證身分或 Instance ID |

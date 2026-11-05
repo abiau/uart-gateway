@@ -4,15 +4,20 @@ import argparse
 import asyncio
 import codecs
 import json
+import math
 import os
 from pathlib import Path
 import sys
+from typing import TYPE_CHECKING
 
 from .client import Client
 from .client.transport import LocalDataLoss
 from .protocol.codec import binary_decode
 from .protocol.errors import ProtocolError, RemoteError
-from .text_renderer import RESET, TerminalRenderer
+from .text_renderer import RESET, TaggedText, TerminalRenderer
+
+if TYPE_CHECKING:
+    from .local_profile import LocalChannel
 
 
 class ChineseHelpFormatter(argparse.HelpFormatter):
@@ -118,7 +123,8 @@ class _WatchOutput:
 
 
 async def watch_client(client: Client, channel_id: str, *, duration: float | None,
-                       text_mode: bool, replay: bool, terminal_mode: bool = False) -> int:
+                       text_mode: bool, replay: bool, terminal_mode: bool = False,
+                       shared_sink: _WatchOutput | None = None, label: str | None = None) -> int:
     text_mode = text_mode or terminal_mode
     renderer = TerminalRenderer() if terminal_mode else None
     if replay:
@@ -134,7 +140,8 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
     text_parts: list[str] = []
     text_size = 0
     output_failed = False
-    sink = _WatchOutput(terminal=terminal_mode)
+    sink = shared_sink if shared_sink is not None else _WatchOutput(terminal=terminal_mode)
+    tagged = TaggedText(label, terminal=terminal_mode) if label else None
     loop = asyncio.get_running_loop()
     flush_at = loop.time() + 0.02
 
@@ -146,7 +153,8 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
             text_parts.clear()
             text_size = 0
             try:
-                sink.put(text if terminal_mode else safe_text(text))
+                rendered = text if terminal_mode else safe_text(text)
+                sink.put(tagged.format(rendered) if tagged else rendered)
             except Exception:
                 output_failed = True
                 raise
@@ -155,7 +163,8 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
     async def diagnostic(message: str) -> None:
         await flush_text()
         prefix = RESET if terminal_mode and sys.stderr.isatty() else ""
-        sink.put(prefix + message + "\n", diagnostic=True)
+        source = f"[{label}] " if label else ""
+        sink.put(prefix + source + message + "\n", diagnostic=True)
 
     async def consume() -> int:
         nonlocal last_delivery, text_size
@@ -259,12 +268,51 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
             finally:
                 # 停止訂閱後才等畫面完成，期間仍由 SDK Reader 處理 RPC。
                 try:
-                    await sink.close()
+                    if shared_sink is None:
+                        await sink.close()
                 except BaseException as exc:
                     if failure is None:
                         raise
                     if exc is not failure:
                         failure.add_note(f"畫面輸出清理另有錯誤：{exc}")
+
+
+async def watch_channels(clients: tuple[Client, ...], channels: tuple["LocalChannel", ...], *,
+                         duration: float | None, terminal_mode: bool) -> int:
+    """每通道一條 SDK 接收佇列，共用有界 Writer；失去單條仍監控其餘通道。"""
+    sink = _WatchOutput(terminal=terminal_mode)
+
+    async def observe(client, channel) -> int:
+        label = f"{channel.id}／{channel.label}"
+        try:
+            return await watch_client(client, channel.id, duration=duration, text_mode=True,
+                replay=True, terminal_mode=terminal_mode, shared_sink=sink, label=label)
+        except (OSError, RemoteError, ProtocolError, TimeoutError) as exc:
+            sink.put(f"[{label}] 監控失敗：{getattr(exc, 'code', type(exc).__name__)}：{exc}\n",
+                     diagnostic=True)
+            return 2
+        finally:
+            await client.close()
+
+    tasks = [asyncio.create_task(observe(client, channel)) for client, channel in zip(clients, channels, strict=True)]
+    failure = None
+    try:
+        results = await asyncio.gather(*tasks)
+        return 2 if all(result == 2 for result in results) else 0
+    except BaseException as exc:
+        failure = exc
+        raise
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            await sink.close()
+        except BaseException as exc:
+            if failure is None:
+                raise
+            if exc is not failure:
+                failure.add_note(f"畫面輸出清理另有錯誤：{exc}")
 
 
 def _check_local_args(args: argparse.Namespace) -> None:
@@ -278,7 +326,8 @@ def _report_failure(exc: Exception) -> None:
 
 def _run_selected(args: argparse.Namespace) -> int:
     """選單與事件迴圈分開；每次啟動必須來自新的明確選擇。"""
-    from .local_ports import choose_port
+    from .local_ports import choose_channels, choose_port
+    from .local_profile import save_profile
     from .local_launcher import LauncherCleanupError, LauncherError, validate_local_settings
 
     _check_local_args(args)
@@ -286,13 +335,27 @@ def _run_selected(args: argparse.Namespace) -> int:
         raise ValueError("終端顯示需要互動式終端機；請移除 --terminal 再選擇裝置。")
     validate_local_settings(args.gateway_port if args.gateway_port is not None else args.port,
                             args.startup_timeout)
+    save_path = args.save_profile
+    if save_path is not None and save_path.exists():
+        raise ValueError("配置檔已存在，請指定新的檔名；未覆蓋原配置。")
+    group = args.count > 1 or save_path is not None
     recovering = False
     while True:
-        args.selected_adapter = choose_port(recovering=recovering)
-        if args.selected_adapter is None:
+        if group:
+            args.selected_channels = choose_channels(args.count, recovering=recovering)
+            selected = args.selected_channels
+            if selected and save_path is not None:
+                save_profile(save_path, selected)
+                print(f"已保存本次選擇：{save_path}；後續重新選擇不會覆蓋此檔。", file=sys.stderr, flush=True)
+                save_path = None
+        else:
+            args.selected_adapter = choose_port(recovering=recovering)
+            selected = args.selected_adapter
+            if selected is not None:
+                args.serial_port = selected.port
+        if selected is None:
             print("已離開選單，未啟動新的 Gateway。", file=sys.stderr, flush=True)
             return 0
-        args.serial_port = args.selected_adapter.port
         try:
             result = asyncio.run(run(args))
         except LauncherCleanupError:
@@ -317,8 +380,27 @@ async def run(args: argparse.Namespace) -> int:
             print(line, flush=True)
         return 0
     if args.command == "local":
-        from .local_launcher import launch_local
+        from .local_launcher import launch_channels, launch_local
+        from .local_profile import load_profile, resolve_profile
         _check_local_args(args)
+        channels = getattr(args, "selected_channels", None)
+        if args.profile is not None:
+            saved = await asyncio.to_thread(load_profile, args.profile)
+            channels = await asyncio.to_thread(resolve_profile, saved)
+        if channels is not None:
+            for channel in channels:
+                print(f"[{channel.id}／{channel.label}] 本次端點：{channel.adapter.port}；115200／8N1／只讀。",
+                      file=sys.stderr, flush=True)
+
+            async def monitor_group(clients, selected) -> int:
+                if len(selected) == 1:
+                    return await watch_client(clients[0], selected[0].id, duration=args.duration,
+                        text_mode=True, replay=True, terminal_mode=args.terminal)
+                return await watch_channels(clients, selected, duration=args.duration, terminal_mode=args.terminal)
+
+            return await launch_channels(channels, monitor_group,
+                gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
+                startup_timeout=args.startup_timeout)
         selector = getattr(args, "selected_adapter", None)
         if args.select and selector is None:
             raise ValueError("尚未完成端點選擇，請使用 uart local --select 進入選單。")
@@ -371,9 +453,12 @@ def main() -> None:
     source = local.add_mutually_exclusive_group()
     source.add_argument("--port", dest="serial_port", default="COM3", help="本次使用的 Serial 端點，預設 COM3")
     source.add_argument("--select", action="store_true", help="列出本機裝置並互動選擇，不自動開啟第一個端點")
+    source.add_argument("--profile", type=Path, help="重用本機配置；啟動前重新核對裝置條件")
+    local.add_argument("--count", type=int, choices=(1, 2), default=1, help="互動選擇 UART 數量，預設 1；目前最多 2")
+    local.add_argument("--save-profile", type=Path, help="將互動選擇保存至新配置檔，建議使用 .local.toml 副檔名")
     local.add_argument("--read-only", action="store_true", help="只讀模式（此版本固定只讀）")
     local.add_argument("--watch", action="store_true", help="持續監控 RX（此版本預設行為）")
-    local.add_argument("--terminal", action="store_true", help="以終端顯示換行、退格及顏色；過濾其他控制序列")
+    local.add_argument("--terminal", action="store_true", help="顯示允許的顏色；單通道保留退格，多通道跳脫 CR／退格")
     local.add_argument("--gateway-port", type=int, help="本機 Gateway Port，預設 18081")
     local.add_argument("--startup-timeout", type=float, default=20, help="等待就緒的秒數")
     local.add_argument("--duration", type=float, help="監控秒數；省略則持續到 Ctrl+C")
@@ -398,8 +483,11 @@ def main() -> None:
         elif name == "status":
             command.add_argument("tx_id")
     args = parser.parse_args()
-    if args.command in ("watch", "local") and args.duration is not None and not args.duration > 0:
-        parser.error("觀測時間必須大於零")
+    if args.command in ("watch", "local") and args.duration is not None and (
+            not math.isfinite(args.duration) or not args.duration > 0):
+        parser.error("觀測時間必須是大於零的有限秒數")
+    if args.command == "local" and not args.select and (args.count != 1 or args.save_profile is not None):
+        parser.error("--count 與 --save-profile 僅能搭配 --select 使用")
     try:
         if args.command == "local" and args.select:
             raise SystemExit(_run_selected(args))

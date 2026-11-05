@@ -1,5 +1,13 @@
 # 開發規範
 
+## 兩條 UART 切片的驗證
+
+`tests/unit/test_local_profile.py` 覆蓋配置往返與拒絕未知／認證欄位、檔案及欄位界限、避免覆寫、唯一序號重找 COM、模糊／變更身分、重複端點與名稱、整組取消、CLI 參數及分來源顏色狀態；另驗證單條 SDK 接收失敗不停止另一條，而共用 Writer 失敗會結束全組並關閉連線。持久配置不保存秘密，SDK／Wire Contract 不變。
+
+`tests/integration/test_multi_launcher.py` 以兩個 PTY、真 pySerial、真 Gateway 子程序及 SDK 測試兩路 RX；拔除第一個 PTY 後，第二條仍收到新資料且 Epoch 不變。亦覆蓋第二條被占用時整組撤銷、跨啟動器端點鎖、部分取得鎖失敗後釋放、既有 Listener 保護、取消、真 CLI 載入配置後 SIGINT 清理，以及兩路各 56400 bytes 重播遇到 200 ms 顯示停頓。CLI 程序測試只以 Mock 補上 PTY 枚舉，Serial／Gateway／SDK 路徑保持真實。
+
+上述為 Linux 模擬／虛擬端點證據，不涵蓋 Windows CMD 主控台、兩個 USB Driver 的實體插拔、控制線脈衝或 30 分鐘持續接收。完整執行仍使用 `python -W error::RuntimeWarning -m unittest discover -s tests -v`；本機 Socket／執行緒通知需要執行環境允許。
+
 > 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
 ## 目前狀態與環境規劃

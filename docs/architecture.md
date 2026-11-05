@@ -65,6 +65,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `text_renderer` | 終端模式的增量控制序列過濾與顏色驗證 | 純文字轉換，不依賴 Serial、Core 或 Server，不修改原始 RX |
 | `local_launcher` | 本機只讀啟動、就緒檢查與自己子程序的生命週期 | 建立既有 `server.app` 子程序，UART 操作只經 SDK；端點名稱正規化重用純函式，不直接存取 Serial |
 | `local_ports` | 本機裝置顯示、互動選擇與選擇後重驗 | 只用 Backend 的只讀枚舉結果，交回既有 Adapter Selector；不開啟 Serial、不新增遠端 API |
+| `local_profile` | 本機通道名稱／裝置條件的驗證、保存及重新解析 | 只讀枚舉、產生既有 TOML 通道欄位；不保存 Token／確認資格、不開啟 Serial |
 
 ```mermaid
 flowchart TB
@@ -87,6 +88,8 @@ flowchart TB
 圖中箭頭是程式依賴方向，不是資料傳送方向。`server/` 與 `gateway/` 合併為同一責任範圍；Session、Recorder 初期各用模組即可，不拆服務。DTO（資料傳輸物件）轉換放在 Server 邊界。
 
 `run-com3.cmd` 是本機薄入口，由 `cli local` 呼叫 `local_launcher` 管理一個 Gateway 子程序，再以同一 SDK 接收資料；CLI 不把 Server／Core 直接當作 UART 操作介面。它只維護自己建立的子程序，不接管既有 Gateway，也不改 API Contract。就緒、程序鎖、臨時認證與 EOF 關閉的設計理由見 [啟動器審查](local-launcher.md)。
+
+兩條模式沿用同一生命週期：先取得全部端點鎖，再建立唯一 Gateway。各 Channel 使用獨立 SDK Session 與原 `watch_client`，共用有界畫面 Writer；不讓兩個監控搶讀同一 SDK 事件佇列。各自維持解碼及顏色狀態，輸出加上來源標記。單條遺失只結束該監控；全部停止、整體程序退出、顯示失敗或 Ctrl+C 才結束整組。新配置只在啟動前載入，不新增 Runtime 設定 API。
 
 ## 身分與資料模型
 

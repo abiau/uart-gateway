@@ -3,6 +3,7 @@
 import asyncio
 from collections import deque
 from collections.abc import Awaitable, Callable
+from contextlib import ExitStack
 import hashlib
 import json
 import math
@@ -16,6 +17,7 @@ import tempfile
 import threading
 
 from .client import Client
+from .local_profile import LocalChannel, channel_tables, validate_channels
 from .protocol.errors import ProtocolError, RemoteError
 from .serial_backend import AdapterSelector, port_key
 
@@ -77,33 +79,19 @@ class PortLock:
 
 
 def _profile(port: str, gateway_port: int, selector: AdapterSelector | None = None) -> str:
+    return _gateway_profile((LocalChannel(CHANNEL_ID, "local_uart", selector or AdapterSelector(port=port)),), gateway_port)
+
+
+def _gateway_profile(channels: tuple[LocalChannel, ...], gateway_port: int) -> str:
     """只有秘密參照；UART 預設仍由原設定載入器提供。"""
-    quoted = json.dumps(port, ensure_ascii=False)
-    conditions = ""
-    if selector is not None:
-        for name in ("vid", "pid", "serial_number", "location"):
-            value = getattr(selector, name)
-            if value is not None:
-                conditions += f"{name} = {json.dumps(value, ensure_ascii=False)}\n"
     return f'''[network]
 bind_host = "127.0.0.1"
 port = {gateway_port}
-
-[[channels]]
-id = "{CHANNEL_ID}"
-label = "local_uart"
-auto_open_rx = true
-auto_reconnect = false
-[channels.adapter]
-port = {quoted}
-{conditions}[channels.serial]
-dtr = false
-rts = false
-
+{channel_tables(channels, gateway=True)}
 [[auth.principals]]
 id = "local_observer"
 token_secret_ref = "env:UART_GATEWAY_TOKEN"
-channels = ["{CHANNEL_ID}"]
+channels = {json.dumps([channel.id for channel in channels])}
 permissions = ["read"]
 '''
 
@@ -191,7 +179,8 @@ def _channel_failure(channel: dict, port: str) -> LauncherError:
 
 
 async def wait_ready(owned: OwnedGateway, port: str, gateway_port: int, timeout: float,
-                     selector: AdapterSelector | None = None) -> Client:
+                     selector: AdapterSelector | None = None, *, channel_id: str = CHANNEL_ID,
+                     grants: list[dict] | None = None) -> Client:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + timeout
     while loop.time() < deadline:
@@ -202,8 +191,9 @@ async def wait_ready(owned: OwnedGateway, port: str, gateway_port: int, timeout:
         try:
             async with asyncio.timeout(min(1, deadline - loop.time())):
                 client = await Client.connect("127.0.0.1", gateway_port, owned.token)
-                channel = await client.get_channel(CHANNEL_ID)
-                if client.auth["grants"] != [{"channel_id": CHANNEL_ID, "permissions": ["read"]}]:
+                channel = await client.get_channel(channel_id)
+                expected = grants if grants is not None else [{"channel_id": channel_id, "permissions": ["read"]}]
+                if sorted(client.auth["grants"], key=lambda g: g["channel_id"]) != sorted(expected, key=lambda g: g["channel_id"]):
                     raise LauncherError("Gateway 的權限不是預期的只讀設定，已停止本次啟動。")
                 if channel["state"] == "ready":
                     actual_port = channel["adapter"].get("port")
@@ -248,22 +238,50 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
     validate_local_settings(gateway_port, startup_timeout)
     if selector is not None and (not selector.port or port_key(selector.port) != port_key(port)):
         raise LauncherError("所選裝置的端點與啟動端點不一致。")
+    channel = LocalChannel(CHANNEL_ID, "local_uart", selector or AdapterSelector(port=port))
+
+    async def single(clients: tuple[Client, ...], channels: tuple[LocalChannel, ...]) -> int:
+        return await monitor(clients[0], channels[0].id)
+
+    return await launch_channels((channel,), single, gateway_port=gateway_port,
+        startup_timeout=startup_timeout, lock_directory=lock_directory, reporter=reporter)
+
+
+async def launch_channels(channels: tuple[LocalChannel, ...],
+                          monitor: Callable[[tuple[Client, ...], tuple[LocalChannel, ...]], Awaitable[int]], *,
+                          gateway_port: int = 18081, startup_timeout: float = 20,
+                          lock_directory: Path | None = None,
+                          reporter: Callable[[str], None] | None = None) -> int:
+    validate_channels(channels)
+    validate_local_settings(gateway_port, startup_timeout)
     report = reporter or (lambda message: print(message, file=sys.stderr, flush=True))
-    with PortLock(port, lock_directory):
+    ports = "、".join(channel.adapter.port for channel in channels)
+    with ExitStack() as locks:
+        for channel in sorted(channels, key=lambda c: port_key(c.adapter.port)):
+            locks.enter_context(PortLock(channel.adapter.port, lock_directory))
         _check_listener(gateway_port)
         with tempfile.TemporaryDirectory(prefix="uart-gateway-local-") as directory:
             profile = Path(directory) / "gateway.toml"
-            profile.write_text(_profile(port, gateway_port, selector), encoding="utf-8")
+            profile.write_text(_gateway_profile(channels, gateway_port), encoding="utf-8")
             owned = OwnedGateway(profile, secrets.token_urlsafe(32), reporter=report)
-            client = None
+            clients: list[Client] = []
             tasks: list[asyncio.Task] = []
             try:
-                report(f"正在啟動 {port} 的只讀 Gateway，等待認證與 Channel 就緒……")
+                report(f"正在啟動 {ports} 的只讀 Gateway，等待認證與全部 Channel 就緒……")
                 owned.start()
                 report(f"本次建立的 Gateway 程序：PID {owned.process.pid}")
-                client = await wait_ready(owned, port, gateway_port, startup_timeout, selector)
-                report(f"{port} 已就緒；只讀 RX 監控中，按 Ctrl+C 關閉本次 Gateway。")
-                tasks = [asyncio.create_task(monitor(client, CHANNEL_ID)), asyncio.create_task(_exited(owned))]
+                deadline = asyncio.get_running_loop().time() + startup_timeout
+                grants = [{"channel_id": c.id, "permissions": ["read"]} for c in channels]
+                for channel in channels:
+                    options = {} if len(channels) == 1 and channel.id == CHANNEL_ID else {
+                        "channel_id": channel.id, "grants": grants}
+                    client = await wait_ready(owned, channel.adapter.port, gateway_port,
+                        max(0, deadline - asyncio.get_running_loop().time()), channel.adapter, **options)
+                    clients.append(client)
+                    if client.instance != clients[0].instance:
+                        raise LauncherError("監控連線的 Gateway Instance 不一致，已停止本次啟動。")
+                report(f"{ports} 已就緒；只讀 RX 監控中，按 Ctrl+C 關閉本次 Gateway。")
+                tasks = [asyncio.create_task(monitor(tuple(clients), channels)), asyncio.create_task(_exited(owned))]
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                 if tasks[1] in done:
                     raise LauncherError("本次 Gateway 已結束，UART 監控停止。")
@@ -273,8 +291,7 @@ async def launch_local(port: str, monitor: Callable[[Client, str], Awaitable[int
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
                 try:
-                    if client is not None:
-                        await client.close()
+                    await asyncio.gather(*(client.close() for client in clients))
                 finally:
                     try:
                         await asyncio.to_thread(owned.stop)

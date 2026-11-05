@@ -69,9 +69,45 @@ Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清�
 
 `--select` 與 `--port` 不能同時使用；`uart local` 未指定兩者時仍預設 COM3。想直接指定端點或自動執行腳本，使用 `--port COM8` 等明確名稱。互動選單需要終端機輸入，不接受以管線送入編號。需要顏色與退格顯示時，可在互動式 ANSI 終端加上 `--terminal`。
 
-使用者已在本輪居家測試回報 USB-UART／IPCAM 接收成功，`--terminal` 可正確顯示顏色。新 CMD 雙擊、重新整理、取消、占用與實體插拔等情境未另行回報，不一併視為通過。此版僅啟動一個 Channel，不加入多 UART 啟動、遠端枚舉或完整 TUI。
+使用者已在本輪居家測試回報 USB-UART／IPCAM 接收成功，`--terminal` 可正確顯示顏色。各情境證據以狀態文件為準，不一併視為全部通過。`--select` 預設仍選一個 Channel；兩條模式見下一節，沒有遠端枚舉或完整 TUI。
 
-## 日常使用：雙擊啟動
+## 同時監看兩條 UART（新功能，Win11 實機待測）
+
+先準備兩個 USB-UART，核對各自接線及 115200／8N1／無流控設定。若目前只有一個轉接器，可繼續使用原單通道功能，不將藍牙 COM 當成第二個 UART 測試來源。
+
+在專案根目錄可雙擊 `run-dual-uart.cmd`，依序選擇兩個不同端點並命名。需要顏色並保存配置時，使用 PowerShell：
+
+```powershell
+.\.venv\Scripts\uart.exe local --select --count 2 --read-only --watch --terminal --save-profile .\bench.local.toml
+```
+
+例如將兩條分別命名為「IPCAM 主控台」與「MCU」。兩次選擇及命名全部完成後，才啟動**一個 Gateway**。命名時 Enter 使用預設名稱，Q 取消整組；重複端點或名稱會要求重選。兩條都 Ready 才進入監控；任一占用或啟動失敗會清理整組並回到選單。
+
+同一視窗依來源顯示 `[ch_uart_1／IPCAM 主控台]`、`[ch_uart_2／MCU]`。每個顯示批次、每行都有標記，沒有換行的短片段也會定時顯示，可能被拆成數個帶標記的畫面行。`--terminal` 保留允許的顏色並隔離兩條的樣式；多通道畫面的 CR、退格顯示為 `\r`、`\x08`，避免改寫其他通道。原單通道 `--terminal` 的進度符號／退格行為不變。這是區分來源的合併監看，不是磁碟錄製。
+
+保存的配置不含 Token。下次可直接執行：
+
+```powershell
+.\.venv\Scripts\uart.exe local --profile .\bench.local.toml --read-only --watch --terminal
+```
+
+啟動時會列出名稱與本次解析的 COM。已保存序號且其他條件仍唯一符合時，可跟隨 COM 重編號；不符合或模糊則要求重新選擇。換 USB 插孔可能改變位置條件，須重新選擇。沒有序號時保留原 COM 條件，不能保證同名 COM 一定是同一轉接器；仍需核對接線。`--profile`、`--select`、`--port` 互斥。
+
+`--save-profile` 不覆蓋既有檔案；需要重新選擇及保存時請使用新檔名，例如 `bench-v2.local.toml`。後續回到選單的重新選擇不會改寫首次保存的檔案。配置格式見 [設定規格](configuration.md)。
+
+監控時拔除其中一條，應顯示該條失去連線，另一條保持接收，Gateway 不重啟。拔回後此版本不自動恢復，需在適合中斷剩餘通道時按 Ctrl+C，再重開整組。兩條都停止後，`--select` 清理並返回選單；`--profile` 清理並退出。Ctrl+C 只結束本次 Gateway；正常 `--duration 30` 到期也清理退出。
+
+請依序驗證：
+
+1. 兩條都有資料時，核對名稱、來源與顏色，不互相混入。
+2. 拔除第一條，確認第二條後續的新資料仍出現；不要只以舊畫面判定仍在接收。
+3. Ctrl+C 後重新啟動，確認兩個 COM 都已釋放。再試第二次重複啟動，原監控應不受影響。
+4. 讓 MobaXterm 占用其中一條後啟動，確認提示占用並清理本次整組，MobaXterm 仍正常。
+5. 保存配置、關閉後重開；有序號且條件唯一的裝置重編 COM 時核對新的對應。條件改變時應拒絕，不自動選第一個裝置。
+
+目前通過的是 Linux／Mock 枚舉／兩個 PTY 的自動化測試。**Win11 雙實體 UART、CMD 雙擊與 30 分鐘持續接收尚未驗證**；五至六條 UART 與完整 TUI 仍待後續容量評估。
+
+## 固定 COM3 的雙擊流程
 
 1. 關閉 MobaXterm 的 COM3 Serial 連線。若舊手動 Gateway 仍在執行，先在它的視窗按 Ctrl+C 正常停止；啟動器不會接管或結束它。
 2. 在檔案總管雙擊專案根目錄的 `run-com3.cmd`。它會開啟獨立 Python 監控視窗。
@@ -123,7 +159,7 @@ Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清�
 
 原 `uart-gatewayd --serial --config examples/gateway.com3.toml` 與 `uart watch` 仍可使用；手動 Gateway／Client 必須從受保護來源提供同一個 Token。範例只授予 read，Binding 為 unconfirmed 不妨礙 RX。`watch --duration 30 --replay --text` 可沿用文字監控；拿掉 `--text` 則輸出保留 bytes 的 JSON／Base64。
 
-本機啟動器自行管理臨時認證，不提供另一個視窗或遠端 Client 取用該 Token 的功能。需要本機／遠端共用 Gateway 時，仍採原有明確憑證及 SDK／CLI 連線模式。使用者已確認 dxan 經 SSH Tunnel 的只讀接收，重播與新顯示模式見遠端測試文件；本輪只新增本機單端點選擇，多 Channel 啟動與 Windows TUI 留待後續。現有載入器上限仍為 4 個 Channel，未宣稱已支援 5～6 個 UART。
+本機啟動器自行管理臨時認證，不提供另一個視窗或遠端 Client 取用該 Token 的功能。需要本機／遠端共用 Gateway 時，仍採原有明確憑證及 SDK／CLI 連線模式。使用者已確認 dxan 經 SSH Tunnel 的只讀接收，重播與新顯示模式見遠端測試文件。本機已增加兩條模式，Windows TUI 留待後續；現有載入器與 Gateway 上限仍為 4 個 Channel，未宣稱已支援 5～6 個 UART。
 
 ## Win11 實機驗收清單
 
@@ -157,3 +193,6 @@ Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清�
 5. 監控中按 Ctrl+C，確認整個程式結束；使用 `--duration 10` 時應在期限後清理並結束。
 
 這一輪先維持單 Channel、只讀與手動選擇；不加入自動重連、TX 或完整 TUI。
+
+
+使用者在 `34842cd` 更新後已回報 USB 拔除後可停留於恢復選單，基本恢復選單操作成功。這不代表長時間接收、所有 EOF 條件或多 UART 同時操作已驗證。

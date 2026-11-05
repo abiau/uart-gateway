@@ -5,6 +5,7 @@ import re
 import sys
 
 from .serial_backend import AdapterDetails, AdapterSelector, list_adapter_details, port_key
+from .local_profile import LocalChannel, validate_channels
 
 
 def _label(value: object) -> str:
@@ -83,3 +84,41 @@ def choose_port(*, read: Callable[[], str] | None = None,
             vid=selected.vid if selected.pid is not None else None,
             pid=selected.pid if selected.vid is not None else None,
             serial_number=selected.serial_number, location=selected.location)
+
+
+def choose_channels(count: int, *, recovering: bool = False,
+                    read: Callable[[], str] | None = None,
+                    report: Callable[[str], None] | None = None) -> tuple[LocalChannel, ...] | None:
+    if count not in (1, 2):
+        raise ValueError("本機選單目前支援 1 至 2 條 UART。")
+    read = read or input
+    report = report or (lambda message: print(message, file=sys.stderr, flush=True))
+    channels = []
+    for number in range(1, count + 1):
+        while True:
+            report(f"選擇第 {number}／{count} 條 UART；全部完成後才啟動 Gateway。")
+            adapter = choose_port(read=read, report=report, recovering=recovering)
+            if adapter is None:
+                return None
+            if any(port_key(c.adapter.port) == port_key(adapter.port) for c in channels):
+                report("此端點已被本組其他通道選取，請選擇不同裝置。")
+                continue
+            break
+        while True:
+            report(f"輸入第 {number} 條的顯示名稱（Enter 使用 UART {number}；Q 取消整組）：")
+            try:
+                label = read().strip() or f"UART {number}"
+            except EOFError:
+                report("輸入來源已結束（EOF），已取消整組配置。")
+                return None
+            if label.casefold() == "q":
+                return None
+            channel = LocalChannel(f"ch_uart_{number}", label, adapter)
+            try:
+                validate_channels(tuple(channels + [channel]))
+            except ValueError as exc:
+                report(str(exc))
+                continue
+            channels.append(channel)
+            break
+    return tuple(channels)
