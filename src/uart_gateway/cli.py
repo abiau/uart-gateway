@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 
 from .client import Client
+from .client.transport import LocalDataLoss
 from .protocol.codec import binary_decode
 from .protocol.errors import ProtocolError, RemoteError
 from .text_renderer import RESET, TerminalRenderer
@@ -49,11 +50,11 @@ async def display_text(text: str) -> None:
     await _display(safe_text(text))
 
 
-async def _display(text: str) -> None:
+async def _display(text: str, *, stream=None) -> None:
     """輸出已完成安全轉換或終端過濾的文字。"""
     if not text:
         return
-    stream = sys.stdout
+    stream = sys.stdout if stream is None else stream
 
     def write() -> None:
         stream.write(text)
@@ -66,6 +67,54 @@ async def _display(text: str) -> None:
     except asyncio.CancelledError:
         await pending
         raise
+
+
+class _WatchOutput:
+    """監控專用的有界輸出；慢速終端不直接暫停 SDK 事件消費。"""
+
+    def __init__(self, *, terminal: bool, maximum: int = 262144):
+        self.terminal, self.maximum, self.used = terminal, maximum, 0
+        self.queue = asyncio.Queue(maxsize=256)
+        self.task = asyncio.create_task(self._run())
+
+    def put(self, text: str, *, diagnostic: bool = False) -> None:
+        if self.task.done():
+            self.task.result()
+            raise RuntimeError("監控輸出已結束")
+        if not text:
+            return
+        size = len(text.encode("utf-8"))
+        if self.queue.full() or self.used + size > self.maximum:
+            raise LocalDataLoss("CLI 顯示佇列已滿，終端輸出持續跟不上接收速度；資料連續性中斷。")
+        self.used += size
+        self.queue.put_nowait((text, diagnostic, size))
+
+    async def _run(self) -> None:
+        try:
+            while (item := await self.queue.get()) is not None:
+                text, diagnostic, size = item
+                try:
+                    if diagnostic:
+                        await _display(text, stream=sys.stderr)
+                    elif self.terminal:
+                        await _display(text)
+                    else:
+                        await display_text(text)
+                finally:
+                    # 使用量包含正在寫入的批次，不能提早釋放其額度。
+                    self.used -= size
+            if self.terminal:
+                # 由 Writer 收尾；即使 Producer 因額度已滿失敗，仍能恢復顏色。
+                await _display(RESET)
+        finally:
+            while not self.queue.empty():
+                self.queue.get_nowait()
+            self.used = 0
+
+    async def close(self) -> None:
+        if not self.task.done():
+            await self.queue.put(None)
+        await self.task
 
 
 async def watch_client(client: Client, channel_id: str, *, duration: float | None,
@@ -85,6 +134,7 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
     text_parts: list[str] = []
     text_size = 0
     output_failed = False
+    sink = _WatchOutput(terminal=terminal_mode)
     loop = asyncio.get_running_loop()
     flush_at = loop.time() + 0.02
 
@@ -96,7 +146,7 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
             text_parts.clear()
             text_size = 0
             try:
-                await (_display(text) if terminal_mode else display_text(text))
+                sink.put(text if terminal_mode else safe_text(text))
             except Exception:
                 output_failed = True
                 raise
@@ -104,67 +154,80 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
 
     async def diagnostic(message: str) -> None:
         await flush_text()
-        if terminal_mode:
-            await _display(RESET)
-        print(message, file=sys.stderr, flush=True)
+        prefix = RESET if terminal_mode and sys.stderr.isatty() else ""
+        sink.put(prefix + message + "\n", diagnostic=True)
 
-    failure: BaseException | None = None
-    observation = asyncio.timeout(duration)
-    try:
+    async def consume() -> int:
+        nonlocal last_delivery, text_size
+        observation = asyncio.timeout(duration)
         if text_mode:
             await diagnostic(json.dumps({"subscription": sub}, ensure_ascii=True))
         else:
-            await output({"subscription": sub})
-        async with observation:
-            while True:
-                if text_parts:
-                    refresh = asyncio.timeout_at(flush_at)
-                    try:
-                        async with refresh:
-                            event = await client.next_event()
-                    except TimeoutError:
-                        if not refresh.expired():
-                            raise
-                        await flush_text()
-                        continue
-                else:
-                    event = await client.next_event()
-                if text_mode and event["event"] == "rx":
-                    delivery = event["data"]["delivery"]
-                    if delivery != last_delivery:
-                        mode = "歷史重播" if delivery == "replay" else "即時接收"
-                        await diagnostic(f"接收模式：{mode}")
-                        last_delivery = delivery
-                    text = decoder.decode(binary_decode(event["data"]["data_b64"]))
-                    if renderer is not None:
-                        text = renderer.feed(text)
-                    text_parts.append(text)
-                    text_size += len(text)
-                    if text_size >= 16384 or loop.time() >= flush_at:
-                        await flush_text()
-                elif text_mode:
-                    if renderer is not None and event["event"] in ("gap", "subscription_state"):
-                        text_parts.append(renderer.feed(decoder.decode(b"", final=True)))
-                        text_parts.append(renderer.finish())
-                        decoder.reset()
-                    await diagnostic(json.dumps(event, ensure_ascii=True))
-                else:
-                    await output(event)
-                if event["event"] == "subscription_state" and event["data"]["state"] == "ended":
-                    return 2
-    except TimeoutError as exc:
-        if not observation.expired():
-            failure = exc
-            raise
+            sink.put(json.dumps({"subscription": sub}, ensure_ascii=True, separators=(",", ":")) + "\n")
+        try:
+            async with observation:
+                while True:
+                    if text_parts:
+                        refresh = asyncio.timeout_at(flush_at)
+                        try:
+                            async with refresh:
+                                event = await client.next_event()
+                        except TimeoutError:
+                            if not refresh.expired():
+                                raise
+                            await flush_text()
+                            continue
+                    else:
+                        event = await client.next_event()
+                    if text_mode and event["event"] == "rx":
+                        delivery = event["data"]["delivery"]
+                        if delivery != last_delivery:
+                            mode = "歷史重播" if delivery == "replay" else "即時接收"
+                            await diagnostic(f"接收模式：{mode}")
+                            last_delivery = delivery
+                        text = decoder.decode(binary_decode(event["data"]["data_b64"]))
+                        if renderer is not None:
+                            text = renderer.feed(text)
+                        text_parts.append(text)
+                        text_size += len(text)
+                        if text_size >= 16384 or loop.time() >= flush_at:
+                            await flush_text()
+                    elif text_mode:
+                        if renderer is not None and event["event"] in ("gap", "subscription_state"):
+                            text_parts.append(renderer.feed(decoder.decode(b"", final=True)))
+                            text_parts.append(renderer.finish())
+                            decoder.reset()
+                        await diagnostic(json.dumps(event, ensure_ascii=True))
+                    else:
+                        sink.put(json.dumps(event, ensure_ascii=True, separators=(",", ":")) + "\n")
+                    if event["event"] == "subscription_state" and event["data"]["state"] == "ended":
+                        return 2
+        except TimeoutError:
+            if not observation.expired():
+                raise
+        return 0
+
+    failure: BaseException | None = None
+    consumer = asyncio.create_task(consume())
+    try:
+        done, _ = await asyncio.wait((consumer, sink.task), return_when=asyncio.FIRST_COMPLETED)
+        if consumer in done:
+            # 同時失敗時保留接收原因；Writer 錯誤在清理時附註。
+            return await consumer
+        await sink.task
+        raise RuntimeError("監控輸出意外結束")
     except BaseException as exc:
         failure = exc
         raise
     finally:
+        consumer.cancel()
+        await asyncio.gather(consumer, return_exceptions=True)
         try:
-            if text_mode and not output_failed:
+            if text_mode and not output_failed and not sink.task.done():
                 tail = decoder.decode(b"", final=True)
                 if renderer is not None:
-                    tail = renderer.feed(tail) + renderer.finish()
+                    tail = renderer.feed(tail)
+                    renderer.finish()
                 if tail:
                     text_parts.append(tail)
                 await flush_text()
@@ -175,12 +238,22 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
             failure.add_note(f"文字輸出清理另有錯誤：{exc}")
         finally:
             try:
-                await client.unsubscribe(sub["subscription_id"])
-            except BaseException as exc:
-                if failure is None:
-                    raise
-                failure.add_note(f"取消訂閱另有錯誤：{exc}")
-    return 0
+                try:
+                    await client.unsubscribe(sub["subscription_id"])
+                except BaseException as exc:
+                    if failure is None:
+                        failure = exc
+                        raise
+                    failure.add_note(f"取消訂閱另有錯誤：{exc}")
+            finally:
+                # 停止訂閱後才等畫面完成，期間仍由 SDK Reader 處理 RPC。
+                try:
+                    await sink.close()
+                except BaseException as exc:
+                    if failure is None:
+                        raise
+                    if exc is not failure:
+                        failure.add_note(f"畫面輸出清理另有錯誤：{exc}")
 
 
 async def run(args: argparse.Namespace) -> int:

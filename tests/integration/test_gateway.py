@@ -19,6 +19,73 @@ from tests.fakes import FakeClock, eventually
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_replay_survives_temporarily_stalled_console(self):
+        import io
+        import time
+
+        class Console(io.StringIO):
+            def write(self, value):
+                time.sleep(0.2)
+                return super().write(value)
+
+        payload = (b"boot\r\n" + b"x" * 140) * 400
+        for offset in range(0, len(payload), 146):
+            self.gateway.channels["a"].ingest(payload[offset:offset + 146])
+        for terminal in (False, True):
+            client = await self.client(True)
+            console = Console()
+            with self.subTest(terminal=terminal), patch("sys.stdout", console), patch("sys.stderr", io.StringIO()):
+                result = await watch_client(client, "a", duration=1, text_mode=True, replay=True,
+                                            terminal_mode=terminal)
+                self.assertEqual(result, 0)
+                expected = payload.decode() if terminal else safe_text(payload.decode())
+                self.assertEqual(console.getvalue().replace(RESET, ""), expected)
+                self.assertIsNone(client.transport.failure)
+
+    async def test_stalled_terminal_does_not_block_event_consumption_or_rpc(self):
+        import io
+
+        entered, release = threading.Event(), threading.Event()
+
+        class Console(io.StringIO):
+            def write(self, value):
+                entered.set()
+                if not release.wait(5):
+                    raise RuntimeError("測試未釋放終端輸出")
+                return super().write(value)
+
+        payload = b"x" * 58400
+        for offset in range(0, len(payload), 146):
+            self.gateway.channels["a"].ingest(payload[offset:offset + 146])
+        client = await self.client(True)
+        received = 0
+        original = client.next_event
+
+        async def next_event():
+            nonlocal received
+            event = await original()
+            if event["event"] == "rx":
+                received += len(binary_decode(event["data"]["data_b64"]))
+            return event
+
+        console = Console()
+        with patch.object(client, "next_event", side_effect=next_event), \
+                patch("sys.stdout", console), patch("sys.stderr", io.StringIO()):
+            task = asyncio.create_task(watch_client(client, "a", duration=None, text_mode=True,
+                                                    replay=True, terminal_mode=True))
+            try:
+                await eventually(entered.is_set)
+                await eventually(lambda: received == len(payload))
+                self.assertIsNone(client.transport.failure)
+                self.assertFalse(task.done())
+                self.assertEqual((await asyncio.wait_for(client.get_channel("a"), 1))["state"], "ready")
+            finally:
+                release.set()
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+        self.assertEqual(console.getvalue().replace(RESET, ""), payload.decode())
+
     async def test_text_replay_small_chunks_preserves_output_with_slow_console(self):
         import io
         import time

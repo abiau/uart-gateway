@@ -18,7 +18,9 @@ git pull --ff-only origin work
 
 拉取成功後，可直接使用原本以 editable 模式安裝的 `.venv/bin/uart`，不需重新建立環境或更換 Token。執行下方兩項測試即可；Windows Gateway 與 Tunnel 保持執行。
 
-## 安裝單一測試包（替代方式）
+## 安裝單一測試包（先前版本）
+
+先前下載的測試包不含本輪終端停頓修正。這次請依上一節從 Git 更新；以下保留先前的安裝流程。
 
 使用 `uart-gateway-rx-terminal-test.zip`，不需套用先前的 v1／v2 修補檔。測試包是本次完整原始碼快照，不含 Git 資料、虛擬環境、Token 或 UART 錄製。
 
@@ -54,9 +56,9 @@ CLI 不需安裝 `[server]` 或 pySerial。以下命令都在剛才的新目錄�
 .venv/bin/uart --token-file "$HOME/.config/uart-gateway/com3.token" watch ch_uart_1 --duration 60 --replay --text
 ```
 
-確認歷史資料能持續顯示，不再於相同情境出現 `LocalDataLoss`。這個模式仍會將 CR、退格與 ANSI 跳脫，屬預期行為；下一個測試才處理畫面呈現。
+確認歷史資料能持續顯示，不再於相同情境出現 `LocalDataLoss`。這個模式仍會將 CR、退格與 ANSI 跳脫，屬預期行為；下一個測試才處理畫面呈現。使用者已確認前版顏色與換行正常，但重播仍溢位；本輪修正事件消費與畫面寫入的耦合，需更新後再測，不能沿用前版自動化成功當作現場通過。
 
-每次 `--replay` 都重新顯示 Gateway 仍保留的歷史，跨次命令看到相同 Log 並非重複輸出的缺陷。Gateway／SDK 佇列仍有上限，輸出持續過慢或歷史超出容量時仍可能明確失敗，不能宣稱任意資料量皆零遺失。若有錯誤，保留訂閱快照與錯誤訊息，不附 Token。
+每次 `--replay` 都重新顯示 Gateway 仍保留的歷史，跨次命令看到相同 Log 並非重複輸出的缺陷。Gateway／SDK 及 CLI 顯示佇列仍有上限，輸出持續過慢或歷史超出容量時仍可能明確失敗，不能宣稱任意資料量皆零遺失。若有錯誤，保留訂閱快照、完整錯誤訊息及 `git log -1 --oneline`，不附 Token。觀測結束或 Ctrl+C 後會等已排入的文字顯示完畢，可能稍晚才回到 Shell。
 
 ## 測試二：終端顯示
 

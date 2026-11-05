@@ -13,7 +13,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：101 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：107 項通過、無略過，包含真 TCP、Fake Serial 與真 pySerial PTY |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
@@ -259,3 +259,21 @@ Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限
 - 新增 7 項過濾器單元、5 項 CLI 邊界及 2 項真 CLI／主控台 PTY 測試，包含顏色與進度符號、每個切割點、UTF-8、未知／超長序列、TTY 要求、取消後恢復顏色與缺口邊界。PTY 檢查控制位元組，未觀察使用者的實際終端畫面。
 
 提供完整 `uart-gateway-rx-terminal-test.zip` 快照，取代現場處理多版修補檔；以新目錄與獨立環境安裝，不覆蓋現有程式或認證。使用者後續明確要求 commit／push，改以 origin/work 供 dxan 直接拉取，測試包保留為替代方式。操作見 [Container 合併測試](remote-rx-test.md)。此版狀態是 Implemented／自動化 Tested；dxan Python 3.14、IPCAM 原始歷史與真實終端顯示仍待使用者驗證，Tunnel 中斷測試尚未開始。本次依使用者授權提交與推送，實際版本以 Git 紀錄為準；程式未再變更，沿用上述 101 項通過的結果。
+
+
+## 現場重播再次溢位：分離事件消費與畫面輸出
+
+使用者回報顏色與換行正常，但 `--replay --terminal` 仍出現 `LocalDataLoss：SDK 事件佇列已滿`；訂閱快照 `replay_until_offset` 為 57982、`earliest_offset` 為 0。顏色／換行記為 Verified（使用者執行並回報），不能因此把重播、進度符號、Ctrl+C 或 Tunnel 中斷一併標成已通過。
+
+先前每次 write 延遲 1 ms 的測試不足：將每次終端 write 延遲改為 200 ms，以 58400 bytes、400 個區塊重播，實際重現 SDK LocalDataLoss。這是模擬造成同類故障的條件，沒有量測現場終端實際延遲。問題是 CLI await 畫面寫入時停止取 SDK 事件，原本的 yield 與批次輸出仍無法承接較長的短暫停頓。
+
+本次修正：
+
+- 事件消費與有序畫面 Writer 分成兩個工作，stdout／stderr 寫入不直接阻塞事件消費。顯示佇列上限為 256 項與 262144 UTF-8 bytes，包括正在寫入的批次；使用緊湊文字承接暫時停頓，不是調大 SDK 事件容量。
+- SDK 的事件數量與位元組上限、Wire API、Gateway、Token、DTR／RTS 及只讀授權均不改動；不新增 UART TX。
+- 顯示持續跟不上時明確回報「CLI 顯示佇列已滿」，不丟棄資料後假裝完整。Writer 失敗會喚醒等待 UART 的監控；同時接收失敗時保留接收原因並附註輸出錯誤。
+- 關閉先取消訂閱，再等待已排入的畫面輸出完成；Writer 收尾恢復顏色，包含 Producer 因容量不足失敗的情境。OS 若阻塞輸出，仍不能宣稱能安全強殺該 I/O。
+
+驗證：Linux／Python 3.12.14／pySerial 3.5，完整 107 項測試通過、無略過。新增的 6 項測試涵蓋兩種模式的 200 ms 輸出停頓、畫面停住時仍完整消費歷史與完成 RPC、UTF-8／寫入中容量、項目上限、無新 UART 時的 Writer 失敗通知，以及雙工作同時失敗的原始錯誤保留。原有 SDK 溢位測試仍通過。
+
+依使用者先前要求持續採 Git 交付，本輪提交並推送 origin/work，供 dxan 拉取後重測；不需重啟 Windows Gateway 或更換 Token。現場重播修正狀態仍為 Implemented／自動化 Tested，尚未收到新版本實機結果；Tunnel 中斷測試仍未開始。

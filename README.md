@@ -25,7 +25,7 @@ Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win1
 
 ## 目前階段
 
-Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。使用者已確認 Win11 啟動器實機測試通過，d3s1 的 dxan 容器亦經 SSH Tunnel 收到 IPCAM UART 資訊。歷史重播的 SDK 佇列溢位已在模擬環境重現並修正，並新增可選的終端顯示。下一步先於容器合併驗證重播與顯示，再測 Tunnel 中斷與重新連線。實體 TX、插拔、長時間穩定性與完整 Phase 1 驗收尚未完成。
+Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。使用者已確認 Win11 啟動器實機測試通過，d3s1 的 dxan 容器亦經 SSH Tunnel 收到 IPCAM UART 資訊。使用者已確認終端模式的顏色與換行正常，但現場重播仍有 SDK 佇列溢位；已補上較長的終端停頓重現測試，並分離事件消費與有界畫面輸出。下一步先於容器重測重播，再測 Tunnel 中斷與重新連線。實體 TX、插拔、長時間穩定性與完整 Phase 1 驗收尚未完成。
 
 七份 ADR（架構決策紀錄）均為 `Accepted`（已正式接受）。數值預設、具體協定契約及建議操作政策已接受為初始基線；尚未取得的現場資訊不視為已驗證。最新證據與待回答事項以 [目前狀態](docs/status.md) 為準。
 
@@ -97,7 +97,7 @@ python -m unittest discover -s tests -v
 
 第一批 Linux／Python 3.12 執行 41 項測試全數通過，包含真 TCP 與模擬裝置；已安裝的兩個命令入口亦完成端到端操作。測試需要建立 `127.0.0.1` 暫時 Socket；禁止 Socket 的沙箱需取得對應執行權限，不能將略過整合測試當成通過。
 
-本次最新驗證為 Linux／Python 3.12／pySerial 3.5，101 項測試全部通過，包含既有 3 項真 pySerial PTY 整合及 9 項啟動器程序／PTY 整合。覆蓋就緒、RX、失敗、重複啟動、既有服務保護、Ctrl+C 清理、立即重啟，以及重播、文字輸出取消與錯誤保留；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
+本次最新驗證為 Linux／Python 3.12／pySerial 3.5，107 項測試全部通過，包含既有 3 項真 pySerial PTY 整合及 9 項啟動器程序／PTY 整合。覆蓋就緒、RX、失敗、重複啟動、既有服務保護、Ctrl+C 清理、立即重啟，以及重播、文字輸出取消與錯誤保留；不是 Win11 硬體證據。未安裝 `[server]` 或非 POSIX 環境時，PTY 測試會明確略過。
 
 目前載入器支援網路位址／Port、Channel／Principal、Adapter Selector、Serial 設定、自動 RX 開啟及生命週期等待期限；其他尚未支援欄位明確拒絕。持續錄製／稽核、完整設定、Win11 USB 插拔與遠端斷線恢復尚未驗證；SSH／Podman 的只讀 RX 路徑已由使用者實際執行確認。SDK 由呼叫者明確重連與恢復 Cursor，不自動恢復 Lease 或重送 TX。`watch --text` 可顯示文字並跳脫控制字元，預設仍輸出保留原始 bytes 的 JSON／Base64。
 
