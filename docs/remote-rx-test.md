@@ -80,6 +80,24 @@ CLI 不需安裝 `[server]` 或 pySerial。以下命令都在剛才的新目錄�
 
 ## 驗證與回報邊界
 
-自動化使用 Linux／Python 3.12、Fake Serial、真 TCP、真 CLI 子程序與 POSIX PTY。PTY 測試檢查輸出的控制位元組，不代表已觀察你的實際終端畫面。dxan 的 Python 3.14、IPCAM 原始歷史、Container 真實顏色／退格效果與 Win11 新模式均待使用者驗證。
+自動化使用 Linux／Python 3.12、Fake Serial、真 TCP、真 CLI 子程序與 POSIX PTY。PTY 測試檢查輸出的控制位元組，不代表已觀察你的實際終端畫面。使用者已回報 dxan 的新版 `--replay --terminal`、顏色／換行、再次監控與 Tunnel 中斷後手動恢復成功；退格進度符號的具體效果與 Win11 新顯示模式未另回報，不一併宣稱通過。
 
-請回報兩種模式是否完成、是否仍有 `LocalDataLoss`、顏色與進度符號是否正常，以及 Ctrl+C 後能否再次監控。此輪先完成上述兩項，再安排 Tunnel 中斷與恢復。
+下節保留驗收流程。使用者已確認重新執行 replay、Tunnel 中斷時顯示斷線且 Gateway 無異動，以及 Tunnel 重建後可手動重連與重播；結果已記於 [專案狀態](status.md)。相同畫面不代表已完成逐 byte 完整性驗證。
+
+## 再次監控與 Tunnel 中斷恢復驗收流程
+
+在 dxan 執行較長時間的監控：
+
+```sh
+.venv/bin/uart --token-file "$HOME/.config/uart-gateway/com3.token" watch ch_uart_1 --duration 300 --replay --terminal
+```
+
+1. 在 dxan 按 Ctrl+C，確認 CLI 結束、Shell 顏色正常。重新執行同一命令，確認可再次訂閱並顯示保留的資料；跨次重播相同內容屬預期行為。
+2. 保持第二次監控執行，在 Windows 的 SSH Tunnel 視窗按 Ctrl+C。Windows Gateway 視窗保持執行。觀察容器 CLI 是否顯示斷線／連線錯誤並結束，記下訊息及大約等待時間。
+3. 在 Windows PowerShell 重建原本的反向轉送：
+
+```powershell
+ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -R 127.0.0.1:18081:127.0.0.1:18081 victor.hu-vo@d3s1
+```
+
+4. 登入後讓 SSH 視窗持續執行，在 dxan 手動重開上述 watch，確認重新認證與訂閱成功，IPCAM 有輸出時能再次接收。CLI 目前不會自動重連。Gateway 不重啟，Token 不更換；保留歷史僅限目前 Ring 容量，不保證中斷期間零遺失。

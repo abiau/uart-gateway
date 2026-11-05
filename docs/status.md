@@ -17,7 +17,8 @@
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
-| SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | d3s1 的 dxan 容器經 Windows 反向 SSH Tunnel 收到 IPCAM UART 資訊；斷線恢復與長時間穩定性尚待驗證 |
+| SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。長時間穩定性與資料完整性尚待驗證 |
+| dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
 | Commit／Push（提交／推送） | 前次交接已保存 | `496ab13` 已保存前次 Phase 1 交接；本次啟動器依使用者明確授權 commit／push |
 
 狀態語意：`Planned` 為預計開發；`In Progress` 為正在進行；`Implemented` 為已有實作；`Tested` 為已執行具體測試並有結果；`Verified` 為在聲稱的真實條件下實際驗證。不可因 Implemented 就改成 Tested，也不能以模擬測試把 Windows 硬體標為 Verified。文件可標示「已建立／已檢查」，但不讓這些詞代表產品已實作。
@@ -276,4 +277,28 @@ Phase 1 仍為 In Progress。此切片的對外設定使用預設容量／期限
 
 驗證：Linux／Python 3.12.14／pySerial 3.5，完整 107 項測試通過、無略過。新增的 6 項測試涵蓋兩種模式的 200 ms 輸出停頓、畫面停住時仍完整消費歷史與完成 RPC、UTF-8／寫入中容量、項目上限、無新 UART 時的 Writer 失敗通知，以及雙工作同時失敗的原始錯誤保留。原有 SDK 溢位測試仍通過。
 
-依使用者先前要求持續採 Git 交付，本輪提交並推送 origin/work，供 dxan 拉取後重測；不需重啟 Windows Gateway 或更換 Token。現場重播修正狀態仍為 Implemented／自動化 Tested，尚未收到新版本實機結果；Tunnel 中斷測試仍未開始。
+依使用者先前要求持續採 Git 交付，本輪提交並推送 origin/work，供 dxan 拉取後重測；不需重啟 Windows Gateway 或更換 Token。交付時現場重播修正狀態為 Implemented／自動化 Tested，後續實機回報見下段；Tunnel 中斷測試仍未開始。
+
+## 新版遠端重播成功與下一步
+
+在提供 `c90a0b9` 的拉取與 `watch --duration 60 --replay --terminal` 重測步驟後，使用者回覆「成功」。新版遠端歷史重播記為 Verified（使用者執行並回報）；沿用先前已確認的顏色與換行成果。這不是 Agent 直接執行，也不代表已量測零遺失或完成全部 Python 3.14 相容性測試。
+
+下一步先測遠端 CLI 按 Ctrl+C 後能重新監控，再於保持 Windows Gateway 執行的情況下，停止及重建 Windows 的反向 SSH Tunnel，確認舊 CLI 顯示連線失敗、手動重開 CLI 可恢復 RX。Gateway 與 Token 維持不變；不自動重連、不傳 UART 指令。長時間接收、多 UART 與實體 TX 尚未驗收。
+
+本次只更新使用者回報與現場測試步驟，沿用前次 107 項自動化通過結果，未重跑未變更的程式；文件變更尚未 commit／push。
+
+## 遠端再次監控與 Tunnel 中斷恢復結果
+
+使用者回報已完成前述測試，Container 重新執行 replay 可看到相同畫面；停止 SSH Tunnel 後 Container 顯示斷線，Gateway 無異動；Tunnel 重連後 Container 可重新連線，replay 仍可顯示相同畫面，並確認測試成功。
+
+上述再次監控、Tunnel 中斷回報、Gateway 保持執行，以及 Tunnel 重建後手動重連／重播記為 Verified（使用者執行並回報）。這是目前保留歷史可再次讀取的證據，未取得逐 byte 計數、Offset 對照或長時間測試數據，不據此宣稱中斷期間零遺失或已完整錄製。CLI 仍採手動重新連線，沒有新增自動重連或 TX。
+
+下一步建議先做 30 分鐘的持續只讀接收，記錄是否有新資料、錯誤或非預期退出，再安排長時間穩定性與可計數來源的完整性驗證。多 UART、互動選 Port、TUI、實體 TX 與完整 Phase 1 驗收仍未完成。
+
+本次僅更新實機結果與文件，程式維持 `c90a0b9`，沿用最近 107 項自動化測試通過的證據；文件納入下述交接保存。
+
+## 居家接續交接（2026-11-05，Asia/Taipei）
+
+使用者目前在家，無法連到公司的 d3s1，明確要求先 commit／push。此次保存遠端 RX、歷史重播、顏色／換行、再次監控及 Tunnel 中斷後手動恢復的實機回報，並同步部署與測試文件。只改文件，檢查內部連結與空白格式；未重跑未變更的程式測試。
+
+30 分鐘持續接收尚未執行，留待可連回公司環境時驗證；不將目前無法連線視為 Gateway 故障。居家可接續的建議是以 Mock 裝置清單與 Fake Serial 開發 COM Port 列出／選擇，仍維持單 Channel 與只讀；此功能尚未開始實作，需依後續任務進行。此次依使用者授權提交並推送 origin/work，實際版本以 Git 紀錄為準。

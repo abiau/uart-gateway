@@ -4,14 +4,15 @@
 
 ## 狀態與證據邊界
 
-本文件為候選正式部署設計，不是已完成部署的操作紀錄。基線為 Windows 11 Gateway、d3s1 SSH Server（伺服器）與 Podman Container（容器），不得直接對公司網路開放 Gateway。
+本文件保留完整候選部署設計，基線為 Windows 11 Gateway、d3s1 SSH Server（伺服器）與 Podman Container（容器），不得直接對公司網路開放 Gateway。目前現場 dxan 使用 host 網路，已由使用者驗證 Windows 反向轉送、遠端只讀 RX／重播及 Tunnel 中斷後手動恢復；不需要第二段 Container Local Forward（本地轉送）。以下雙段轉送圖是隔離網路的候選方案，不能當成 dxan 的實際路徑。
 
 | 類別 | 已知內容 | 證據限制 |
 | --- | --- | --- |
 | 使用者提供的背景 | Linux Container 曾透過網路讀取 Windows COM3 | 未取得該程式、命令或 Log（紀錄），不代表本版本庫已實作或驗證 |
 | 歷史起始檢查 | 初始版本庫只有文件工作前的空狀態 | 當時狀態；目前已有 Phase 1 程式，最新進度見專案狀態 |
-| 預計採用 | Windows Loopback（回送介面）Gateway + Reverse Forward（反向轉送）+ Container Local Forward（本地轉送） | 尚未執行任何部署命令 |
-| 待驗證 | Podman Network Mode（網路模式）、SSH 位址、DNS、Forward 權限、防火牆、Port 衝突、Adapter 身分與控制線 | 需使用者資訊及未來獲授權的現場驗證 |
+| 已驗證現場 | dxan host 網路 → d3s1 Loopback → Windows 反向 SSH Tunnel → Gateway／COM3 | 使用者回報 RX、重播、中斷提示、Gateway 保持執行及重建後手動恢復成功；未量測零遺失 |
+| 隔離網路候選 | Windows Loopback（回送介面）Gateway + Reverse Forward（反向轉送）+ Container Local Forward（本地轉送） | 完整雙段路徑尚未驗證；現場 host 模式僅需反向轉送 |
+| 待驗證 | 其他 Podman Network Mode（網路模式）的 SSH／DNS 可達性、受限 Forward 政策、Adapter 唯一身分、USB 插拔及控制線量測 | 不能由目前 host 網路接收成功推論其他環境也已驗證 |
 
 ## 完整連線路徑
 
@@ -103,3 +104,5 @@ SSH 保護傳輸，但 Host／Container 上可接近 Loopback 的其他程序仍
 pySerial Backend 與只讀 COM3 範例已建立，Linux 的真 pySerial PTY 與 CLI 驗證已通過。使用者確認僅接 TX／RX／GND，參數為 115200／8N1／無流控，並已在 Win11 啟動本 Gateway、以 uart.exe watch 收到 IPCAM 開機訊息。本機 RX 可依使用者實際執行的回報標為已驗證；這不同於初期 MobaXterm 接收成功的背景。
 
 [Win11 本機接收步驟](windows-quickstart.md) 保留為重現流程，本機 RX 已成功，不需重做才能繼續。下一步確認既有 SSH 命令與轉送位置，建立 Container 到 Gateway 的只讀路徑；本次尚未修改 SSH／防火牆／Podman，也未驗證實體 TX。
+
+後續遠端驗證已由使用者完成：`ssh victor.hu-vo@d3s1` 加上既有 Loopback 反向轉送，dxan 使用 host 網路直接連 `127.0.0.1:18081`。停止 Tunnel 時 CLI 顯示斷線、Gateway 無異動；重建後手動執行 CLI，可重新認證與重播。重現步驟見 [Container RX 測試](remote-rx-test.md)，實際進度以 [專案狀態](status.md) 為準。下一步是較長時間持續接收，不能把目前結果當作自動重連、持續錄製或零遺失證明。
