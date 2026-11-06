@@ -1,5 +1,11 @@
 # 開發規範
 
+## 工作台驗證
+
+`tests/unit/test_workbench.py` 覆蓋取消／EOF／TTY、只讀監看與錄製參數、路徑不經 Shell、一般錯誤可返回、清理失敗必須停止、Ctrl+C 邊界、錄製選擇與手動路徑、掃描／顯示上限、控制字元跳脫及真 CLI 路由。內部操作保留 LauncherCleanupError，不遞迴呼叫會把錯誤轉為一般退出碼的 main。
+
+`tests/integration/test_workbench.py` 用真 CLI／PTY 選單完成檢查／回看／文字匯出；另只替換 Serial 枚舉，以真 Gateway 子程序、SDK、pySerial 與 PTY 驗證監看錄製、SIGINT 清理、返回工作台、檔案正常收尾與 Serial 可重開。這不是 Win11 主控台或實體 USB 驅動證據。
+
 ## Gateway RX 錄製驗證
 
 `tests/unit/test_recording_play.py` 驗證終端回看跨分段 UTF-8／顏色、CR／BS、未知控制序列過濾、缺口／Epoch／裝置遺失、未收尾檔、輸出故障不重送、取消後工作執行緒停止與顏色重設。另以真 CLI 測無 Token、安全文字與 0／1／2 退出碼，以 POSIX PTY 測實際終端模式。使用錄製 fixture 與終端替身，不操作 Windows 或實體 UART；這些證據不能代替 Win11 視覺驗證。

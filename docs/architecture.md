@@ -69,6 +69,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `local_launcher` | 本機只讀啟動、就緒檢查與自己子程序的生命週期 | 建立既有 `server.app` 子程序，UART 操作只經 SDK；端點名稱正規化重用純函式，不直接存取 Serial |
 | `local_ports` | 本機裝置顯示、互動選擇與選擇後重驗 | 只用 Backend 的只讀枚舉結果，交回既有 Adapter Selector；不開啟 Serial、不新增遠端 API |
 | `local_profile` | 本機通道名稱／裝置條件的驗證、保存及重新解析 | 只讀枚舉、產生既有 TOML 通道欄位；不保存 Token／確認資格、不開啟 Serial |
+| `workbench` | 同步本機只讀工作台與錄製選單 | 只傳結構化 argv 給既有 CLI 路由；不使用 Shell，不存取 Serial／Core；清理失敗向外傳遞 |
 
 ```mermaid
 flowchart TB

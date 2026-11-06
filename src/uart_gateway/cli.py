@@ -474,6 +474,9 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("channels", help="列出通道")
     commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
+    menu = commands.add_parser("menu", help="開啟本機只讀工作台：監看、錄製與離線操作")
+    menu.add_argument("--recordings-dir", type=Path, default=Path("recordings"), help="錄製與瀏覽的根目錄，預設 recordings")
+    menu.add_argument("--pause-on-error", action="store_true", help="失敗時按 Enter 關閉，供雙擊入口使用")
     play = commands.add_parser("recording-play", help="離線快速回看錄製，不連線 UART")
     play.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
     play.add_argument("--terminal", action="store_true", help="在互動終端呈現換行、退格與允許的顏色")
@@ -523,12 +526,23 @@ def main() -> None:
     if args.command == "local" and not args.select and (args.count != 1 or args.save_profile is not None):
         parser.error("--count 與 --save-profile 僅能搭配 --select 使用")
     try:
+        if args.command == "menu":
+            from .workbench import run_workbench
+            _check_local_args(args)
+
+            def dispatch(argv: list[str]) -> int:
+                child = parser.parse_args(["--port", str(args.port), *argv])
+                if child.command == "local" and child.select:
+                    return _run_selected(child)
+                return asyncio.run(run(child))
+
+            raise SystemExit(run_workbench(dispatch, recordings=args.recordings_dir))
         if args.command == "local" and args.select:
             raise SystemExit(_run_selected(args))
         raise SystemExit(asyncio.run(run(args)))
     except (RemoteError, ProtocolError, OSError, ValueError, TimeoutError) as exc:
         _report_failure(exc)
-        if args.command == "local" and args.pause_on_error and sys.stdin.isatty():
+        if args.command in ("local", "menu") and args.pause_on_error and sys.stdin.isatty():
             try:
                 input("按 Enter 關閉此視窗。")
             except (EOFError, KeyboardInterrupt):

@@ -4,6 +4,8 @@
 
 UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 獨占 USB-UART 對應的 COM Port，Linux d3s1 上的 Podman Container（容器）透過 SSH Tunnel 使用共同 Client SDK（用戶端開發套件），供 CLI（命令列介面）、未來 TUI（文字使用者介面）及 Agent（代理工具）操作。
 
+日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`，從文字工作台選擇本機監看、錄製、既有配置，以及錄製檔的檢查／回看／文字匯出。監控中 Ctrl+C 清理後返回工作台，選單輸入處 Q／Enter 離開。步驟見 [工作台說明](docs/workbench.md)；Win11 工作台實機流程尚待驗證。
+
 ## 目標與設計方向
 
 - 單一 Windows Gateway Process（程序），內部採模組化。
@@ -119,3 +121,5 @@ python -m unittest discover -s tests -v
 最新文字匯出切片：完整 190 項自動化測試通過，包含原 182 項與 8 項文字匯出回歸；使用者已回報 Win11 匯出後可看到文字，此測項通過。詳細驗證邊界見專案狀態文件。
 
 離線回看切片：完整 200 項自動化測試通過，包含原 190 項與新增 10 項回看測試；Win11 終端回看仍待實機驗證。
+
+最新工作台切片：完整 215 項自動化測試通過，包含原 200 項與新增 15 項工作台測試；Win11 雙擊及實體工作台流程仍待驗證。

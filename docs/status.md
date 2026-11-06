@@ -15,13 +15,14 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：200 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製故障注入與離線回看 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：215 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看與工作台 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
 | USB 遺失後回到選單並停留 | Verified（使用者執行並回報） | `34842cd` 後使用者回報正常；不推論所有 EOF 情境或重新插回接收皆通過 |
 | 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與單路遺失隔離；新增 19 項測試通過，Win11 雙實體 UART 待驗證 |
 | Gateway RX 錄製及離線檢查 | Implemented／自動化 Tested | 明確啟用、原始 bytes／快照、輪替／容量／有界佇列、健康事件與檔案完整性檢查；Win11 單實體錄製待驗證 |
+| 本機只讀互動式工作台 | Implemented／自動化 Tested | `uart menu`／run-workbench.cmd，選單重用 CLI 與 SDK；13 項單元與 2 項真 CLI／PTY 新測試通過；Win11 工作台流程待驗證 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
@@ -437,3 +438,16 @@ Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5 完整 19
 Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5 完整 200 項通過、無略過、無 RuntimeWarning。新增 10 項測試涵蓋跨分段中文／顏色、CR／BS、控制序列過濾、非 UTF-8、缺口與世代／來源遺失、缺 Footer、顯示故障不重送、取消清理、無 Token 真 CLI 0／1／2 與 POSIX PTY 的終端模式。原 190 項亦通過。來源檔不改動，沒有新增 UART TX、API 或 Gateway 連線。Windows 視覺顯示及終端 Ctrl+C 尚待實測，未據此宣稱公司或居家硬體成功。
 
 同步保存前次 Win11 文字匯出與公司遠端 30 分鐘實機成功回報；公司 30 分鐘不再列為待測，居家本機長時間與雙 UART 保留待測。操作見 Windows Quickstart。沿用使用者既有 Git 交付方式保存至 origin/work，提交版本以 Git 紀錄為準。
+
+
+## 本機只讀互動式工作台（2026-11-06，Asia/Taipei）
+
+使用者再次要求先開發可回家測的下一步。本輪先完成工作台設計，再新增 `uart menu` 與薄雙擊入口 `run-workbench.cmd`。使用同步文字選單，依既有 CLI 路由整合端點列出、單／雙通道選擇監看、錄製、套用既有 Profile 與錄製檔瀏覽／檢查／回看／文字匯出；無 GUI／TUI Framework，不新增協定或直接 Serial I/O。
+
+錄製根目錄預設 recordings，可用 --recordings-dir 指定。錄製清單固定兩層掃描，上限 2000 個目錄項目，僅保留最近 50 個候選；超限時明示並提供手動 Channel 目錄。所有選擇、路徑以結構化 argv 路由，不經 Shell；Profile 與文字輸出繼續遵守原有新檔建立政策。沒有自動選取第一個 UART 或最新錄製。
+
+監控／回看中 Ctrl+C 等待原流程清理後返回工作台，提示輸入時 Ctrl+C 離開；Q／Enter／EOF 可取消或離開。一般操作錯誤可返回，但 LauncherCleanupError 必須穿過子操作向外傳遞，整個工作台結束，不會再開 Gateway。工作台為本機／離線入口，遠端 RX 仍使用既有顯式憑證的 SDK／CLI。
+
+Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5 完整 215 項通過、無略過、無 RuntimeWarning。新增 13 項單元涵蓋 TTY／EOF／取消、命令路由、只讀參數、一般與致命錯誤、Ctrl+C、路徑、掃描上限與控制字元；2 項真 CLI／PTY 整合完成選單檢查／回看／匯出，以及只 Mock 枚舉的真 Gateway／SDK／pySerial 錄製、SIGINT 清理、返回工作台、Capture 正常收尾與 Serial 重開。後者確認只有一個自有 Gateway 且已結束。
+
+Windows CMD 雙擊、實體 UART 工作台流程、終端 Ctrl+C 與雙 UART 仍待使用者回家測，沒有將 Linux PTY 視為 Win11 證據。公司遠端 30 分鐘與 Win11 文字匯出的既有成功回報保留；本輪沒有實體 TX、Confirm、Lease 或控制線新操作。完成文件與格式檢查後，沿用既有 Git 交付方式保存至 origin/work，版本以 Git 紀錄為準。

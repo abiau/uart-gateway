@@ -8,7 +8,23 @@
 
 本次固定只讀：不 Confirm、不取得 TX Lease、不補換行、不發送 IPCAM 指令。DTR／RTS 沿用 false，不新增控制線操作；軟體設定不能證明 Driver 開啟瞬間沒有脈衝。
 
-## 首次安裝或更新
+## 日常入口：互動式工作台（新功能）
+
+更新並完成安裝後，可雙擊 `run-workbench.cmd`，或在專案根目錄的 PowerShell 執行：
+
+```powershell
+.\.venv\Scripts\uart.exe menu
+```
+
+選單整合本機裝置清單、單／雙通道監看、錄製、使用已存配置，以及錄製檔的檢查、回看與文字匯出。選 3 可選 UART 並錄製，預設存到 `recordings`；監控中 Ctrl+C 會清理本次 Gateway，再返回工作台。選 5 可手動選擇已有的錄製 Channel，不會自動播放最新檔案。
+
+晚上先用既有錄製檔測選 5 的 I／V／T，再用單 UART 測選 3；Ctrl+C 後確認返回工作台，能再次啟動。雙 UART 在兩組設備齊備時另測。選單輸入處 Q／Enter 或 Ctrl+C 可離開，EOF 也會明示並退出。
+
+需要其他錄製位置，可執行 `uart menu --recordings-dir 'D:\uart-recordings'`。所有文字匯出與 Profile 保存仍只建立新檔。若無法確認 Gateway 已清理，整個工作台會停止，不會繼續開啟端點。
+
+此入口屬本機／離線操作；需要 d3s1 遠端 RX 時，使用後文原手動 Gateway、共用 Token 與 watch 流程。詳細選單、限制與驗收見 [工作台說明](workbench.md)。目前為 Linux／PTY 自動化驗證，Win11 雙擊、Ctrl+C 及實體 UART 工作台流程尚待實測。
+
+## 安裝與更新步驟
 
 建議使用 Git 的 `work` 分支取得最新版，安裝後根目錄有固定 COM3 的 `run-com3.cmd` 與互動選擇的 `run-uart.cmd`。先前提供的 ZIP 屬當時快照，不包含之後所有功能；若要測本輪選單，請從 Git 更新。
 

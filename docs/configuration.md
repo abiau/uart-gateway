@@ -24,6 +24,8 @@ Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開�
 
 ### 本機啟動器配置（已實作）
 
+互動工作台 `uart menu --recordings-dir 路徑` 的根目錄預設為目前工作目錄下的 `recordings`，用於本次錄製及離線瀏覽，不寫入下列端點 Profile 或 Server 的持久設定。`uart --port 18082 menu` 可指定本機 Gateway 的 TCP Port；工作台為本機／離線入口，不接受外部 Token 或遠端 host 選項。操作與掃描上限見 [工作台說明](workbench.md)。
+
 `uart local --select --count 2 --save-profile bench.local.toml` 保存的是本機選擇配置，與 `uart-gatewayd --config` 的伺服器配置分開。前者沒有 network、auth、UART 修改或控制線選項；啟動器驗證後才轉為既有伺服器 TOML，Serial 固定 115200／8N1／無流控、DTR／RTS false。直接交給伺服器的完整設定格式不變。
 
 | 欄位 | 格式與限制 |
