@@ -138,7 +138,24 @@ $UartCapture = Get-ChildItem .\recordings -Directory -Filter 'capture-*' | Sort-
 
 目前已通過 Linux Fake Serial、真 Gateway／SDK 及 PTY 的自動化錄製測試；尚未操作 Win11 實體 UART 錄製。雙 UART 實機驗證依使用者指示延後到公司；30 分鐘持續接收仍待測。
 
-## 固定 COM3 的日常操作
+## 將錄製轉成可讀文字
+
+停止錄製後，在專案根目錄執行以下 PowerShell，找出最新 Capture 的第一條 Channel 並匯出：
+
+```powershell
+$UartCapture = Get-ChildItem .\recordings -Directory -Filter 'capture-*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$UartChannel = Join-Path $UartCapture.FullName 'ch_uart_1'
+.\.venv\Scripts\uart.exe recording-text $UartChannel --output .\recordings\uart-readable.txt
+notepad .\recordings\uart-readable.txt
+```
+
+命令自動處理 `000001.jsonl`、`000002.jsonl` 等所有分段，UTF-8 中文跨區塊也能正確接續。每批有原始時間、Epoch 與區塊位移；CR／退格／顏色控制碼及非 UTF-8 bytes 會跳脫顯示。文字按 RX 區塊分批，可能分成多個帶標記的行。
+
+輸出檔已存在時請換新檔名，例如 `uart-readable-2.txt`，不會覆蓋舊檔。若原錄製有缺口、損壞或未正常收尾，仍可看到可讀部分，但末尾會標示不完整／連續性未知，退出碼為 2；不能將此文字當成完整擷取。原始 JSONL 保留，文字格式與限制見 [錄製規格](recording.md)。
+
+先前手動 PowerShell 將每塊單獨當 UTF-8 解碼，可能拆壞跨區塊中文字並額外插入換行，且只讀第一段；現在請使用正式命令匯出。
+
+## 固定 COM3 操作步驟
 
 1. 關閉 MobaXterm 的 COM3 Serial 連線。若舊手動 Gateway 仍在執行，先在它的視窗按 Ctrl+C 正常停止；啟動器不會接管或結束它。
 2. 在檔案總管雙擊專案根目錄的 `run-com3.cmd`。它會開啟獨立 Python 監控視窗。

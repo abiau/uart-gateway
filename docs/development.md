@@ -2,6 +2,8 @@
 
 ## Gateway RX 錄製驗證
 
+`tests/unit/test_recording_text.py` 覆蓋跨分段 UTF-8、控制字元與無效 bytes、缺口／Epoch 解碼切斷、損壞檔警告、原始檔／既有輸出保護、檢查回呼內的輸出失敗，以及無 Token 真 CLI 的 0／2 退出碼。共用掃描器透過同步回呼逐筆輸出，不建立新的無界事件佇列。
+
 `tests/unit/test_recording.py` 注入慢磁碟、佇列滿、容量滿、部分寫入、刷新錯誤及損壞檔案，確認記憶體包含寫入中資料、輪替與總容量有界，未知部分寫入不重送，沒有最終 Footer 不宣稱完整。另測二進位 bytes、Epoch／位移缺口、裝置失去、正常多段雜湊與重複關閉。
 
 `tests/integration/test_recording.py` 使用真 Gateway、SDK、Fake Serial 測無 Client 錄製、兩個 Client 重播不重複寫入、Client 關閉後繼續、錄製失敗的 API 健康事件、兩路 RX 隔離及關閉活躍 Client 後收尾。真 CLI／PTY 測啟動錄製、RX、SIGINT、最終檔案檢查與 Serial 釋放。沒有實體 UART TX，未操作 Win11 硬體。

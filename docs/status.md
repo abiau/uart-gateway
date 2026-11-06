@@ -2,7 +2,7 @@
 
 > 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
-更新日期：2026-11-05（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
+更新日期：2026-11-06（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
 ## 真實狀態
 
@@ -13,7 +13,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：182 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY 與錄製故障注入 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：190 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY 與錄製故障注入 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -401,3 +401,12 @@ USB 拔除後停止監控符合目前 Channel 遺失時終止訂閱、不自動�
 驗證：Linux／Python 3.12.14／pySerial 3.5，完整 **182 項通過、無略過、無 RuntimeWarning**。新增 12 項單元與 7 項整合，覆蓋二進位、乾淨輪替與容量失敗、慢磁碟／佇列滿、部分寫入、fsync 錯誤、位移與 Epoch、損壞／缺 Footer／尾端部分行、無 Client、Replay 與 Client 關閉、兩路 RX／錄製故障隔離、API 健康事件、設定驗證及真 CLI／PTY SIGINT 收尾。另以無 Token 的真 CLI 檢查正常與損壞 Capture，核對中文輸出及 0／2 退出碼；檔案都在暫存目錄，未加入版本庫。
 
 文件、CLI 繁體中文說明及 101 個相對連結／程式區塊檢查通過。此輪為 Implemented／自動化 Tested，Win11 單實體錄製、雙 UART 與 30 分鐘持續接收皆待使用者驗證；未操作公司 d3s1 或實體 COM3，無新增 UART TX、Confirm、Lease 或控制線操作。沿用既有 Git 交付方式保存至 `origin/work`，實際版本以提交紀錄為準。
+
+
+## 錄製轉可讀文字（2026-11-06，Asia/Taipei）
+
+使用者核准前次建議，完成 `uart recording-text <Channel目錄> --output uart-readable.txt`。沿用 recording_info 的有界掃描與完整性檢查，以同步回呼逐筆輸出全部分段，不需要 Token 或 UART。使用增量 UTF-8 解碼，跨正常分段接續；缺口、異常或 Epoch 變更切斷解碼狀態，不拼接出錯誤字元。時間、Epoch、原區塊位移與續字元標記保留，控制字元及無效 bytes 跳脫顯示；文字是檢視副本，不能替代原始 JSONL。
+
+輸出採新檔獨占建立，既有檔案與原錄製不覆寫；不接受 .jsonl 輸出。部分可讀的異常 Capture 仍可匯出，但含明確警告及完整性摘要，退出 2；無已知缺口退出 0，操作／輸出失敗退出 1。輸出失敗可能留下部分檔案，沒有「匯出完成」摘要不得視為完成。已補上 Windows Quickstart，取代先前逐塊 PowerShell 解碼容易拆壞中文字、只處理首段的做法。
+
+Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5 完整 190 項通過、無略過、無 RuntimeWarning。新增 8 項涵蓋跨分段 UTF-8、ANSI／控制字元、缺口與 Epoch、尾端部分行、原檔與既有輸出保護、回呼中的磁碟輸出失敗及無 Token 真 CLI 退出碼。原 182 項亦通過。未操作 Win11、實體 COM3 或公司環境；Windows 匯出、單實體錄製、雙 UART 與 30 分鐘接收繼續待驗證。依既有 Git 交付方式保存至 origin/work，版本以 Git 紀錄為準。

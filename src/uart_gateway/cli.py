@@ -373,6 +373,14 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "recording-text":
+        from .recording_text import export_text
+        result = await asyncio.to_thread(export_text, args.directory, args.output)
+        print(f"已匯出文字：{args.output}；RX bytes：{result['rx_bytes']}。", flush=True)
+        if result["integrity"] != "no_known_gap":
+            print("原錄製不完整或連續性未知，請查看輸出末尾的檢查摘要。", file=sys.stderr, flush=True)
+            return 2
+        return 0
     if args.command == "recording-info":
         from .recording_info import inspect_capture
         result = await asyncio.to_thread(inspect_capture, args.directory)
@@ -464,6 +472,9 @@ def main() -> None:
     commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
     inspect = commands.add_parser("recording-info", help="離線檢查一個 Channel 的錄製目錄，不連線 UART")
     inspect.add_argument("directory", type=Path, help="包含 000001.jsonl 等分段的 Channel 目錄")
+    export = commands.add_parser("recording-text", help="將錄製所有分段匯出成可讀 UTF-8 文字")
+    export.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
+    export.add_argument("--output", type=Path, required=True, help="新文字檔路徑；不覆寫既有檔案")
     local = commands.add_parser("local", help="啟動自己的只讀 Gateway 並監控 RX")
     source = local.add_mutually_exclusive_group()
     source.add_argument("--port", dest="serial_port", default="COM3", help="本次使用的 Serial 端點，預設 COM3")

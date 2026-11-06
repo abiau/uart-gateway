@@ -1,6 +1,7 @@
 """離線檢查 RX 錄製；只讀檔案，不連線或操作 UART。"""
 
 import hashlib
+from collections.abc import Callable
 import json
 from pathlib import Path
 import re
@@ -9,7 +10,7 @@ from .protocol.codec import binary_decode
 from .protocol.errors import ProtocolError
 
 
-def inspect_capture(directory: Path) -> dict:
+def inspect_capture(directory: Path, *, on_record: Callable[[dict | None], None] | None = None) -> dict:
     try:
         files = []
         for path in directory.glob("*.jsonl"):
@@ -30,6 +31,8 @@ def inspect_capture(directory: Path) -> dict:
 
     def issue(message: str, status: str = "incomplete") -> None:
         nonlocal integrity
+        if on_record is not None:
+            on_record(None)
         if integrity != "incomplete":
             integrity = status
         if len(issues) < 32 and message not in issues:
@@ -103,6 +106,8 @@ def inspect_capture(directory: Path) -> dict:
                         raise ValueError("未支援的錄製紀錄類型")
                     if kind != "segment_end":
                         digest.update(raw)
+                    if on_record is not None:
+                        on_record(record)
         except (OSError, ValueError, KeyError, TypeError, ProtocolError, RecursionError):
             footer = False
             issue("錄製資料無法完整讀取或格式錯誤。")
