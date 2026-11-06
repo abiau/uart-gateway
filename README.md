@@ -8,7 +8,7 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 遠端選單使用 `uart --token-file <受保護的Token檔案> menu --remote`，連線既有 Gateway 後以編號選 Channel，再選即時或重播；Ctrl+C 返回清單，Gateway 繼續執行。居家同機與公司 dxan 的具體步驟見 [Windows Quickstart](docs/windows-quickstart.md)。
 
-新版遠端選單可輸入 `1,2` 同時監看兩條 Channel，在同一畫面以 R 查詢、O 1／O 2 加 Y 手動重開故障通道；另一路持續接收。每行標明來源、顏色各自保存，CR／退格跳脫顯示；Q／Ctrl+C 清理 Client 後返回清單。重開需原 configure 權限，監看仍只讀，不新增 API 或 TX。此新入口已有自動化證據，Win11 合併畫面與鍵盤仍待實測，詳見 [工作台說明](docs/workbench.md)。
+新版遠端選單可輸入 `1,2` 同時監看兩條 Channel，在同一畫面以 R 查詢、O 1／O 2 加 Y 手動重開故障通道；另一路持續接收。每行標明來源、顏色各自保存，CR／退格跳脫顯示；Q／Ctrl+C 清理 Client 後返回清單。重開需原 configure 權限，監看仍只讀，不新增 API 或 TX。此新入口已有自動化證據，Win11 雙路一般操作及重播修正已由使用者回報正常，公司 dxan 新操作仍待測，詳見 [工作台說明](docs/workbench.md)。
 
 遠端 USB 拔插後，COM 重新出現不會自動重開原 Channel；新版可在 `menu --remote` 選擇不可用通道，再 O／Y 手動重開該路 RX，或執行 `uart reopen ch_uart_1`。需 configure 權限，原只讀配置不變；明確啟用方式見 [Windows Quickstart](docs/windows-quickstart.md)。Gateway 會獨立顯示狀態日誌；恢復維持未 Confirm，不取得 Lease、不傳送 UART 指令、不重啟其他通道。使用者已回報 Win11 單通道恢復／占用，以及雙 IPCAM 的 COM3 拔除與重開時 COM4 接收不中斷；dxan 新操作仍待測。
 
@@ -107,7 +107,9 @@ uart-gatewayd --fake --config examples/gateway.fake.toml
 
 錄製後可用 `uart recording-text <Channel目錄> --output uart-readable.txt` 匯出所有分段並以記事本查看。命令處理跨區塊 UTF-8，保留時間／Epoch／位移，跳脫控制字元，並在末尾標明完整性；詳細 PowerShell 操作見 [Windows Quickstart](docs/windows-quickstart.md)。
 
-可用 `uart local --select --read-only --watch --terminal --record-dir ./recordings` 啟用 Gateway RX 錄製，單 UART 即可使用。各通道保存原始 bytes 與裝置／Epoch 快照，分段及佇列有界；錄製故障會告警，RX 繼續。停止後以 `uart recording-info 錄製的Channel目錄` 檢查正常收尾、位移與雜湊。操作見 [Windows Quickstart](docs/windows-quickstart.md)，格式及限制見 [錄製規格](docs/recording.md)。雙 UART 故障／恢復隔離與公司遠端持續接收 30 分鐘已回報通過；雙路錄製完整性與其他長時間情境仍需個別驗證。
+可用 `uart local --select --read-only --watch --terminal --record-dir ./recordings` 啟用 Gateway RX 錄製，單 UART 即可使用，雙路另加 `--count 2`。各通道保存原始 bytes 與裝置／Epoch 快照，分段及佇列有界；錄製故障會告警，RX 繼續。停止後以 `uart recording-info 錄製的Channel目錄` 檢查正常收尾、位移與雜湊。操作見 [Windows Quickstart](docs/windows-quickstart.md)，格式及限制見 [錄製規格](docs/recording.md)。Win11 雙路錄製拔除 COM3 時 COM4 持續，兩路檢查均正常收尾，遺失一路標為連續性未知、另一路無已知缺口，已提供實機證據；其他長時間、輪替與磁碟情境仍需個別驗證。
+
+錄製中手動重開亦已取得 Win11 實機證據：COM3 中斷前後保存兩個 Epoch，各自從位移 0 記錄；COM4 維持原 Epoch。正常收尾後，COM3 仍標示連續性未知，COM4 無已知缺口。此流程使用具 configure 權限、啟用錄製的手動 Gateway，與只讀 local Launcher 分開。
 
 ```sh
 python -m unittest discover -s tests -v
@@ -136,6 +138,6 @@ python -m unittest discover -s tests -v
 
 前次日誌與單通道 RX 重開：完整 262 項自動化測試通過，包含無 Client／Recorder 的狀態日誌、管理權限／舊快照／裝置身分保護、關閉與逾時失敗、另一路接收隔離、錄製新舊世代，以及真 CLI／PTY 與 pySerial 虛擬端點恢復。這是 Linux 自動化證據，Win11 實體 USB／MobaXterm 已由使用者回報通過，dxan 新操作仍待回報。
 
-遠端雙路工作區：完整 283 項自動化測試通過，新增 21 項涵蓋鍵盤、有界輸出、雙路接收、快照／錯誤隔離及畫面內手動重開；真 CLI／PTY 已測 Q／Ctrl+C 清理，Win11 新合併畫面與公司 dxan 仍待實機驗證。
+遠端雙路工作區：完整 283 項自動化測試通過，新增 21 項涵蓋鍵盤、有界輸出、雙路接收、快照／錯誤隔離及畫面內手動重開；真 CLI／PTY 已測 Q／Ctrl+C 清理；Win11 雙路一般流程已回報正常，其餘鍵盤子情境及公司 dxan 新操作待個別驗證。
 
-長歷史重播修正：完整 292 項自動化測試通過。Server 改為有界快照逐筆送出，修復 Q 返回後雙路 R 重播因較長歷史一次塞滿佇列而斷線；原即時佇列上限不變。更新後須正常重啟 Gateway 才生效；Win11 重測步驟見 Windows Quickstart。
+長歷史重播修正：完整 292 項自動化測試通過。Server 改為有界快照逐筆送出，修復 Q 返回後雙路 R 重播因較長歷史一次塞滿佇列而斷線；原即時佇列上限不變。更新後須正常重啟 Gateway 才生效；使用者已回報 Win11 重測正常，未據此量測零遺失。步驟見 Windows Quickstart。

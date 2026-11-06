@@ -111,7 +111,7 @@ $UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gatewa
 
 **長歷史重播修正需要更新並重啟 Gateway。** 舊版可能在 Q 返回後重選 1,2／R 時，將較長歷史一次塞滿 Server 輸出佇列，顯示其中一路「Gateway 已關閉連線」。此次修正位於 Server；只更新檔案或重開 Client 不會替換已載入的程式。請先在 Gateway 視窗 Ctrl+C 正常關閉，執行 git pull --ff-only origin work，再以原配置與原 Token 重啟，然後重開工作台。正常重啟會建立新 Instance 並清除記憶體歷史，已保存錄製檔不變。
 
-驗證時先確認兩路即時正常，再讓兩台 IPCAM 持續輸出累積歷史（例如每秒一行累積 15 分鐘），Q 返回、R 查詢、1,2、選 R 歷史＋即時。應看到兩路各自重播，隨後兩路都有新的時間戳；不需 S 補回其中一路。重複 Q／重新進入 R 模式也應正常。此長歷史修正已有 Linux 自動化重現與回歸證據，Win11 重測待回報。
+驗證時先確認兩路即時正常，再讓兩台 IPCAM 持續輸出累積歷史（例如每秒一行累積 15 分鐘），Q 返回、R 查詢、1,2、選 R 歷史＋即時。應看到兩路各自重播，隨後兩路都有新的時間戳；不需 S 補回其中一路。重複 Q／重新進入 R 模式也應正常。2026-11-07 使用者在修正後回報「目前測試正常」，記為 Win11 雙路重播一般重測通過；未提供累積時間／資料量，不據此標記已完成 15 分鐘或所有容量情境。
 
 本節是新的雙路合併畫面；先前使用兩個獨立 Client 視窗的實機隔離通過，不代表本入口亦已驗證。Gateway 已更新並重啟、且雙通道權限正確後，往後可直接從下方 menu 命令開始。需要啟動時，保留原 Token、關閉 MobaXterm 的 COM 連線，再於專案根目錄使用以下範例；若有舊 Gateway，先正常停止再啟動：
 
@@ -240,7 +240,7 @@ Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清�
 
 此 Launcher／Profile 流程已有 Linux／Mock 枚舉／兩個 PTY 自動化證據。Win11 手動雙通道 Gateway 的 COM3 故障／重開、COM4 持續接收已由使用者回報通過；不據此推論上述 CMD 雙擊、配置重用／重編 COM、整組占用清理或雙路長時間接收都已驗證。公司單路遠端 30 分鐘另有成功回報；五至六條 UART 與完整 TUI 仍待後續容量評估。
 
-## 保存 RX 錄製（單 UART 可測，Win11 實機待驗證）
+## 保存 RX 錄製（單／雙 UART）
 
 在 PowerShell 執行下列命令，選擇家裡的 USB-UART，即可一邊看 Log、一邊讓 Gateway 保存原始 RX：
 
@@ -269,7 +269,27 @@ $UartCapture = Get-ChildItem .\recordings -Directory -Filter 'capture-*' | Sort-
 2. 再錄製一輪，中途拔除 USB，確認畫面提示裝置遺失；關閉後檢查應顯示連續性未知，不能顯示無已知缺口。
 3. 再次啟動應建立不同的 Capture，前次檔案仍保留。選單重新啟動時，記憶體歷史會重建，已保存的檔案保留。
 
-目前已通過 Linux Fake Serial、真 Gateway／SDK 及 PTY 的自動化錄製測試；尚未操作 Win11 實體 UART 錄製。雙 UART 實機驗證依使用者指示延後到公司；30 分鐘持續接收仍待測。
+已有 Linux Fake Serial、真 Gateway／SDK 及 PTY 自動化錄製證據。Win11 單路一般錄製／離線操作先前已回報通過；2026-11-07 雙路錄製中拔除 COM3、COM4 持續接收也已提供實機 Log 與兩路檢查摘要：兩路均正常收尾，COM3 為連續性未知，COM4 對已觀測資料無已知缺口，符合故障隔離預期。這不取代雙路皆健康、長時間錄製、輪替或磁碟故障的個別驗證；公司單路持續 RX 30 分鐘的既有成功亦不等於錄製完整性測量。
+
+雙路錄製可使用以下命令，先正常停止占用相同 COM 的既有 Gateway，再選兩個端點：
+
+```powershell
+.\.venv\Scripts\uart.exe local --select --count 2 --read-only --watch --terminal --record-dir .\recordings
+```
+
+正常停止後，對本次 Capture 的 ch_uart_1 與 ch_uart_2 分別執行 recording-info。可先測雙路皆健康的一輪，兩路應正常收尾、無已知缺口；另錄一輪拔除其中一路，遺失來源應標示連續性未知，另一路仍持續且停止後正常收尾。正常收尾表示檔案有完成關閉，不代表曾遺失的來源資料變成完整。
+
+### 錄製中手動重開的核對方式
+
+使用具 read＋configure 的手動雙通道配置，另依 [錄製設定](recording.md) 加入 enabled=true 與絕對 directory 的 recording 表；保留原 Token，與只讀 local Launcher 分開。
+
+1. 保存 channels 快照，再以 menu --remote／1,2 監看，確認兩路都有資料。
+2. 拔除 COM3，確認 COM4 持續；插回原 Adapter，R 更新後 O 1／Y 重開，確認第一路也恢復新資料。
+3. Q 返回、再 Q 離開工作台，Gateway 保持執行；再次查 channels，比較 COM3 Epoch 已變、COM4 不變，兩路均 ready／unconfirmed。
+4. 在 Gateway 視窗 Ctrl+C 正常停止，對本次同一 Capture 的兩個 Channel 執行 recording-info。兩路均應正常收尾；COM3 因曾遺失而為連續性未知，COM4 應無已知缺口。
+5. 逐一掃描 JSONL 的 rx 記錄，以 stream_epoch 分組。這次只重開一次時，COM3 應有兩個有資料的 Epoch、COM4 一個，每個 Epoch 首筆 offset 為 0；區塊數與解碼 data_b64 得到的 bytes 總和，應與 recording-info 一致。當下 channels 的位移會隨接收增加，不要求查詢時仍為 0。
+
+2026-11-07 使用者已提供符合以上條件的 Win11 快照、正常收尾檢查與逐 Epoch 統計，此案例記為實機通過。自行使用 PowerShell here-string 將檢查腳本傳入 Python 時，資料鍵值應採 first_offset／rx_chunks／rx_bytes 等 ASCII 識別名稱；預設管線編碼可能把中文字變成問號，甚至使不同鍵值撞名，造成統計錯誤。這不等於原 UTF-8 JSONL 錄製損壞，不需因此修改全域 PowerShell 編碼設定或重做實驗。
 
 ## 將錄製轉成可讀文字
 

@@ -20,12 +20,14 @@
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
 | USB 遺失後回到選單並停留 | Verified（使用者執行並回報） | `34842cd` 後使用者回報正常；不推論所有 EOF 情境或重新插回接收皆通過 |
-| 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與配置；手動雙通道隔離已另列實機通過，Launcher／Profile 的雙實體操作流程仍待個別驗證 |
+| 兩條只讀 UART 啟動與配置 | Verified（Win11 CLI 錄製／拔除隔離，使用者回報） | 雙路選擇錄製、一路遺失另一路持續及兩路正常收尾已回報；Profile 重用／重編 COM、雙擊與整組占用清理仍待個別驗證 |
 | Win11 雙 UART 故障與恢復隔離 | Verified（使用者執行並回報） | COM3／COM4 各接一台持續輸出的 IPCAM；COM3 拔除與手動重開期間，COM4 未曾中斷。反向故障、雙路錄製完整性及 dxan 新操作不據此推論通過 |
 | Gateway RX 錄製及離線檢查 | Verified（一般流程，使用者回報） | 原第 2～3 項本機錄製與離線操作通過；故障／容量等情境仍以自動化證據及個別實測為準 |
+| 雙路錄製單路遺失隔離 | Verified（Win11，使用者提供 Log／檢查摘要） | COM3 拔除後正常收尾且連續性未知；COM4 持續接收、正常收尾且對已觀測資料無已知缺口。雙路皆健康的一輪、長時間／輪替／磁碟錯誤與逐 byte 完整性不據此推論 |
+| 錄製中單路手動 RX 重開 | Verified（Win11，使用者提供快照／檢查／Epoch 統計） | COM3 新舊兩個 Epoch 各自從位移 0 記錄且均有資料；COM4 Epoch 不變。兩路正常收尾，COM3 保留連續性未知、COM4 無已知缺口；統計與 recording-info 一致 |
 | 本機只讀互動式工作台 | Verified（一般流程，使用者回報） | 原第 1～3 項更新／枚舉、監看錄製清理返回及離線檔案操作通過；雙擊與 USB 完整恢復不另推論 |
 | 遠端只讀監看工作台 | Verified（Win11 同機一般流程，使用者回報） | 原第 4 項通過；新版人工 RX 重開另列，dxan 新選單及實體恢復仍待測 |
-| 遠端雙路同時監看工作區 | Implemented／自動化 Tested | 兩編號選擇、來源標記、獨立接收及畫面內 R／O＋Y／S；故障、慢開啟與確認期間另一路持續，真 CLI／PTY 通過。Win11 新合併畫面／鍵盤與 dxan 待測，不沿用先前兩個獨立 Client 視窗的硬體結論 |
+| 遠端雙路同時監看工作區 | Verified（Win11 一般流程，使用者回報） | 使用者已實際操作合併畫面與 O／Y；03fbc96 長歷史重播修正後回報測試正常。不推論全部鍵盤／錯誤子情境通過，dxan 新操作仍待測 |
 | Gateway 狀態日誌與單通道手動 RX 重開 | Verified（Win11，使用者回報） | 2026-11-07 回報日誌、USB 拔插、O／Y 恢復、未插回拒絕、MobaXterm 占用與釋放後恢復通過；後續亦回報雙實體單路恢復隔離通過，dxan 新操作仍待測 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
@@ -537,3 +539,42 @@ Server 改由 Session 單一 Writer 逐筆編碼／傳送歷史快照，Response
 Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，.venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v 完整 **292 項通過**，22.748 秒、無略過、無 RuntimeWarning；新增 9 項，原 283 項亦通過。真 CLI／PTY 的 Q→R 查詢→1,2→R 已確認兩路完整測試歷史尾端皆出現，隨後兩路都有新即時資料；跨通道到達順序不作固定假設。新增 Session 單元覆蓋超過原訂閱佇列的歷史逐筆傳送、Response／Gap／Replay／Live 順序、輪流排程、快照配額、Live 仍有界、期限釋放與傳送中取消；真 SDK 覆蓋快照拒絕後不留新訂閱且原連線仍可讀取。
 
 這是自動化模擬與 POSIX 證據，未直接存取 Win11 COM3／COM4 或公司環境，不宣稱使用者的 Windows 情境已重測成功。新版需正常關閉並重啟 Gateway 才載入 Server 修正，保留原配置與 Token；只重開 Client 不足。重啟的記憶體歷史會清空，Quickstart 提供累積持續輸出後再 Q／R 重播的驗證方式；錄製檔仍保留。Win11 長歷史雙路重測與公司 dxan 新操作仍待回報，公司維持下週回公司後再測。文件已同步，依既有 work 分支交付方式提交／推送，版本以 Git 紀錄為準。
+
+## Win11 雙路重播修正後重測（2026-11-07，Asia/Taipei）
+
+使用者在 03fbc96 交付及更新 Gateway／雙路 R 重播驗證步驟後回報「目前測試正常」。雙路歷史＋即時的一般重測記為 Verified（使用者執行並回報），不再將此案例列為僅有模擬證據。未另取得原始 Log、累積時間、歷史資料量或逐 byte 計數，不推論已完成建議的 15 分鐘、所有容量或零遺失驗證。先前新畫面 Q／O／Y 的實際操作證據保留，公司 dxan 新操作仍按使用者安排下週回公司後再測。
+
+下一個建議驗收是雙路錄製完整性：正常結束時分別檢查兩路；另錄一輪，拔除一路後確認另一路持續，停止後遺失一路應為連續性未知、另一路正常收尾。此項尚未執行，不新增功能或標為成功。本次僅更新文件，程式維持 03fbc96，沿用既有 292 項自動化通過證據，未重跑未變更程式；文件尚未 commit／push。
+
+## Win11 雙路錄製單路遺失驗收（2026-11-07，Asia/Taipei）
+
+使用者依雙路錄製步驟執行 local --select --count 2 --read-only --watch --terminal --record-dir .\recordings，中途拔除 COM3。提供的 Log 顯示 ch_uart_1 因 DEVICE_MISSING 結束訂閱，ch_uart_2 仍有後續資料；停止後以 recording-info 分別檢查本次 Capture，摘要如下。
+
+| 通道／端點 | 分段 | RX 區塊 | RX bytes | 正常收尾 | 完整性檢查 |
+| --- | --- | --- | --- | --- | --- |
+| ch_uart_1／COM3 | 1 | 11 | 374 | 是 | 連續性未知；來源裝置曾失去連線或故障 |
+| ch_uart_2／COM4 | 1 | 172 | 5168 | 是 | 對已觀測資料無已知缺口 |
+
+這輪雙實體錄製故障隔離記為 Verified（使用者執行並提供 Log／摘要）：來源遺失未被誤報完整，另一路仍持續且正常收尾。正常收尾與資料連續性為不同檢查；COM3 的 Footer 正常不會消除裝置遺失造成的未知。COM4 命令亦已完成並返回 PowerShell，不是卡住。
+
+未取得原始錄製檔，不將區塊數等同固定秒數，不宣稱 UART／USB／Driver 前段零遺失、雙路皆健康的一輪、反向拔除、分段輪替、長時間或磁碟故障均已實測。此項不包含錄製中手動重開的新舊 Epoch 驗證。公司 dxan 新操作仍按使用者安排下週回公司後再測。
+
+本輪僅更新驗收文件，保留前次雙路重播重測成功；程式仍為 03fbc96，沿用既有 292 項自動化通過證據，未重跑未變更程式。沒有保存私人配置、Token、UART 原文或錄製檔；文件尚未 commit／push。
+
+## Win11 錄製中單路手動重開驗收（2026-11-07，Asia/Taipei）
+
+使用者以具 configure 權限、啟用 recording 的手動雙通道 Gateway，完成 COM3 拔除／插回／O 1＋Y 重開並繼續錄製。前後 channels 快照顯示 ch_uart_1 ready／EpochSame=False／unconfirmed，ch_uart_2 ready／EpochSame=True／unconfirmed。正常停止後，兩路 recording-info 的正常收尾均為是，各一分段；COM3 為連續性未知，COM4 對已觀測資料無已知缺口。
+
+使用者補充以 ASCII 鍵值與解碼 payload 計數的逐 Epoch 統計：
+
+| 通道 | Epoch | 首筆 offset | RX 區塊 | RX bytes |
+| --- | --- | --- | --- | --- |
+| ch_uart_1／COM3（重開前） | ee2ddb2df17148da933962dd9d14bcbc | 0 | 91 | 3094 |
+| ch_uart_1／COM3（重開後） | 98f9cc5a7e5c4ddb9fa3d57303fd2a52 | 0 | 50 | 1700 |
+| ch_uart_2／COM4 | e1529020e7ce48cbae38a8b1e92f0b3c | 0 | 171 | 5304 |
+
+COM3 合計 141 區塊／4794 bytes，COM4 合計 171 區塊／5304 bytes，均與同次 recording-info 一致。中斷前後資料保留並以不同 Epoch 區分，COM4 維持原世代，重開不會把 COM3 曾遺失的連續性改報完整。本次錄製中單路 RX 手動恢復記為 Verified（使用者執行並提供快照／檢查／統計），不是 Agent 直接操作 Windows；未據此宣稱前段零遺失、反向拔除、長時間／輪替或磁碟故障也通過。
+
+第一版臨時核對腳本含中文資料鍵值，經 PowerShell 管線後變成問號；區塊數及資料量都變成同一個 ???，使數值累加成 bytes＋chunks。修正版只用 ASCII 鍵值，重新讀取同一錄製檔後統計吻合，無需重做實驗；此為臨時核對腳本的編碼問題，沒有證據指出產品錄製格式損壞。
+
+本輪只更新驗收文件與操作核對說明，程式仍為 03fbc96，沿用最近 292 項自動化通過證據，未重跑未變更程式。保留前次實機成功紀錄，公司 dxan 新操作維持下週回公司後再測；私人配置、Token、UART 原文與錄製檔未加入版本庫。文件尚未 commit／push。
