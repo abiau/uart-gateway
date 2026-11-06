@@ -2,6 +2,8 @@
 
 ## Gateway RX 錄製驗證
 
+`tests/unit/test_recording_play.py` 驗證終端回看跨分段 UTF-8／顏色、CR／BS、未知控制序列過濾、缺口／Epoch／裝置遺失、未收尾檔、輸出故障不重送、取消後工作執行緒停止與顏色重設。另以真 CLI 測無 Token、安全文字與 0／1／2 退出碼，以 POSIX PTY 測實際終端模式。使用錄製 fixture 與終端替身，不操作 Windows 或實體 UART；這些證據不能代替 Win11 視覺驗證。
+
 `tests/unit/test_recording_text.py` 覆蓋跨分段 UTF-8、控制字元與無效 bytes、缺口／Epoch 解碼切斷、損壞檔警告、原始檔／既有輸出保護、檢查回呼內的輸出失敗，以及無 Token 真 CLI 的 0／2 退出碼。共用掃描器透過同步回呼逐筆輸出，不建立新的無界事件佇列。
 
 `tests/unit/test_recording.py` 注入慢磁碟、佇列滿、容量滿、部分寫入、刷新錯誤及損壞檔案，確認記憶體包含寫入中資料、輪替與總容量有界，未知部分寫入不重送，沒有最終 Footer 不宣稱完整。另測二進位 bytes、Epoch／位移缺口、裝置失去、正常多段雜湊與重複關閉。

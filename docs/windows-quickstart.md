@@ -155,7 +155,24 @@ notepad .\recordings\uart-readable.txt
 
 先前手動 PowerShell 將每塊單獨當 UTF-8 解碼，可能拆壞跨區塊中文字並額外插入換行，且只讀第一段；現在請使用正式命令匯出。
 
-## 固定 COM3 操作步驟
+## 直接回看錄製的顏色與開機畫面
+
+回家後不必接 UART 或連 d3s1。從 Git 更新程式，用現有錄製檔回看：
+
+```powershell
+git pull --ff-only origin work
+$UartCapture = Get-ChildItem .\recordings -Directory -Filter 'capture-*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+$UartChannel = Join-Path $UartCapture.FullName 'ch_uart_1'
+.\.venv\Scripts\uart.exe recording-play $UartChannel --terminal
+```
+
+會依序快速顯示所有分段，保留換行、退格進度符號與允許的顏色，正常分段間的 UTF-8／ANSI 亦會接續。這是離線內容，不按原始時間等待；畫面會明示離線回看及 Epoch／起始位移／時間。按 Ctrl+C 可中止並重設顏色，退出 130；中止時尚未完成整份錄製檔案檢查。
+
+請先以一份已知正常的 IPCAM 錄製檢查顏色、換行及中文，完成時應有完整性摘要。使用曾拔除 USB 的錄製時，應看到當時裝置遺失及連續性未知，不得顯示無已知缺口。缺口、世代變更或格式異常會切斷舊解碼狀態；部分損壞仍可顯示可讀部分，最終退出碼為 2。
+
+`--terminal` 需要互動式 ANSI 終端；重導向時會拒絕啟動。若只想安全地快速看文字，可移除 `--terminal`，控制字元會跳脫顯示；保存成可讀文字檔請用前節的 `recording-text`。檔案檢查須讀到 Footer 才能確定結果，請以最後摘要為準。此輪自動化使用 Linux 虛擬終端，Win11 的離線回看仍待你實際驗證。
+
+## 固定 COM3 的啟動與關閉
 
 1. 關閉 MobaXterm 的 COM3 Serial 連線。若舊手動 Gateway 仍在執行，先在它的視窗按 Ctrl+C 正常停止；啟動器不會接管或結束它。
 2. 在檔案總管雙擊專案根目錄的 `run-com3.cmd`。它會開啟獨立 Python 監控視窗。

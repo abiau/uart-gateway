@@ -61,6 +61,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `server.recording` | 非同步 RX 錄製、分段、容量限制與完整性 | Core 事件與檔案系統；不得阻塞 UART Reader；Audit 尚未實作 |
 | `recording_info` | 本機 Capture 的格式／雜湊／位移與收尾檢查 | 只讀檔案，不連線、不操作 UART；不是磁碟 Replay API |
 | `recording_text` | 檢查中的紀錄串流轉為 UTF-8 可讀文字 | 共用 recording_info 的有界掃描回呼；不連線 UART，不覆寫來源或既有輸出 |
+| `recording_play` | 錄製檔快速回看、邊界提示與取消 | 共用 recording_info／TerminalRenderer；慢終端直接減慢離線掃描，不建立 Gateway 連線 |
 | `server.config`、`server.app` | 驗證設定、組裝具體物件、啟停順序 | 組裝層可以知道具體 Backend，不把此依賴帶入 Core |
 | `client.transport`、`client.sdk` | 連線、版本、請求配對、訂閱、Lease 更新與重連 | Protocol；不依賴 Server 或 Windows Serial |
 | `cli`、未來 `tui`／工具介面 | 參數、顯示、使用者或 Agent 操作 | 只經 SDK 進入 Gateway；不複製協定實作 |

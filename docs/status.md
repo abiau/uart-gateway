@@ -8,12 +8,14 @@
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
+| d3s1／dxan 遠端持續接收 30 分鐘 | Verified（使用者執行並回報） | IPCAM 每秒輸出 ps 資訊，dxan 資料正常；未量測逐 byte 完整性 |
+| Win11 錄製文字匯出與查看 | Verified（使用者執行並回報） | `262f702` 後回報可看到文字、此測項 OK；不據此推論零遺失、異常路徑或全部錄製情境通過 |
 | 本機 Repository（版本庫） | 已建立 | 分支 `work`；Phase 0 提交 `33eedba`、Phase 1 提交 `496ab13`；本次啟動器變更依使用者授權提交並推送，版本以 Git 紀錄為準 |
 | 初步架構審查 | 已完成審查 | 依使用者需求分析，當時無現有程式可審閱 |
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：190 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY 與錄製故障注入 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：200 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製故障注入與離線回看 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -21,7 +23,7 @@
 | 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與單路遺失隔離；新增 19 項測試通過，Win11 雙實體 UART 待驗證 |
 | Gateway RX 錄製及離線檢查 | Implemented／自動化 Tested | 明確啟用、原始 bytes／快照、輪替／容量／有界佇列、健康事件與檔案完整性檢查；Win11 單實體錄製待驗證 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
-| SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。長時間穩定性與資料完整性尚待驗證 |
+| SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
 | Commit／Push（提交／推送） | 前次交接已保存 | `496ab13` 已保存前次 Phase 1 交接；本次啟動器依使用者明確授權 commit／push |
 
@@ -410,3 +412,28 @@ USB 拔除後停止監控符合目前 Channel 遺失時終止訂閱、不自動�
 輸出採新檔獨占建立，既有檔案與原錄製不覆寫；不接受 .jsonl 輸出。部分可讀的異常 Capture 仍可匯出，但含明確警告及完整性摘要，退出 2；無已知缺口退出 0，操作／輸出失敗退出 1。輸出失敗可能留下部分檔案，沒有「匯出完成」摘要不得視為完成。已補上 Windows Quickstart，取代先前逐塊 PowerShell 解碼容易拆壞中文字、只處理首段的做法。
 
 Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5 完整 190 項通過、無略過、無 RuntimeWarning。新增 8 項涵蓋跨分段 UTF-8、ANSI／控制字元、缺口與 Epoch、尾端部分行、原檔與既有輸出保護、回呼中的磁碟輸出失敗及無 Token 真 CLI 退出碼。原 182 項亦通過。未操作 Win11、實體 COM3 或公司環境；Windows 匯出、單實體錄製、雙 UART 與 30 分鐘接收繼續待驗證。依既有 Git 交付方式保存至 origin/work，版本以 Git 紀錄為準。
+
+
+## Win11 文字匯出現場結果（2026-11-06，Asia/Taipei）
+
+使用者於 `262f702` 交付與操作步驟後回報「可以看到文字。此測項 ok」。Win11 錄製轉可讀文字並查看此項記為 Verified（使用者執行並回報）。這是現場成功回報，不是 Agent 直接操作 Windows；未另回報檔案檢查摘要、退出碼、資料量或分段數，不將本次結果推論為零遺失、跨分段／缺口／磁碟失敗等全部情境亦已實機通過。
+
+雙 UART 實機依使用者指示延後到公司，30 分鐘持續接收仍待測。本次僅更新文件，程式維持 `262f702`，沿用最近 190 項自動化通過證據，不重跑未變更程式；本次文件尚未提交／推送。
+
+
+## 公司遠端連續 RX 30 分鐘結果（2026-11-06，Asia/Taipei）
+
+使用者回到公司並完成前述遠端持續接收，回報「讀了30分鐘，且ipcam每秒會秀出ps資訊，所以會一直有資料。dxan container的資料正常」。Win11 Gateway 經 SSH Tunnel 至 d3s1／dxan 的 30 分鐘持續 RX 記為 Verified（使用者執行並回報）；來源每秒輸出，因此本次有持續資料，不是單純空閒等待。
+
+未另取得退出碼、逐 byte／Offset 計數或錄製檔檢查摘要，不將本次成功推論為零遺失、錄製完整性或其他設備／速率的保證。公司遠端 30 分鐘項目已通過；家中本機長時間測試不另推論通過。下一個實機驗證為兩條 UART 同時接收及單路拔除後另一條繼續，仍需兩組設備。程式維持 262f702，僅更新文件，沿用 190 項自動化證據；文件尚未提交／推送。
+
+
+## 離線錄製回看（2026-11-06，Asia/Taipei）
+
+使用者要求先繼續開發可回家測的功能，雙 UART 實機測試延至晚上。提出離線回看為建議，提供選項供使用者調整後，先依此方向完成最小切片：`uart recording-play <Channel目錄> --terminal`。沿用錄製檢查器、UTF-8 增量解碼與既有 TerminalRenderer，依序快速回看所有分段，不按原時間等待、不需要 Token 或 UART。
+
+預設安全文字跳脫，明確 --terminal 且 stdout 為 TTY 才呈現 CR／LF／BS／TAB 與允許的顏色；其餘控制序列仍過濾。正常分段延續解碼，缺口、Epoch／Binding 改變、裝置遺失或異常時重設；開始與最後摘要明示離線回看、尚未完成驗證／最終完整性。慢終端直接減慢掃描，不新增無界 Queue。Ctrl+C 通知工作執行緒停止，等待已開始 I/O 收斂、重設顏色並退出 130；未完成整份檔案檢查時不宣稱完成。正常無已知缺口退出 0，不完整／未知退出 2，操作／顯示錯誤退出 1。
+
+Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5 完整 200 項通過、無略過、無 RuntimeWarning。新增 10 項測試涵蓋跨分段中文／顏色、CR／BS、控制序列過濾、非 UTF-8、缺口與世代／來源遺失、缺 Footer、顯示故障不重送、取消清理、無 Token 真 CLI 0／1／2 與 POSIX PTY 的終端模式。原 190 項亦通過。來源檔不改動，沒有新增 UART TX、API 或 Gateway 連線。Windows 視覺顯示及終端 Ctrl+C 尚待實測，未據此宣稱公司或居家硬體成功。
+
+同步保存前次 Win11 文字匯出與公司遠端 30 分鐘實機成功回報；公司 30 分鐘不再列為待測，居家本機長時間與雙 UART 保留待測。操作見 Windows Quickstart。沿用使用者既有 Git 交付方式保存至 origin/work，提交版本以 Git 紀錄為準。

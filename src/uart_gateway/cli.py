@@ -373,6 +373,10 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "recording-play":
+        from .recording_play import playback
+        result = await playback(args.directory, terminal=args.terminal)
+        return 0 if result["integrity"] == "no_known_gap" else 2
     if args.command == "recording-text":
         from .recording_text import export_text
         result = await asyncio.to_thread(export_text, args.directory, args.output)
@@ -470,6 +474,9 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("channels", help="列出通道")
     commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
+    play = commands.add_parser("recording-play", help="離線快速回看錄製，不連線 UART")
+    play.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
+    play.add_argument("--terminal", action="store_true", help="在互動終端呈現換行、退格與允許的顏色")
     inspect = commands.add_parser("recording-info", help="離線檢查一個 Channel 的錄製目錄，不連線 UART")
     inspect.add_argument("directory", type=Path, help="包含 000001.jsonl 等分段的 Channel 目錄")
     export = commands.add_parser("recording-text", help="將錄製所有分段匯出成可讀 UTF-8 文字")

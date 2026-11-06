@@ -29,7 +29,7 @@ Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win1
 
 ## 目前階段
 
-Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。使用者亦已確認 dxan 遠端 RX、歷史重播、終端顏色／換行與再次監控成功；SSH Tunnel 中斷時 CLI 顯示斷線、Gateway 保持執行，重建 Tunnel 後手動重連與重播成功。居家接續已新增本機端點列出與互動選擇，使用者已回報實體接收與終端顏色成功；可先在家驗證較長時間的本機接收，公司遠端持續接收仍待測。實體 TX、插拔、資料完整性量測與完整 Phase 1 驗收尚未完成。
+Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 COM3 本機 RX 驗證。使用者亦已確認 dxan 遠端 RX、歷史重播、終端顏色／換行與再次監控成功；SSH Tunnel 中斷時 CLI 顯示斷線、Gateway 保持執行，重建 Tunnel 後手動重連與重播成功。居家接續已新增本機端點列出與互動選擇，使用者已回報實體接收與終端顏色成功；可先在家驗證較長時間的本機接收，公司遠端已由使用者回報 IPCAM 每秒輸出 ps 資訊、dxan 持續接收 30 分鐘正常。實體 TX、插拔、資料完整性量測與完整 Phase 1 驗收尚未完成。
 
 七份 ADR（架構決策紀錄）均為 `Accepted`（已正式接受）。數值預設、具體協定契約及建議操作政策已接受為初始基線；尚未取得的現場資訊不視為已驗證。最新證據與待回答事項以 [目前狀態](docs/status.md) 為準。
 
@@ -95,9 +95,11 @@ uart-gatewayd --fake --config examples/gateway.fake.toml
 
 ## 測試與目前限制
 
+錄製亦可直接用 `uart recording-play <Channel目錄> --terminal` 離線快速回看，呈現允許的顏色、換行及退格；Ctrl+C 可中止。命令不需要 UART 或 Token，會明示資料缺口與最後完整性結果。回家可使用既有錄製檔，步驟見 [Windows Quickstart](docs/windows-quickstart.md)。
+
 錄製後可用 `uart recording-text <Channel目錄> --output uart-readable.txt` 匯出所有分段並以記事本查看。命令處理跨區塊 UTF-8，保留時間／Epoch／位移，跳脫控制字元，並在末尾標明完整性；詳細 PowerShell 操作見 [Windows Quickstart](docs/windows-quickstart.md)。
 
-可用 `uart local --select --read-only --watch --terminal --record-dir ./recordings` 啟用 Gateway RX 錄製，單 UART 即可使用。各通道保存原始 bytes 與裝置／Epoch 快照，分段及佇列有界；錄製故障會告警，RX 繼續。停止後以 `uart recording-info 錄製的Channel目錄` 檢查正常收尾、位移與雜湊。操作見 [Windows Quickstart](docs/windows-quickstart.md)，格式及限制見 [錄製規格](docs/recording.md)。雙 UART 實機依使用者指示延後到公司，單 UART 錄製與 30 分鐘接收亦尚待實測。
+可用 `uart local --select --read-only --watch --terminal --record-dir ./recordings` 啟用 Gateway RX 錄製，單 UART 即可使用。各通道保存原始 bytes 與裝置／Epoch 快照，分段及佇列有界；錄製故障會告警，RX 繼續。停止後以 `uart recording-info 錄製的Channel目錄` 檢查正常收尾、位移與雜湊。操作見 [Windows Quickstart](docs/windows-quickstart.md)，格式及限制見 [錄製規格](docs/recording.md)。雙 UART 實機依使用者指示延後到公司，公司遠端持續接收 30 分鐘已回報通過；錄製完整性與其他長時間情境仍需個別驗證。
 
 ```sh
 python -m unittest discover -s tests -v
@@ -114,4 +116,6 @@ python -m unittest discover -s tests -v
 
 `watch --text` 保留控制字元跳脫顯示；改用 `--terminal` 可在互動式 ANSI 終端呈現換行、退格與顏色，其他控制序列會被過濾。兩種模式都重用 SDK 與有界批次輸出，不新增 UART TX。既有 Windows Gateway 不需重啟，Container 的安裝與測試步驟見 [合併測試](docs/remote-rx-test.md)。
 
-最新文字匯出切片：完整 190 項自動化測試通過，包含原 182 項與 8 項文字匯出回歸；Windows 實機匯出仍待驗證。
+最新文字匯出切片：完整 190 項自動化測試通過，包含原 182 項與 8 項文字匯出回歸；使用者已回報 Win11 匯出後可看到文字，此測項通過。詳細驗證邊界見專案狀態文件。
+
+離線回看切片：完整 200 項自動化測試通過，包含原 190 項與新增 10 項回看測試；Win11 終端回看仍待實機驗證。
