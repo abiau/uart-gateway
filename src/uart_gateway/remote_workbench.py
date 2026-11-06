@@ -50,7 +50,7 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
             report(f"遠端操作失敗：{label(code)}：{label(exc)}")
 
     instance, channels = "", []
-    refresh, connected = True, False
+    refresh, connected, recovering = True, False, False
     try:
         while True:
             if refresh:
@@ -58,8 +58,10 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                 try:
                     instance, channels = asyncio.run(query_channels(connect))
                     connected = True
+                    recovering = bool(channels) and not any(channel["state"] == "ready" for channel in channels)
                 except (OSError, ValueError, ProtocolError, RemoteError, TimeoutError) as exc:
                     instance, channels, connected = "", [], False
+                    recovering = True
                     failed(exc)
             report(f"\n遠端只讀工作台：{label(host)}:{port}；不管理 Gateway 程序。")
             if connected:
@@ -75,11 +77,22 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                            f"狀態：{states.get(channel['state'], '未知')} | 端點：{label(channel.get('adapter', {}).get('port') or '未提供')} | "
                            f"錄製：{label(recording.get('state', '未提供'))}／{label(recording.get('integrity', '未提供'))}" +
                            (f" | 錯誤：{label(error.get('code'))}：{label(error.get('message'))}" if error else ""))
-            choice = ask("輸入 Channel 編號；R 更新／重新連線；Q 或 Enter 離開：" if connected else
-                         "尚未連線；R 重新連線；Q 或 Enter 離開：")
-            if choice in ("", "q"):
+                if any(channel["state"] in ("lost", "faulted") for channel in channels):
+                    report("Gateway 可查詢；清單中有 UART 通道不可用。R 僅更新狀態，不會重新開啟 Serial。")
+                    report("請在 Gateway 電腦核對 USB／COM，使用原設定與同一 Token 手動重啟 Gateway，再按 R 重新選擇。")
+                    report("重啟會中斷該 Gateway 的全部通道並清除記憶體歷史；請先確認其他通道可中斷。")
+            if recovering:
+                prompt = ("輸入 Channel 編號；R 更新狀態；Enter 保持等待；Q 離開：" if connected else
+                          "目前沒有監看連線；R 重新連線／查詢；Enter 保持等待；Q 離開：")
+            else:
+                prompt = "輸入 Channel 編號；R 更新／重新連線；Q 或 Enter 離開："
+            choice = ask(prompt)
+            if choice == "q" or (not choice and not recovering):
                 report("已離開遠端工作台，Gateway 繼續執行。")
                 return 0
+            if not choice:
+                report("保持等待，未重新連線或開啟 Serial；按 R 查詢狀態，Q 離開。")
+                continue
             if choice == "r":
                 refresh = True
                 continue
@@ -102,13 +115,16 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
             try:
                 result = asyncio.run(monitor_channel(connect, monitor, channel, instance, mode == "r"))
                 if result:
-                    report("訂閱已停止；請查看上方原因，按 R 手動重新查詢。")
+                    report("訂閱已停止，Gateway 程序可能仍在執行。R 僅重新連線／查詢，不會重開 Serial。")
+                    report("若原因是 device_lost／DEVICE_MISSING，請在 Gateway 電腦恢復 UART 並手動重啟後再按 R。")
                     connected = False
+                    recovering = True
             except (KeyboardInterrupt, asyncio.CancelledError):
                 report("監看已中止，SDK 連線已清理；Gateway 繼續執行。")
             except (OSError, ValueError, ProtocolError, RemoteError, TimeoutError) as exc:
                 failed(exc)
                 connected = False
+                recovering = True
     except EOFError:
         report("輸入來源已結束（EOF），已離開遠端工作台。")
         return 0

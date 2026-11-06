@@ -2,6 +2,8 @@
 
 ## 遠端工作台驗證
 
+恢復選單另覆蓋 lost 快照／訂閱結束後空白 Enter 保持等待、不新增連線、R 僅查詢、ready 後恢復正常取消，以及 EOF 不忙迴圈。真 CLI／PTY 用 Fake Serial 重現拔除、端點回來仍維持 lost，再由測試端以相同 Token 重啟真 Gateway；R 後取得新 Instance 並再次收到資料。產品 UI 不執行此重啟，這是手動恢復路徑的模擬驗證。
+
 `tests/unit/test_remote_workbench.py` 覆蓋即時／重播選擇、空清單與未就緒、認證錯誤與手動 R、TTY／EOF／Ctrl+C、路徑／環境變數 Token 重讀、模式互斥，以及選擇快照或訂閱回覆的 Instance／Revision／Epoch 不一致時不輸出 RX。
 
 `tests/integration/test_remote_workbench.py` 使用真 Gateway／SDK 與 Fake Serial 測 ACL 清單、即時與歷史接收、連線清理、Instance／訂閱 Epoch 競態、裝置遺失及網路斷線後 Gateway 保持運作；真 CLI／PTY 測錯誤 Token 更新後 R 恢復、即時／重播、Ctrl+C 返回與 Gateway 持續 RX。所有 Fake Serial 的 TX 次數保持零；不是 Win11 或公司 SSH 實機證據。

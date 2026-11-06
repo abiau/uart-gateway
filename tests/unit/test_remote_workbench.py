@@ -68,7 +68,41 @@ class RemoteMenuTests(unittest.TestCase):
         self.assertEqual(result, 0)
         query.assert_awaited_once()
         monitor.assert_awaited_once()
-        self.assertIn("尚未連線", "\n".join(messages))
+        self.assertIn("目前沒有監看連線", "\n".join(messages))
+
+    def test_lost_snapshot_enter_waits_and_r_does_not_start_monitor(self):
+        result, query, monitor, messages = self.run_menu(["", "r", "", "q"], channels=[channel("lost")])
+        self.assertEqual(result, 0)
+        self.assertEqual(query.await_count, 2)
+        monitor.assert_not_awaited()
+        output = "\n".join(messages)
+        self.assertIn("不會重新開啟 Serial", output)
+        self.assertIn("同一 Token", output)
+        self.assertIn("全部通道", output)
+        self.assertEqual(output.count("保持等待，未重新連線"), 2)
+
+    def test_ended_monitor_enter_waits_until_explicit_refresh(self):
+        result, query, monitor, messages = self.run_menu(["1", "l", "", "q"], monitor=AsyncMock(return_value=2))
+        self.assertEqual(result, 0)
+        query.assert_awaited_once()
+        monitor.assert_awaited_once()
+        self.assertIn("device_lost", "\n".join(messages))
+        self.assertIn("保持等待，未重新連線", "\n".join(messages))
+
+    def test_recovery_refresh_ready_restores_normal_enter_exit(self):
+        query = AsyncMock(side_effect=[("old", [channel("lost")]), ("new", [channel()])])
+        result, query, monitor, messages = self.run_menu(["", "r", ""], query=query)
+        self.assertEqual(result, 0)
+        self.assertEqual(query.await_count, 2)
+        monitor.assert_not_awaited()
+        self.assertIn("已離開遠端工作台", messages[-1])
+
+    def test_recovery_eof_exits_without_busy_retry(self):
+        result, query, monitor, messages = self.run_menu([EOFError], channels=[channel("lost")])
+        self.assertEqual(result, 0)
+        query.assert_awaited_once()
+        monitor.assert_not_awaited()
+        self.assertIn("EOF", messages[-1])
 
     def test_cancel_monitor_returns_to_snapshot_but_prompt_cancel_exits(self):
         result, query, monitor, messages = self.run_menu(["1", "l", "q"], monitor=AsyncMock(side_effect=KeyboardInterrupt))

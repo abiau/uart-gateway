@@ -57,11 +57,32 @@ git pull --ff-only origin work
 
 1. 核對 Channel 名稱、端點及狀態，輸入編號，再按 Enter 看即時資料。
 2. Ctrl+C 後應返回清單，Gateway 視窗繼續執行；重新選相同 Channel，選 R 可看到仍保留的歷史，再接即時資料。
-3. 選單中的 R 會重新查詢；Q／Enter 離開工作台。選單提示時 Ctrl+C 則退出整個工作台。
+3. 選單中的 R 會重新查詢；正常清單 Q／Enter 離開工作台。失敗或全部通道未就緒的恢復選單中，Enter 僅保持等待，Q 才主動離開；選單提示時 Ctrl+C 退出整個工作台。
 4. 若 Token 不符，應顯示 AUTH_FAILED；更新指定檔案或環境變數後，按 R 才重讀並連線，不會自動重試。
 5. 若 Gateway 在選擇後重啟，或 Channel 的資料流／Binding 已改變，應要求重新選擇，不顯示另一個資料流。Tunnel 斷線則顯示原因並等待手動 R。
 
-目前新增遠端選單的證據是 Linux Fake Serial＋真 Gateway／SDK／CLI／PTY；尚未在 Win11 或公司 d3s1 執行此新入口。既有公司遠端 30 分鐘成功紀錄保留，不擴大視為新選單也已驗收。
+新增遠端選單已有 Linux Fake Serial＋真 Gateway／SDK／CLI／PTY 證據；使用者後續回報 Win11 同機一般流程（原第 4 項）通過。公司 d3s1 新選單與 USB 完整恢復仍待個別驗證，不以既有遠端 30 分鐘成功取代。
+
+### 遠端模式拔除 USB 後的恢復
+
+若看到 Gateway Instance 仍相同、Channel 為「裝置遺失／DEVICE_MISSING」，而 `uart ports` 已列出 COM3，代表 Gateway 可查詢，但原 UART 仍停在 lost。此版本不自動重開 Serial，R 只更新狀態。
+
+1. 在原 Gateway 視窗按 Ctrl+C，確認它已結束。若同 Gateway 有其他通道，先確認可一併中斷。
+2. 插回 USB，在仍持有原 Token 的 PowerShell 核對端點並重啟；不重新產生 Token：
+
+```powershell
+git pull --ff-only origin work
+.\.venv\Scripts\uart.exe ports
+$UartPython = (Resolve-Path .\.venv\Scripts\python.exe).Path
+$UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gateway.server.app --serial --config examples/gateway.com3.toml' -WorkingDirectory (Get-Location).Path -PassThru
+```
+
+3. 等待新 Gateway 顯示已接聽。若 COM 已變動，先在私人設定副本修改端點，再使用該副本啟動。
+4. 工作台仍在時按 R；若已退出，在同一個 PowerShell 重開 `uart.exe menu --remote`。確認新 Instance、Channel 就緒，再選編號並看即時資料。
+
+重啟會建立新資料流，舊記憶體重播不保留。新版恢復選單的空白 Enter 不會離開或自動連線；Q／Ctrl+C 可離開，EOF 則明示輸入結束後退出。
+
+先前第 5 項「拔除後插回、重選並恢復」是本機 `uart menu` 的 Launcher 流程；遠端入口請按本節手動重啟驗證。使用者已回報更新／本機工作台／離線操作／遠端同機一般流程（原第 1～4 項）通過；第 6 項雙 UART 尚待測。遠端 USB 拔插後重新接收與此輪恢復提示仍待重測。
 
 ## 安裝與更新步驟
 
@@ -225,7 +246,7 @@ $UartChannel = Join-Path $UartCapture.FullName 'ch_uart_1'
 
 請先以一份已知正常的 IPCAM 錄製檢查顏色、換行及中文，完成時應有完整性摘要。使用曾拔除 USB 的錄製時，應看到當時裝置遺失及連續性未知，不得顯示無已知缺口。缺口、世代變更或格式異常會切斷舊解碼狀態；部分損壞仍可顯示可讀部分，最終退出碼為 2。
 
-`--terminal` 需要互動式 ANSI 終端；重導向時會拒絕啟動。若只想安全地快速看文字，可移除 `--terminal`，控制字元會跳脫顯示；保存成可讀文字檔請用前節的 `recording-text`。檔案檢查須讀到 Footer 才能確定結果，請以最後摘要為準。此輪自動化使用 Linux 虛擬終端，Win11 的離線回看仍待你實際驗證。
+`--terminal` 需要互動式 ANSI 終端；重導向時會拒絕啟動。若只想安全地快速看文字，可移除 `--terminal`，控制字元會跳脫顯示；保存成可讀文字檔請用前節的 `recording-text`。檔案檢查須讀到 Footer 才能確定結果，請以最後摘要為準。自動化使用 Linux 虛擬終端；使用者後續已回報第 3 項離線操作通過，完整證據以 status.md 為準。
 
 ## 固定 COM3 的啟動與關閉
 
