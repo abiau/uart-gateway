@@ -66,7 +66,16 @@ class CodecTests(unittest.TestCase):
                 parsed = request(value, 0)
                 validate_params(parsed.method, parsed.params)
             count += 1
-        self.assertEqual(count, 22)
+        self.assertEqual(count, 23)
+
+    def test_reopen_requires_exact_expected_context_and_no_other_parameters(self):
+        valid = {"channel_id": "ch", "expected": {"gateway_instance_id": "instance",
+                 "binding_revision": "2", "stream_epoch": None}}
+        validate_params("channel.reopen_rx", valid)
+        for invalid in ({"channel_id": "ch"}, valid | {"confirm": True},
+                        valid | {"expected": {"gateway_instance_id": "instance", "binding_revision": "2"}}):
+            with self.subTest(invalid=invalid), self.assertRaises(ProtocolError):
+                validate_params("channel.reopen_rx", invalid)
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):

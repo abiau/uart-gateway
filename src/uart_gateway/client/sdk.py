@@ -78,6 +78,15 @@ class Client:
         return (await self.transport.request("binding.rebind", {"channel_id": channel["channel_id"],
             "expected": self.expected(channel)}))["channel"]
 
+    async def reopen_rx(self, channel: dict) -> dict:
+        if "channel.reopen_rx" not in self.hello.get("capabilities", []):
+            raise ProtocolError("UNKNOWN_METHOD", "此 Gateway 未提供單通道 RX 重開，請先更新 Gateway。")
+        try:
+            return (await self.transport.request("channel.reopen_rx", {"channel_id": channel["channel_id"],
+                "expected": self.expected(channel)}))["channel"]
+        except (OSError, EOFError, TimeoutError, ProtocolError) as exc:
+            raise ConnectionError("RX 重開結果未確認；請重新查詢通道狀態，不要直接重送。") from exc
+
     async def subscribe(self, channel_id: str, *, epoch: str | None = None,
                         offset: str | None = None, gap_policy: str = "error") -> dict:
         params = {"channel_id": channel_id, "mode": "live" if offset is None else "resume", "gap_policy": gap_policy}

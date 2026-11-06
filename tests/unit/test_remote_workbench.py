@@ -21,17 +21,53 @@ def channel(state="ready"):
 
 
 class RemoteMenuTests(unittest.TestCase):
-    def run_menu(self, answers, *, channels=None, query=None, monitor=None):
+    def run_menu(self, answers, *, channels=None, query=None, monitor=None, reopen=None):
         read = Mock(side_effect=answers)
         messages = []
         query = query or AsyncMock(return_value=("instance", channels if channels is not None else [channel()]))
         monitor = monitor or AsyncMock(return_value=0)
         with patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True), \
                 patch("uart_gateway.remote_workbench.query_channels", query), \
+                patch("uart_gateway.remote_workbench.reopen_channel", reopen or AsyncMock()), \
                 patch("uart_gateway.remote_workbench.monitor_channel", monitor):
             result = run_remote_workbench(AsyncMock(), AsyncMock(), host="127.0.0.1", port=18081,
                                            read=read, report=messages.append)
         return result, query, monitor, messages
+
+    def test_reopen_requires_explicit_selection_o_and_y_and_refreshes_after_success(self):
+        selected = dict(channel("lost"), reopen_rx_available=True)
+        query = AsyncMock(side_effect=[("instance", [selected]), ("instance", [channel()])])
+        reopen = AsyncMock(return_value=channel())
+        result, query, monitor, messages = self.run_menu(["r", "q"], channels=[selected], reopen=reopen)
+        reopen.assert_not_awaited()
+        query = AsyncMock(side_effect=[("instance", [selected]), ("instance", [channel()])])
+        result, query, monitor, messages = self.run_menu(["1", "o", "y", "q"], query=query, reopen=reopen)
+        self.assertEqual(result, 0)
+        reopen.assert_awaited_once()
+        self.assertEqual(reopen.call_args.args[1:], (selected, "instance"))
+        self.assertEqual(query.await_count, 2)
+        monitor.assert_not_awaited()
+        self.assertIn("仍未 Confirm", "\n".join(messages))
+
+    def test_reopen_cancel_and_read_only_do_not_call_management(self):
+        for answers in (["1", "q", "q"], ["1", "o", "n", "q"]):
+            reopen = AsyncMock()
+            result, _, _, _ = self.run_menu(answers, channels=[dict(channel("lost"), reopen_rx_available=True)], reopen=reopen)
+            self.assertEqual(result, 0)
+            reopen.assert_not_awaited()
+        reopen = AsyncMock()
+        self.run_menu(["1", "q"], channels=[channel("lost")], reopen=reopen)
+        reopen.assert_not_awaited()
+
+    def test_reopen_failure_waits_for_r_and_does_not_retry(self):
+        reopen = AsyncMock(side_effect=ConnectionError("重開結果未確認"))
+        result, query, monitor, messages = self.run_menu(["1", "o", "y", "", "q"],
+            channels=[dict(channel("lost"), reopen_rx_available=True)], reopen=reopen)
+        self.assertEqual(result, 0)
+        query.assert_awaited_once()
+        reopen.assert_awaited_once()
+        monitor.assert_not_awaited()
+        self.assertIn("未自動重試", "\n".join(messages))
 
     def test_live_and_replay_choices_keep_selected_snapshot(self):
         result, query, monitor, _ = self.run_menu(["1", "", "1", "r", "q"])

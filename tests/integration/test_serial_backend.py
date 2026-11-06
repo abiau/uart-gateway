@@ -67,6 +67,28 @@ class RealPySerialTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.sleep(0.002)
         self.assertEqual(bytes(output), b"virtual_only\n")
 
+    async def test_manual_rx_reopen_uses_real_pyserial_and_preserves_uart_settings(self):
+        before = await self.client.get_channel("pty")
+        await self.gateway.channels["pty"].stop()
+        result = await self.client.reopen_rx(await self.client.get_channel("pty"))
+        self.assertEqual(result["state"], "ready")
+        self.assertEqual(result["binding"]["status"], "unconfirmed")
+        self.assertNotEqual(result["stream_epoch"], before["stream_epoch"])
+        self.assertEqual(result["serial"], before["serial"])
+        self.assertFalse(self.backend._serial.dtr)
+        self.assertFalse(self.backend._serial.rts)
+        await self.client.subscribe("pty")
+        os.write(self.master, b"virtual reopen\r\n")
+        received = bytearray()
+        async with asyncio.timeout(2):
+            while len(received) < 16:
+                event = await self.client.next_event()
+                if event["event"] == "rx":
+                    received.extend(binary_decode(event["data"]["data_b64"]))
+        self.assertEqual(bytes(received), b"virtual reopen\r\n")
+        with self.assertRaises(BlockingIOError):
+            os.read(self.master, 4096)
+
     async def test_device_removal_revokes_lease_without_reopening(self):
         channel = await self.client.confirm(await self.client.get_channel("pty"), "virtual")
         await self.client.acquire(channel)

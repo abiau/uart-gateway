@@ -119,6 +119,10 @@ Linux 匯入 SDK 不得匯入 Windows 專屬程式、枚舉 COM 或要求 pySeri
 
 ## Logging 與 Exception Handling
 
+2026-11-06 狀態日誌與單路手動 RX 重開已自動化測試。Core 的同步 observe 只攜帶事件，Server 先印狀態日誌，再視設定交給 Recorder；不為逐筆 RX 加一般日誌。Gateway 命令入口的 INFO 輸出到 stderr，狀態含 Channel／Instance／Port／Revision／Epoch／錯誤碼，開關失敗與遺失用 WARNING；不新增持久日誌儲存或完整 Audit。
+
+新增測試覆蓋 Core 的舊 Handle／Worker 收斂、逾時晚到不建立世代、重複／舊快照拒絕、Backend 已知身分核對且不改既有 Rebind／Confirm 行為、協定範例及嚴格參數、工作台 O／Y 與取消、只讀與 read＋tx 權限拒絕、舊 Server 能力缺少、結果未確認不重試。真 TCP／SDK／CLI 測一路恢復時另一路訂閱持續、同 Instance 與新 Epoch／unconfirmed、零新 UART 寫入；錄製測保存前後資料且完整性仍為 unknown。真 pySerial／PTY 另測關閉後手動重開接收及設定不變；真 CLI／PTY 測拔除、R 查詢、O／Y 恢復、重新監看與 Ctrl+C。這些不是 Win11 USB 或公司 dxan 的實機證據。
+
 Logging（紀錄）分成一般診斷、UART Recording（錄製）及 Audit（稽核）。一般 Log 使用固定欄位連結 Instance（執行個體）、Channel、Session（工作階段）、Request ID（請求識別）及 TX ID；不保存 Token（憑證）、秘密檔案內容或完整環境變數。
 
 原始 UART bytes 保留在錄製／擷取資料中；人類畫面用增量 Decoder（解碼器）處理文字，無效字元不得破壞原始資料。控制字元預設安全顯示，真正原始終端模式需明確選擇。UART 內容對 Agent 是不可信資料，不能成為自行授權指令的來源。

@@ -1,4 +1,4 @@
-"""遠端只讀工作台；每次查詢／監看均擁有自己的 SDK 連線。"""
+"""遠端 RX 工作台；查詢、監看與人工重開均使用獨立 SDK 連線。"""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -17,7 +17,10 @@ def label(value: object) -> str:
 async def query_channels(connect: Callable[[], Awaitable[Client]]) -> tuple[str, list[dict]]:
     async with await connect() as client:
         allowed = {grant["channel_id"] for grant in client.auth["grants"] if "read" in grant["permissions"]}
+        managers = {grant["channel_id"] for grant in client.auth["grants"] if "configure" in grant["permissions"]}
         channels = await client.list_channels()
+        if "channel.reopen_rx" in client.hello.get("capabilities", []):
+            channels = [dict(c, reopen_rx_available=True) if c["channel_id"] in managers else c for c in channels]
         return client.instance, sorted((c for c in channels if c["channel_id"] in allowed), key=lambda c: c["channel_id"])
 
 
@@ -26,6 +29,16 @@ async def monitor_channel(connect: Callable[[], Awaitable[Client]], monitor: Cal
     expected = (instance, channel["binding"]["revision"], channel["stream_epoch"])
     async with await connect() as client:
         return await monitor(client, channel["channel_id"], replay, expected)
+
+
+async def reopen_channel(connect: Callable[[], Awaitable[Client]], channel: dict, instance: str) -> dict:
+    async with await connect() as client:
+        if client.instance != instance:
+            raise ValueError("Gateway 已改變，未重開裝置；請按 R 更新並重新選擇。")
+        current = await client.get_channel(channel["channel_id"])
+        if client.expected(current) != client.expected(channel):
+            raise ValueError("通道修訂或資料流已改變，未重開裝置；請按 R 更新並重新選擇。")
+        return await client.reopen_rx(current)
 
 
 def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Callable[..., Awaitable[int]], *,
@@ -63,7 +76,7 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                     instance, channels, connected = "", [], False
                     recovering = True
                     failed(exc)
-            report(f"\n遠端只讀工作台：{label(host)}:{port}；不管理 Gateway 程序。")
+            report(f"\n遠端 RX 工作台：{label(host)}:{port}；不管理 Gateway 程序。")
             if connected:
                 report(f"Gateway Instance：{label(instance)}；下列為查詢快照，R 可更新。")
                 if not channels:
@@ -79,8 +92,11 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                            (f" | 錯誤：{label(error.get('code'))}：{label(error.get('message'))}" if error else ""))
                 if any(channel["state"] in ("lost", "faulted") for channel in channels):
                     report("Gateway 可查詢；清單中有 UART 通道不可用。R 僅更新狀態，不會重新開啟 Serial。")
-                    report("請在 Gateway 電腦核對 USB／COM，使用原設定與同一 Token 手動重啟 Gateway，再按 R 重新選擇。")
-                    report("重啟會中斷該 Gateway 的全部通道並清除記憶體歷史；請先確認其他通道可中斷。")
+                    if any(channel.get("reopen_rx_available") for channel in channels):
+                        report("核對 USB／COM 後，選擇不可用的通道，可手動重新開啟該路 RX；其他通道繼續執行。")
+                    else:
+                        report("此連線未提供重開能力或 configure 權限；請由管理者手動重開該路 RX。")
+                        report("舊 Gateway 可用原設定與同一 Token 手動重啟；這會中斷全部通道並清除記憶體歷史。")
             if recovering:
                 prompt = ("輸入 Channel 編號；R 更新狀態；Enter 保持等待；Q 離開：" if connected else
                           "目前沒有監看連線；R 重新連線／查詢；Enter 保持等待；Q 離開：")
@@ -102,6 +118,24 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                 continue
             channel = channels[int(choice) - 1]
             if channel["state"] != "ready":
+                if channel["state"] in ("lost", "faulted", "closed") and channel.get("reopen_rx_available"):
+                    if ask("O 手動重新開啟此通道 RX；其他輸入返回清單：") != "o":
+                        continue
+                    report(f"即將重開 {label(channel['channel_id'])}／{label(channel.get('adapter', {}).get('port') or '原設定端點')}；"
+                           "請核對原裝置與接線。成功後建立新世代，記憶體歷史清除；不 Confirm、不取得租約、不傳送指令。")
+                    if ask("輸入 Y 確認本次單通道 RX 重開；其他輸入取消：") != "y":
+                        report("已取消，未重開裝置。")
+                        continue
+                    try:
+                        asyncio.run(reopen_channel(connect, channel, instance))
+                        report("單通道 RX 已重新開啟，仍未 Confirm；請重新選擇監看。")
+                    except (OSError, ValueError, ProtocolError, RemoteError, TimeoutError) as exc:
+                        failed(exc)
+                        report("未自動重試；請按 R 查詢結果，核對原因後再操作。占用時請先關閉 MobaXterm 等程式的 COM 連線。")
+                        connected, recovering = False, True
+                    else:
+                        refresh = True
+                    continue
                 report("此 Channel 尚未就緒，請依上方原因處理，按 R 更新後再選擇。")
                 continue
             while True:
@@ -116,7 +150,7 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                 result = asyncio.run(monitor_channel(connect, monitor, channel, instance, mode == "r"))
                 if result:
                     report("訂閱已停止，Gateway 程序可能仍在執行。R 僅重新連線／查詢，不會重開 Serial。")
-                    report("若原因是 device_lost／DEVICE_MISSING，請在 Gateway 電腦恢復 UART 並手動重啟後再按 R。")
+                    report("若原因是 device_lost／DEVICE_MISSING，核對 USB／COM 後按 R，選擇通道進行有權限的手動 RX 重開。")
                     connected = False
                     recovering = True
             except (KeyboardInterrupt, asyncio.CancelledError):

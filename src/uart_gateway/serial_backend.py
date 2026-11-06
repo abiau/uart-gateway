@@ -94,7 +94,7 @@ def _open_error(exc: OSError) -> SerialBackendError:
     code, winerror, message = getattr(exc, "errno", None), getattr(exc, "winerror", None), str(exc)
     if (code in (errno.EACCES, errno.EBUSY, errno.EPERM, errno.EAGAIN) or winerror in (5, 32)
             or "PermissionError" in message or "exclusively lock port" in message):
-        return SerialBackendError("PORT_BUSY", "無法獨占開啟端點：可能被其他程式占用或權限不足。")
+        return SerialBackendError("PORT_BUSY", "無法獨占開啟端點：可能被其他程式占用或權限不足，請先關閉 MobaXterm 等程式的 COM 連線。")
     if code in (errno.ENOENT, errno.ENODEV) or winerror in (2, 3) or "FileNotFoundError" in message:
         return SerialBackendError("DEVICE_MISSING", "指定的 Serial 端點不存在。")
     return SerialBackendError("SERIAL_IO_FAILED", "無法開啟 Serial，請檢查裝置、Driver 與 UART 設定。")
@@ -110,16 +110,29 @@ class PySerialBackend:
         self._serial = None
         self._key: str | None = None
         self._info = AdapterInfo()
+        self._identity: AdapterInfo | None = None
 
     def describe(self) -> AdapterInfo:
         """僅讀快照，不在 Event Loop 枚舉或呼叫 Driver。"""
         return self._info
 
     def open(self) -> None:
+        self._open()
+
+    def reopen_rx(self) -> None:
+        self._open(self._identity)
+
+    def _open(self, expected: AdapterInfo | None = None) -> None:
         if self._serial is not None:
             raise SerialBackendError("PORT_BUSY", "此 Backend 尚有未釋放的 Handle，請先關閉。")
         module = _serial_module()
-        self._info = self.selector.resolve(list_adapters())
+        info = self.selector.resolve(list_adapters())
+        if expected is not None:
+            names = ("vid", "pid", "serial_number") if expected.serial_number else ("vid", "pid", "location")
+            if any(getattr(expected, name) is not None and
+                   getattr(expected, name) != getattr(info, name) for name in names):
+                raise SerialBackendError("DEVICE_MISSING", "Adapter 身分與前次成功開啟不符，未開啟端點；請核對 USB／COM 與原設定。")
+        self._info = info
         key = port_key(self._info.port)
         with _reservation_lock:
             if key in _reservations:
@@ -142,6 +155,7 @@ class PySerialBackend:
             handle.dtr, handle.rts = settings.dtr, settings.rts
             handle.port = self._info.port
             handle.open()
+            self._identity = info
         except (OSError, ValueError) as exc:
             try:
                 self.close()

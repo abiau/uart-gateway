@@ -70,7 +70,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `local_ports` | 本機裝置顯示、互動選擇與選擇後重驗 | 只用 Backend 的只讀枚舉結果，交回既有 Adapter Selector；不開啟 Serial、不新增遠端 API |
 | `local_profile` | 本機通道名稱／裝置條件的驗證、保存及重新解析 | 只讀枚舉、產生既有 TOML 通道欄位；不保存 Token／確認資格、不開啟 Serial |
 | `workbench` | 同步本機只讀工作台與錄製選單 | 只傳結構化 argv 給既有 CLI 路由；不使用 Shell，不存取 Serial／Core；清理失敗向外傳遞 |
-| `remote_workbench` | 遠端只讀 Channel 清單、選擇與手動恢復 | 經注入的 SDK 連線及監看回呼操作；每次查詢／監看獨立連線，選單輸入在事件迴圈外 |
+| `remote_workbench` | 遠端 RX 清單、監看與授權的單路手動重開 | 經注入的 SDK 連線及監看回呼操作；每次查詢／監看／重開獨立連線，選單輸入在事件迴圈外 |
 
 ```mermaid
 flowchart TB
@@ -142,7 +142,15 @@ flowchart TB
 2. 使用者確認沒有仍在傳輸的 UART 資料、供電與線路安全後換板。Gateway 不能保證清除 USB／UART 硬體 FIFO（先進先出緩衝區）中所有 bytes。
 3. `binding.confirm`：提交新 Label 與目標備註，確認實體接線；驗證目前裝置。成功後更新 Revision，建立新 Epoch 並允許取得新 Lease。
 
-Confirm 對已開啟的唯讀端點可保留 Handle（裝置控制代碼），只建立邏輯新 Epoch；對關閉端點需先成功開啟。失敗不授予 TX 資格，需重新讀取快照。候選 V1 不提供獨立 Rename API，避免把改名誤當換板；遠端變更 Adapter Selector、Open／Close／Configure 留待 Phase 2。
+Confirm 對已開啟的唯讀端點可保留 Handle（裝置控制代碼），只建立邏輯新 Epoch；對關閉端點需先成功開啟。失敗不授予 TX 資格，需重新讀取快照。候選 V1 不提供獨立 Rename API，避免把改名誤當換板；遠端變更 Adapter Selector、通用 Open／Close／Configure 留待後續。已授權的單通道 RX 恢復例外如下。
+
+### 單通道人工 RX 恢復與觀測
+
+2026-11-06 使用者核准先補日誌、再做單通道手動 RX 重開。Gateway 保持為通道管理者：Core 以既有 observe 回呼傳遞狀態，Server 獨立記錄後再通知可選 Recorder，不依賴 Client 是否訂閱。日誌不混入 UART bytes，不當作完整 Audit。
+
+新增 `channel.reopen_rx` 可選能力與 API，由 SDK／`uart reopen`／遠端工作台明確呼叫；使用 configure 與 Expected Context。僅處理 lost／faulted／closed，重用 Rebind 的舊 Worker／Handle 收斂與修訂失效機制，再以 SerialPort 的 RX 恢復介面開啟。實體 Backend 在工作執行緒重新枚舉、核對原 Selector 及已知 Adapter 身分；Core 不知道 pySerial 或 TCP。正常 Rebind／Confirm 開啟仍沿用原行為，避免把 RX 恢復的原裝置限制加到人工換板流程。
+
+成功後維持同一 Gateway Instance，只替該 Channel 建立新 Epoch，仍 unconfirmed；失敗、逾時或晚到完成不得取得 TX 資格。沒有自動重開、設定 reload 或整體程序重啟，不打斷其他通道。詳細相容性、狀態與錯誤以 [協定 9.2](protocol/v1.md#92-單通道手動-rx-重開擴充2026-11-06) 為準。
 
 Server Restart、裝置遺失及設定變更後取消既有確認資格。是否採用這個啟動與再次確認政策，見狀態文件 Q-05；不應假裝這是已核准操作偏好。
 

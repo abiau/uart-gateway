@@ -15,7 +15,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：239 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看及本機／遠端工作台 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：262 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看及本機／遠端工作台／單路 RX 重開 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -23,7 +23,8 @@
 | 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與單路遺失隔離；新增 19 項測試通過，Win11 雙實體 UART 待驗證 |
 | Gateway RX 錄製及離線檢查 | Verified（一般流程，使用者回報） | 原第 2～3 項本機錄製與離線操作通過；故障／容量等情境仍以自動化證據及個別實測為準 |
 | 本機只讀互動式工作台 | Verified（一般流程，使用者回報） | 原第 1～3 項更新／枚舉、監看錄製清理返回及離線檔案操作通過；雙擊與 USB 完整恢復不另推論 |
-| 遠端只讀工作台 | Verified（Win11 同機一般流程，使用者回報） | 原第 4 項通過；USB 插回後同一 Gateway 仍 lost，需手動重啟；新恢復提示／dxan 選單及實體恢復仍待測 |
+| 遠端只讀監看工作台 | Verified（Win11 同機一般流程，使用者回報） | 原第 4 項通過；新版人工 RX 重開另列，dxan 新選單及實體恢復仍待測 |
+| Gateway 狀態日誌與單通道手動 RX 重開 | Implemented／自動化 Tested | configure＋Expected Context＋可選能力；保持同 Instance、只恢復單路、未 Confirm；真 TCP／CLI／Fake／pySerial PTY 通過，Win11 USB／MobaXterm／dxan 新操作待測 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
@@ -478,3 +479,17 @@ Log 最後的「已離開遠端工作台」符合原本 Q／空白 Enter 的離�
 lost／faulted 清單新增中文提示：R 只查詢、不重開 Serial；需在 Gateway 電腦核對 COM，正常停止原程序，以原設定與相同 Token 手動重啟，再 R 並重新選擇。重啟會影響該 Gateway 全部通道及記憶體歷史，介面只提示、不代操；沒有新增 API、重試、Confirm、Lease、TX 或控制線操作。
 
 Linux／Python 3.12.14／pySerial 3.5 完整 239 項通過、無略過、無 RuntimeWarning；新增 4 項恢復選單測試及 1 項真 CLI／PTY／Gateway 整合。後者重現 lost 後空白仍等待、端點重新可開啟但 R 不自動重開，並由測試端手動以同 Token 重啟真 Gateway；UI R 取得新 Instance 後再次收到 RX。此為 Fake Serial 模擬，不是 Windows USB 實體復原證據。原本機 USB 插回再接收、遠端手動重啟恢復與此新版恢復提示仍待使用者重測；第 6 項繼續待測。依既有 Git 交付方式保存至 origin/work，版本以提交紀錄為準。
+
+## Gateway 狀態日誌與單通道人工 RX 重開（2026-11-06，Asia/Taipei）
+
+使用者在回報 Gateway 只顯示接聽訊息、USB 插回仍 lost 後，明確要求「先補日誌，再做單通道手動 RX 重開」。本輪先補 Server 狀態觀測：不依賴 Recorder 或 Client，Gateway 命令入口將開啟、就緒、遺失、故障、關閉與人工重開請求／失敗印到 stderr，含通道、Instance、端點、修訂、Epoch 與錯誤碼；不含 RX 原文或 Token。不新增持久日誌檔或完整 Audit 儲存。
+
+先更新協定再實作 V1.0 可選能力 `channel.reopen_rx`；沿用原 configure 權限與 Expected Context，不修改既有方法／快照／事件。Core 僅接受 lost／faulted／closed，重用原 Rebind 的失效與收斂程序，再經 SerialPort 的 RX 恢復介面開啟；對 ready、生命週期進行中、尚有 Driver／Worker、Lease 或寫入未完成時拒絕。接受後 Revision 增加，成功新 Epoch／Offset 0／unconfirmed；失敗不回退修訂，不因晚到完成建立有效世代。保留 TX blocked，不 Confirm、不取得 Lease、不傳送 bytes、不增加額外控制線操作。只處理指定 Channel，其他通道／訂閱、Gateway Instance 與已寫入錄製檔保留。
+
+實體 Backend 重新枚舉、套用全部原 Selector，RX 重開時另核對前次成功開啟的已知 VID／PID／序號；無序號時核對已知位置。不符或已知資訊消失拒絕，始終無身分資訊時仍為 unverified，由人工核對接線，不保證辨識同 Adapter 換板。此額外限制只用於 RX 恢復，一般 Rebind／Confirm 開啟維持既有 Selector 語意。
+
+CLI 新增 `uart reopen <Channel>`；遠端工作台先查到 capability 與 configure 才提供不可用通道的 O／Y 動作，另建 SDK 連線核對所選快照；成功更新清單並讓使用者再選監看。R 或 USB 插回不重開；失敗、斷線或本地逾時不自動重送。原 COM3 範例與 Launcher 臨時 read 權限不變，另提供 `examples/gateway.com3.rx-reopen.toml` 明確選用 read＋configure、無 tx。configure 同時包含既有 Binding 管理，不宣稱是專用細分權限。
+
+Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，`.venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v` 完整 **262 項通過**，21.380 秒、無略過、無 RuntimeWarning。新增 23 項，原 239 項亦通過；證據涵蓋無 Client／Recorder 日誌且不洩漏 Token／RX、嚴格協定參數與範例、權限及舊快照／重複操作拒絕、開關失敗／占用／裝置缺少、身分核對、Worker／Driver 逾時與晚到完成、能力缺少、結果不明不重試、選單取消與確認、真 CLI／PTY 同 Instance 恢復、其他通道 RX／訂閱持續、錄製新舊 Epoch 與既有 unknown 完整性，以及真 pySerial／PTY 關閉後重新開啟接收。新恢復路徑未產生 UART 寫入；既有 TX 模擬測試仍屬原範圍。
+
+另檢查新舊 COM3 配置可由既有載入器讀取，原檔仍 read、管理檔 read＋configure，均未因此開啟 Serial。Windows Quickstart、工作台、設定、架構與路線圖已同步。此輪沒有存取 Win11 實體 COM3、MobaXterm、d3s1 或 dxan；新版 USB 拔插／重開／占用、管理權限及雙實體隔離須由使用者實測。既有使用者第 1～4 項與公司 30 分鐘通過證據保留，第 6 項雙 UART 繼續待測。依既有 Git 交付方式提交並推送 origin/work，版本以 Git 紀錄為準。

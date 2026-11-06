@@ -24,6 +24,9 @@ class FakeSerial:
             self.rx.get_nowait()
         self.opened = True
 
+    def reopen_rx(self) -> None:
+        self.open()
+
     def inject(self, data: bytes) -> None:
         if not self.opened:
             raise OSError("模擬裝置尚未開啟")

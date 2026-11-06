@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+import json
 import logging
 import time
 
@@ -78,6 +79,15 @@ class Gateway:
             self.notify(session, channel.event("recording_state", health))
 
     def _observe(self, event: Event) -> None:
+        if event.kind == "channel_state":
+            channel = self.channels[event.channel_id]
+            states = {"opening": "開啟中", "ready": "就緒", "lost": "裝置遺失",
+                      "faulted": "故障", "draining": "關閉中", "closed": "已關閉"}
+            LOG.log(logging.WARNING if channel.state in ("lost", "faulted") else logging.INFO,
+                "通道 %s | 執行個體：%s | 端點：%s | 狀態：%s（%s） | 修訂：%s | 世代：%s | 錯誤：%s",
+                event.channel_id, self.store.instance, json.dumps(channel.port.describe().port, ensure_ascii=True),
+                states[channel.state], channel.state, event.revision, event.epoch or "無",
+                channel.last_error[0] if channel.last_error else "無")
         recorder = self.recorders.get(event.channel_id)
         if recorder is None:
             return
@@ -170,7 +180,7 @@ class Gateway:
                             raise DomainError("UNSUPPORTED_VERSION", "沒有共同協定版本。",
                                               supported_versions=[{"major": 1, "minor": 0}])
                         result = {"version": {"major": 1, "minor": 0}, "gateway_instance_id": self.store.instance,
-                            "capabilities": ["rx.replay", "tx.status", "binding.confirm"],
+                            "capabilities": ["rx.replay", "tx.status", "binding.confirm", "channel.reopen_rx"],
                             "auth_methods": ["token"], "limits": self.limits.wire()}
                         state = "negotiated"
                     elif req.method == "auth.authenticate":
@@ -232,10 +242,20 @@ class Gateway:
                     return {"unsubscribed": True}, after
             return {"unsubscribed": False}, after
         cid = params["channel_id"]
-        permission = "configure" if method.startswith("binding.") else "tx" if method.startswith(("lease.", "tx.")) else "read"
+        permission = ("configure" if method.startswith("binding.") or method == "channel.reopen_rx"
+                      else "tx" if method.startswith(("lease.", "tx.")) else "read")
         principal.require(cid, permission)
         channel = self.channels[cid]
         if method == "channel.get":
+            result = {"channel": self.snapshot(channel)}
+        elif method == "channel.reopen_rx":
+            LOG.info("通道 %s | 人工 RX 重開請求 | 身分：%s", cid, principal.id)
+            try:
+                recipients = await channel.reopen_rx(context(params))
+            except DomainError as exc:
+                LOG.warning("通道 %s | 人工 RX 重開未成功 | 錯誤：%s", cid, exc.code)
+                raise
+            after = [(owner, channel.event("channel_state", {})) for owner in recipients]
             result = {"channel": self.snapshot(channel)}
         elif method == "binding.rebind":
             recipients = await channel.rebind(context(params))

@@ -218,3 +218,116 @@ class ChannelTests(unittest.IsolatedAsyncioTestCase):
             gate.set()
             channel.lifecycle_timeout = 1
             await channel.stop()
+
+    async def test_reopen_lost_creates_new_epoch_and_stays_unconfirmed(self):
+        self.channel.ingest(b"old")
+        old_epoch = self.channel.epoch
+        self.channel.subscribe("reader")
+        self.port.close()
+        await eventually(lambda: self.channel.state == "lost")
+        lost = self.channel.context
+        with patch.object(self.port, "close", wraps=self.port.close) as closed, \
+                patch.object(self.port, "open", wraps=self.port.open) as opened:
+            await self.channel.reopen_rx(lost)
+        closed.assert_called_once()
+        opened.assert_called_once()
+        self.assertEqual(self.channel.state, "ready")
+        self.assertEqual(self.channel.revision, lost.revision + 1)
+        self.assertNotEqual(self.channel.epoch, old_epoch)
+        self.assertEqual((self.channel.offset, len(self.channel.ring)), (0, 0))
+        self.assertFalse(self.channel.subscriptions)
+        self.assertFalse(self.channel.confirmed)
+        self.assertEqual(self.port.write_count, 0)
+        with self.assertRaises(DomainError) as error:
+            self.channel.acquire("owner", self.channel.context)
+        self.assertEqual(error.exception.code, "NOT_BOUND")
+        self.port.inject(b"new")
+        await eventually(lambda: self.channel.offset == 3)
+
+    async def test_reopen_ready_stale_and_revision_exhaustion_do_not_touch_driver(self):
+        ready = self.channel.context
+        with patch.object(self.port, "open") as opened, patch.object(self.port, "close") as closed:
+            with self.assertRaises(DomainError) as error:
+                await self.channel.reopen_rx(ready)
+            self.assertEqual(error.exception.code, "INVALID_STATE")
+            self.channel.revision += 1
+            with self.assertRaises(DomainError) as error:
+                await self.channel.reopen_rx(ready)
+            self.assertEqual(error.exception.code, "STALE_BINDING")
+            opened.assert_not_called()
+            closed.assert_not_called()
+        await self.channel.stop()
+        self.channel.revision = 2**64 - 1
+        with self.assertRaises(DomainError) as error:
+            await self.channel.reopen_rx(self.channel.context)
+        self.assertEqual(error.exception.code, "CHANNEL_BUSY")
+
+    async def test_reopen_close_failure_never_opens_and_can_retry_after_convergence(self):
+        await self.channel.stop()
+        old = self.channel.context
+        with patch.object(self.port, "close", side_effect=OSError("模擬關閉失敗")), \
+                patch.object(self.port, "open") as opened:
+            with self.assertRaises(DomainError) as error:
+                await self.channel.reopen_rx(old)
+            self.assertEqual(error.exception.code, "SERIAL_IO_FAILED")
+            opened.assert_not_called()
+        self.assertEqual((self.channel.state, self.channel.epoch), ("faulted", None))
+        self.assertGreater(self.channel.revision, old.revision)
+        self.assertFalse(self.channel.confirmed)
+        await self.channel.reopen_rx(self.channel.context)
+        self.assertEqual(self.channel.state, "ready")
+
+    async def test_pending_worker_prevents_reopen_until_read_finishes(self):
+        await self.channel.stop()
+        self.channel.lifecycle_timeout = 0.02
+        gate = asyncio.Event()
+        task = asyncio.create_task(gate.wait())
+        self.channel.tasks = [task]
+        try:
+            with patch.object(self.port, "close") as closed, patch.object(self.port, "open") as opened:
+                with self.assertRaises(DomainError):
+                    await self.channel.reopen_rx(self.channel.context)
+                closed.assert_not_called()
+                opened.assert_not_called()
+            self.assertEqual(self.channel.state, "faulted")
+        finally:
+            gate.set()
+            await task
+            self.channel.lifecycle_timeout = 1
+        await self.channel.reopen_rx(self.channel.context)
+        self.assertEqual(self.channel.state, "ready")
+
+    async def test_reopen_timeout_late_open_does_not_publish_epoch_or_allow_concurrent_open(self):
+        await self.channel.stop()
+        self.channel.lifecycle_timeout = 0.02
+        gate, entered = threading.Event(), threading.Event()
+        original = self.port.open
+
+        def delayed_open():
+            entered.set()
+            if not gate.wait(2):
+                raise OSError("測試未收斂")
+            original()
+
+        try:
+            with patch.object(self.port, "open", side_effect=delayed_open) as opened:
+                first = asyncio.create_task(self.channel.reopen_rx(self.channel.context))
+                await eventually(entered.is_set)
+                with self.assertRaises(DomainError) as error:
+                    await self.channel.reopen_rx(self.channel.context)
+                self.assertEqual(error.exception.code, "CHANNEL_BUSY")
+                with self.assertRaises(DomainError):
+                    await first
+                with self.assertRaises(DomainError) as error:
+                    await self.channel.reopen_rx(self.channel.context)
+                self.assertEqual(error.exception.code, "CHANNEL_BUSY")
+                self.assertEqual(opened.call_count, 1)
+                gate.set()
+                await asyncio.wait_for(asyncio.shield(self.channel.operation), 1)
+            self.assertEqual((self.channel.state, self.channel.epoch, self.channel.confirmed), ("faulted", None, False))
+            self.channel.lifecycle_timeout = 1
+            await self.channel.reopen_rx(self.channel.context)
+            self.assertEqual(self.channel.state, "ready")
+        finally:
+            gate.set()
+            self.channel.lifecycle_timeout = 1

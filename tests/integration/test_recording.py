@@ -100,6 +100,28 @@ class RecordingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inspect_capture(self.capture("b"))["integrity"], "no_known_gap")
         self.assertEqual(self.payload("b"), b"still receiving")
 
+    async def test_manual_rx_reopen_preserves_recorded_epochs_and_loss_integrity(self):
+        self.gateway.principals = (Principal("manager", self.token, {"a": frozenset({"read", "configure"})}),)
+        client = await self.client()
+        old_epoch = self.gateway.channels["a"].epoch
+        self.devices[0].inject(b"before")
+        await eventually(lambda: self.gateway.channels["a"].offset == 6)
+        self.devices[0].close()
+        await eventually(lambda: self.gateway.channels["a"].state == "lost")
+        result = await client.reopen_rx(await client.get_channel("a"))
+        self.devices[0].inject(b"after")
+        await eventually(lambda: self.gateway.channels["a"].offset == 5)
+        await self.gateway.close()
+        rows = [json.loads(line) for path in sorted(self.capture("a").glob("*.jsonl"))
+                for line in path.read_bytes().splitlines()]
+        chunks = [row for row in rows if row["type"] == "rx"]
+        self.assertEqual([row["stream_epoch"] for row in chunks], [old_epoch, result["stream_epoch"]])
+        self.assertEqual([row["offset"] for row in chunks], ["0", "0"])
+        self.assertEqual(self.payload("a"), b"beforeafter")
+        self.assertEqual(inspect_capture(self.capture("a"))["integrity"], "unknown")
+        self.assertEqual(inspect_capture(self.capture("b"))["integrity"], "no_known_gap")
+        self.assertEqual(self.devices[0].write_count, 0)
+
     async def test_slow_disk_overflow_notifies_sdk_without_blocking_either_rx(self):
         entered, release = threading.Event(), threading.Event()
         recorder = self.gateway.recorders["a"]

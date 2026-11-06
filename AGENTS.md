@@ -12,6 +12,8 @@ Phase 0 基線已核准，Phase 1 已實作 Gateway、SDK／CLI、本機只讀�
 
 ## 開始工作前的閱讀順序
 
+單通道 RX 恢復授權補充（2026-11-06）：使用者明確要求「先補日誌，再做單通道手動 RX 重開」。核准獨立 Gateway 狀態日誌，以及使用 configure 權限與 Expected Context 的單通道恢復擴充；沿用原裝置條件、核對已知身分、清理舊 Handle、新 Epoch，維持未 Confirm。CLI／遠端工作台須明確人工觸發，不因 R 或 USB 插回自動操作；不重啟其他通道、不取得 Lease、不發送 UART 指令。此補充允許此單一管理 API，其他遠端設定、完整 reload 及 TX 不屬本輪。
+
 遠端工作台授權補充（2026-11-06）：使用者已選擇沿用 CLI 位址／Port／Token 參照，第一版一次一條 Channel，並核准所提計畫。新增 menu --remote 時重用 SDK 與 watch_client，不管理 Gateway 程序或自動重連；Instance／Binding Revision／Epoch 與訂閱回覆必須核對，不符時不顯示 RX 並要求重選。此模式不提供錄製設定、Confirm、Lease 或 TX。
 
 工作台授權補充（2026-11-06）：使用者要求先開發可回家測的下一步，已延伸為本機只讀文字工作台，重用既有 CLI／SDK／Launcher 與離線錄製工具。不得以一般退出碼吞掉 LauncherCleanupError 後繼續啟動；清理不明必須結束工作台。完整 TUI／遠端設定 API／TX 不屬此切片。

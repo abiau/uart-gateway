@@ -4,6 +4,7 @@ import argparse
 import asyncio
 from dataclasses import asdict
 import json
+import logging
 import os
 from pathlib import Path
 import sys
@@ -136,6 +137,7 @@ async def run(path: Path, *, fake: bool = True, shutdown_on_stdin_eof: bool = Fa
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     parser = argparse.ArgumentParser(description="UART Gateway；預設僅接收，TX 需權限、Confirm 與 Lease")
     modes = parser.add_mutually_exclusive_group(required=True)
     modes.add_argument("--fake", action="store_true", help="選擇 Fake Serial")

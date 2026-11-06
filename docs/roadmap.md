@@ -53,6 +53,8 @@ RX 錄製切片已加入 Gateway 端有界 Queue、分段、每 Capture 容量�
 
 後續新增 `menu --remote`，以現有 Token 參照連線既有 Gateway、選一條 Channel 監看／重播及手動恢復；選單快照與訂閱身分不一致時要求重選。屬 Client 操作切片，不新增遠端設定 API。居家可用同機手動 Gateway 及單 UART 驗證；Win11／dxan 新入口仍需個別回報。
 
+2026-11-06 使用者另核准先補 Gateway 狀態日誌，再新增單通道人工 RX 重開，取代裝置遺失後只能整體重啟的操作限制。此切片提供具 capability／configure／Expected Context 保護的 API、SDK、CLI 與工作台 O／Y，沿用裝置條件，收斂舊 Handle、新 Epoch、維持未確認；不是任意設定管理或自動重連。自動化驗收包括無 Client／無 Recorder 日誌、權限／舊快照／重複操作拒絕、裝置身分、開關失敗／逾時、同 Instance 的單路恢復、另一路持續 RX 與錄製世代保留。Win11 USB 插拔及公司 dxan 新操作另行驗證，不以模擬通過替代。
+
 目前經使用者授權先交付本機端點列出、單端點互動選擇及兩條只讀 UART 啟動切片。兩條切片使用單一 Gateway，提供名稱與裝置條件保存、分來源顯示及單路遺失隔離，以 Mock／PTY 驗證。Win11 雙實體 UART 待驗證；不代表 Phase 1 全部驗收、五至六條容量或完整 TUI 已完成。
 
 - **開發目標**：擴大已驗證設備範圍並改善人工多板操作。

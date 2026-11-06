@@ -63,6 +63,7 @@ SCHEMAS = {
     "ping": (set(), set()),
     "channel.list": (set(), {"limit", "cursor"}),
     "channel.get": ({"channel_id"}, set()),
+    "channel.reopen_rx": ({"channel_id", "expected"}, set()),
     "binding.rebind": ({"channel_id", "expected"}, set()),
     "binding.confirm": ({"channel_id", "expected", "label"}, {"target_note"}),
     "rx.subscribe": ({"channel_id", "mode"}, {"stream_epoch", "from_offset", "gap_policy"}),

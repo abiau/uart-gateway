@@ -36,7 +36,7 @@
 uart --host 127.0.0.1 --port 18081 --token-file <受保護的Token檔案> menu --remote
 ```
 
-遠端模式只使用 SDK 連線既有 Gateway，第一次認證後列出有 read 權限的 Channel：ID、名稱、狀態、端點、錄製健康度及錯誤。輸入編號選擇；R 重新查詢或重新連線，正常清單 Q／Enter 離開。清單是上次查詢快照，不是持續更新的狀態；未就緒的 Channel 只顯示原因，不建立訂閱。
+遠端模式只使用 SDK 連線既有 Gateway，第一次認證後列出有 read 權限的 Channel：ID、名稱、狀態、端點、錄製健康度及錯誤。輸入編號選擇；R 重新查詢或重新連線，正常清單 Q／Enter 離開。清單是上次查詢快照，不是持續更新的狀態；未就緒的 Channel 不建立訂閱。有 configure 與下述擴充能力時，可明確選擇單路 RX 重開。
 
 選擇後 L／Enter 為即時接收，R 為最早仍保留的歷史＋即時接收，Q 返回。一次監看一條，使用現有終端過濾器與有界輸出，直到 Ctrl+C 或訂閱結束。監看中 Ctrl+C 清理 Client 並返回清單，Gateway 保持執行；選單輸入處 Ctrl+C 結束工作台、退出 130，Q／EOF 正常退出 0。認證、連線或訂閱失敗，或查詢時所有通道都未就緒，會進入恢復選單：Enter 僅保持等待、不退出、不連線；R 才重新查詢。重新查到 ready 通道後恢復正常清單的 Enter 離開語意。
 
@@ -44,7 +44,11 @@ uart --host 127.0.0.1 --port 18081 --token-file <受保護的Token檔案> menu -
 
 USB 回到 Windows 枚舉清單，只代表端點再次可見。Gateway 目前不自動重開 Serial，原 Channel 在 device_lost 後仍為 lost。R 只重新連線／查詢 SDK 狀態，即使成功查詢同一 Gateway Instance，仍可能看到 DEVICE_MISSING。
 
-本機 `menu` 的選 Port 流程擁有自己啟動的 Gateway，清理後可重新選擇並建立新程序；`menu --remote` 的 Gateway 是另行啟動的，須在 Gateway 所在電腦核對 COM，正常停止舊 Gateway，再以原設定及相同 Token 手動重新啟動，最後在遠端按 R 並重新選擇。重啟影響該 Gateway 全部通道，應先確認可中斷；新的 Instance／Epoch 不保留舊記憶體歷史，已寫入錄製檔仍保留。工作台只提示，不會代操硬體或自動呼叫 Confirm／TX。
+本機 `menu` 的選 Port 流程擁有自己啟動的 Gateway，清理後可重新選擇並建立新程序。`menu --remote` 不管理 Gateway 程序；新版提供單通道手動 RX 重開：Gateway 須宣告 `channel.reopen_rx` 能力，該 Token 須有 read＋configure。選擇 lost／faulted／closed 通道後輸入 O，再明確 Y 確認；一般只讀 Token 不顯示操作，Server 也會拒絕呼叫。
+
+操作前另建 SDK 連線並核對 Instance／Revision／Epoch；快照已變更時不開啟裝置，要求 R 重新選擇。成功時同一 Instance 下只有該 Channel 換成新 Epoch／unconfirmed，舊記憶體歷史清除，其他通道與錄製檔保留。成功後更新清單，由使用者再次選擇監看；失敗或結果未確認時不重試、不自動查詢，須按 R。請求可能已接受，不能把連線逾時當作未執行。核對原 Adapter 身分、關閉與 Driver 收斂規則見 [協定 9.2](protocol/v1.md#92-單通道手動-rx-重開擴充2026-11-06)。
+
+舊 Gateway 沒有能力或目前 Token 沒有管理權限時，請由管理者操作單路恢復；全 Gateway 重啟僅作人工備援，須確認全部通道可中斷、沿用相同 Token，之後 R 查詢新 Instance。重啟不保留記憶體歷史。沒有背景自動重開，也不呼叫 Confirm、Lease 或 TX；Serial 參數與控制線設定不變。
 
 每次查詢與監看各使用一條短期擁有的 SDK 連線，結束立即清理；輸入仍在事件迴圈之外。每次連線重新讀取 --token-file 或 --token-env（預設 UART_GATEWAY_TOKEN），更新 Token 來源後可按 R 重試，不將 Token 保存到工作台設定或輸出。
 

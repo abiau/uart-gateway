@@ -144,13 +144,14 @@ class Channel:
         self.ring_used = self.offset = self.sequence = 0
         self.observe(self.event("channel_state", {}))
 
-    async def start(self) -> None:
+    async def start(self, *, reopen_rx: bool = False) -> None:
         if self.state != "closed":
             raise DomainError("CHANNEL_BUSY", "請先 Rebind 關閉舊端點，再確認開啟。")
         self.state = "opening"
         self.confirmed = False
+        self.observe(self.event("channel_state", {}))
         try:
-            await self._device_operation(self.port.open)
+            await self._device_operation(self.port.reopen_rx if reopen_rx else self.port.open)
         except DomainError:
             self.observe(self.event("channel_state", {}))
             raise
@@ -213,17 +214,32 @@ class Channel:
             self.confirmed = False
             self.state, self.running = "draining", False
             self.wakeup.set()
-        await self._stop_workers()
+        self.observe(self.event("channel_state", {}))
         try:
+            await self._stop_workers()
             await self._device_operation(self.port.close)
-        except OSError as exc:
+        except (OSError, DomainError) as exc:
             self.state, self.epoch = "faulted", None
-            self.last_error = ("SERIAL_IO_FAILED", "裝置關閉失敗。")
+            if not isinstance(exc, DomainError):
+                self.last_error = ("SERIAL_IO_FAILED", "裝置關閉失敗；未重新開啟 Serial。")
+            self.observe(self.event("channel_state", {}))
             raise DomainError(*self.last_error) from exc
         self.state, self.epoch = "closed", None
         self.ring.clear()
         self.ring_used = 0
         self.observe(self.event("channel_state", {}))
+        return recipients
+
+    async def reopen_rx(self, expected: Context) -> set[str]:
+        """人工恢復單一路 RX；先完整收斂舊 Handle，絕不確認 TX 資格。"""
+        with self.gate:
+            self.check_context(expected)
+            if self.state in ("opening", "draining"):
+                raise DomainError("CHANNEL_BUSY", "此通道正在開關裝置，請查詢狀態後再操作。")
+            if self.state not in ("lost", "faulted", "closed"):
+                raise DomainError("INVALID_STATE", "通道已就緒，不需要重新開啟 RX。")
+        recipients = await self.rebind(expected)
+        await self.start(reopen_rx=True)
         return recipients
 
     def expire(self) -> None:

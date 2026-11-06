@@ -178,3 +178,49 @@ class SerialBackendTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 SerialSettings(**kwargs)
         self.assertEqual(port_key("COM03"), port_key("\\\\.\\com3"))
+
+    def test_reopen_rejects_changed_or_missing_known_identity_before_constructing_driver(self):
+        backend = self.backend()
+        backend.open()
+        backend.close()
+        previous = self.devices[0]
+        for changed in (replace(previous, serial_number="different"), replace(previous, serial_number=None),
+                        replace(previous, vid=123), replace(previous, pid=None)):
+            self.devices = [changed]
+            with self.subTest(changed=changed), self.assertRaises(SerialBackendError) as error:
+                backend.reopen_rx()
+            self.assertEqual(error.exception.code, "DEVICE_MISSING")
+            self.assertEqual(len(self.handles), 1)
+        self.devices = [replace(previous, location="another-usb-socket")]
+        backend.reopen_rx()
+        self.assertEqual(len(self.handles), 2)
+        self.assertEqual(self.handles[-1].open_snapshot, ("COM3", False, False))
+
+    def test_reopen_without_serial_checks_known_location(self):
+        previous = replace(self.devices[0], serial_number=None)
+        self.devices = [previous]
+        backend = self.backend()
+        backend.open()
+        backend.close()
+        self.devices = [replace(previous, location="different")]
+        with self.assertRaises(SerialBackendError):
+            backend.reopen_rx()
+        self.assertEqual(len(self.handles), 1)
+
+    def test_failed_open_does_not_pin_an_unopened_adapter(self):
+        backend = self.backend()
+        self.open_error = PermissionError(errno.EACCES, "占用")
+        with self.assertRaises(SerialBackendError):
+            backend.open()
+        self.open_error = None
+        self.devices = [replace(self.devices[0], serial_number="replacement-before-first-success")]
+        backend.open()
+        self.assertTrue(self.handles[-1].opened)
+
+    def test_normal_open_for_explicit_rebind_confirm_keeps_original_selector_semantics(self):
+        backend = self.backend()
+        backend.open()
+        backend.close()
+        self.devices = [replace(self.devices[0], serial_number="manually-confirmed-new-adapter")]
+        backend.open()
+        self.assertEqual(backend.describe().serial_number, "manually-confirmed-new-adapter")

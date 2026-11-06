@@ -479,6 +479,10 @@ async def run(args: argparse.Namespace) -> int:
                 await output(await client.confirm(channel, args.label, args.note))
             elif args.command == "rebind":
                 await output(await client.rebind(channel))
+            elif args.command == "reopen":
+                await output(await client.reopen_rx(channel))
+                print("單通道 RX 已重新開啟；尚未 Confirm，不允許 TX，請重新選擇監看。",
+                      file=sys.stderr, flush=True)
             elif args.command == "send":
                 suffix = {"none": "", "lf": "\n", "cr": "\r", "crlf": "\r\n"}[args.newline]
                 async with await client.acquire(channel) as lease:
@@ -529,6 +533,7 @@ def main() -> None:
     local.add_argument("--duration", type=float, help="監控秒數；省略則持續到 Ctrl+C")
     local.add_argument("--pause-on-error", action="store_true", help="失敗時按 Enter 關閉視窗，供雙擊入口使用")
     for name, help_text in (("confirm", "人工確認目前接線"), ("rebind", "停止通道以準備換板"),
+                            ("reopen", "手動重開遺失／故障／已關閉通道的 RX，需要 configure 權限"),
                             ("watch", "訂閱 UART 事件"), ("send", "以租約保護的 TX 傳送文字"),
                             ("status", "查詢既有 TX 狀態")):
         command = commands.add_parser(name, help=help_text)

@@ -20,13 +20,19 @@ Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開�
 
 所有設定在 Phase 1 候選方案中於啟動載入；不提供任意熱更新。Binding（綁定）確認是經授權的執行期操作。變更 Serial 設定需停止舊操作並建立新 Epoch（資料流世代），不是直接覆寫欄位。
 
+2026-11-06 新增單通道人工 RX 重開，不讀取或修改 TOML。`uart reopen <Channel>` 或遠端工作台 O／Y 使用原設定，需 configure 權限及 Gateway 擴充能力；ready 通道拒絕操作。原 `examples/gateway.com3.toml` 及所有本機 Launcher 臨時配置維持 read；明確選用 `examples/gateway.com3.rx-reopen.toml` 才給 read＋configure，仍沒有 tx。configure 也允許既有 Binding API，並非專用細分的 reopen 權限，請僅授予通道管理者。
+
+實體 Backend 的 RX 重開另外核對本程序前次成功開啟的已知 VID／PID／序號；無序號時核對已知位置。不符或已知資訊消失即拒絕，不因同 COM 猜測是原 Adapter。一直沒有 Metadata 的明確 Port 仍為 unverified，需人工核對接線。一般 Rebind／Confirm 的既有 Selector 語意不變；重開不改 UART、DTR／RTS，不授予確認或 TX 資格。完整契約見 [協定](protocol/v1.md)。
+
+Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到 stderr，lost／faulted 用 WARNING，無 Client、未錄製時同樣輸出。日誌不含 RX 原文、Token 或秘密內容，不新增持久檔案與日誌保留設定；這不是尚未完成的完整 Audit 儲存。
+
 ## Gateway 與網路
 
 ### 本機啟動器配置（已實作）
 
 互動工作台 `uart menu --recordings-dir 路徑` 的根目錄預設為目前工作目錄下的 `recordings`，用於本次錄製及離線瀏覽，不寫入下列端點 Profile 或 Server 的持久設定。`uart --port 18082 menu` 可指定本機 Gateway 的 TCP Port；工作台為本機／離線入口，不接受外部 Token 或遠端 host 選項。操作與掃描上限見 [工作台說明](workbench.md)。
 
-遠端工作台以 `menu --remote` 明確啟用，與 --recordings-dir 互斥。連線參數沿用全域 --host／--port／--token-file 或 --token-env，未指定時為 127.0.0.1:18081 及 UART_GATEWAY_TOKEN；Client Port 可為 1～65535（例如 SSH 本地轉送的端點），不套用 Server 綁定 Port 的限制。每次連線重讀 Token 參照，不新增持久連線設定；只列出有 read 權限的 Channel，並使用其既有終端監看，不提供 TX 或遠端設定 API。
+遠端工作台以 `menu --remote` 明確啟用，與 --recordings-dir 互斥。連線參數沿用全域 --host／--port／--token-file 或 --token-env，未指定時為 127.0.0.1:18081 及 UART_GATEWAY_TOKEN；Client Port 可為 1～65535（例如 SSH 本地轉送的端點），不套用 Server 綁定 Port 的限制。每次連線重讀 Token 參照，不新增持久連線設定；只列出有 read 權限的 Channel。有權限與擴充能力時提供單路手動 RX 重開，不提供 TX、遠端設定修改或完整 reload。
 
 `uart local --select --count 2 --save-profile bench.local.toml` 保存的是本機選擇配置，與 `uart-gatewayd --config` 的伺服器配置分開。前者沒有 network、auth、UART 修改或控制線選項；啟動器驗證後才轉為既有伺服器 TOML，Serial 固定 115200／8N1／無流控、DTR／RTS false。直接交給伺服器的完整設定格式不變。
 

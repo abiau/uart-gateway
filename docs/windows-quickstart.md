@@ -65,24 +65,47 @@ git pull --ff-only origin work
 
 ### 遠端模式拔除 USB 後的恢復
 
-若看到 Gateway Instance 仍相同、Channel 為「裝置遺失／DEVICE_MISSING」，而 `uart ports` 已列出 COM3，代表 Gateway 可查詢，但原 UART 仍停在 lost。此版本不自動重開 Serial，R 只更新狀態。
+若看到同一 Gateway Instance、Channel 為「裝置遺失／DEVICE_MISSING」，而 `uart ports` 已列出 COM3，表示端點再次可見，但仍需要人工重開。R 只查詢；插回 USB 不自動開啟。新版 Gateway 視窗會獨立印出開啟中、就緒、裝置遺失、故障、關閉等日誌，包含通道、端點、修訂、Epoch 與錯誤碼；即使沒有 Client 或未錄製，也會顯示。不輸出 UART 原文或 Token。
 
-1. 在原 Gateway 視窗按 Ctrl+C，確認它已結束。若同 Gateway 有其他通道，先確認可一併中斷。
-2. 插回 USB，在仍持有原 Token 的 PowerShell 核對端點並重啟；不重新產生 Token：
+原 `examples/gateway.com3.toml` 仍只給 read，不能重開。要測新功能，第一次更新時先在 Gateway 視窗按 Ctrl+C 正常停止舊程序，確認其他通道可以中斷，再明確改用 [RX 管理範例](../examples/gateway.com3.rx-reopen.toml)。此範例給 read＋configure，沒有 tx；configure 也允許既有 Binding 管理，請只交給有權管理該通道的人。工作台與 reopen 不會呼叫 Confirm。
+
+在仍持有原 Token 的 PowerShell 啟動；不重新產生 Token，以免公司 Client 認證失敗：
 
 ```powershell
 git pull --ff-only origin work
+if (-not $env:UART_GATEWAY_TOKEN) { throw '此 PowerShell 沒有原 Token，請先恢復原本的受保護 Token 來源。' }
 .\.venv\Scripts\uart.exe ports
 $UartPython = (Resolve-Path .\.venv\Scripts\python.exe).Path
-$UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gateway.server.app --serial --config examples/gateway.com3.toml' -WorkingDirectory (Get-Location).Path -PassThru
+$UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gateway.server.app --serial --config examples/gateway.com3.rx-reopen.toml' -WorkingDirectory (Get-Location).Path -PassThru
+.\.venv\Scripts\uart.exe menu --remote
 ```
 
-3. 等待新 Gateway 顯示已接聽。若 COM 已變動，先在私人設定副本修改端點，再使用該副本啟動。
-4. 工作台仍在時按 R；若已退出，在同一個 PowerShell 重開 `uart.exe menu --remote`。確認新 Instance、Channel 就緒，再選編號並看即時資料。
+先等新視窗顯示「已接聽」再操作工作台；若選單先顯示連線失敗，待 Gateway 就緒後按 R。使用 file: Token 的公司配置，請在自己的 `.local.toml` 副本中只調整該 Principal 的 permissions 為 `["read", "configure"]`，保留原 Token 參照、Channel、錄製與其他設定，啟動指令指向該副本；不要用單通道範例覆蓋原多通道配置。
 
-重啟會建立新資料流，舊記憶體重播不保留。新版恢復選單的空白 Enter 不會離開或自動連線；Q／Ctrl+C 可離開，EOF 則明示輸入結束後退出。
+本次新功能的實機測試步驟：
 
-先前第 5 項「拔除後插回、重選並恢復」是本機 `uart menu` 的 Launcher 流程；遠端入口請按本節手動重啟驗證。使用者已回報更新／本機工作台／離線操作／遠端同機一般流程（原第 1～4 項）通過；第 6 項雙 UART 尚待測。遠端 USB 拔插後重新接收與此輪恢復提示仍待重測。
+1. 選擇 COM3 的 Channel 並即時監看，拔除 USB；Gateway 應印出 lost／DEVICE_MISSING，工作台停止該訂閱，Enter 保持等待。
+2. 插回同一個 USB-UART，按 R 更新，仍應為 lost；不會自動重開。
+3. 選擇不可用的 Channel 編號，輸入 O，再輸入 Y。Gateway 日誌應顯示單通道重開、關閉、開啟中與 ready；工作台回到清單。此後不必重啟 Gateway。
+4. 確認 Gateway Instance 不變、Binding 為 unconfirmed、新 Epoch，再選編號與 L／Enter，確認新的 IPCAM 輸出可見。記憶體歷史從新世代開始，舊錄製檔保留。
+5. 負向驗證：尚未插回就重開，應顯示 DEVICE_MISSING；被 MobaXterm 占用時應顯示 PORT_BUSY 與關閉占用程式的提示。失敗後按 R 查詢，再人工重試，不會自動連續重開。
+6. 使用只有 read 的原配置時，不應出現可重開選項；直接執行 reopen 應顯示 PERMISSION_DENIED。ready 通道不允許重開；舊 Gateway 缺少擴充能力時請先更新。
+
+也可在同一 PowerShell 明確執行一次：
+
+```powershell
+.\.venv\Scripts\uart.exe reopen ch_uart_1
+```
+
+公司 dxan 的同一操作沿用受保護 Token 檔：
+
+```sh
+.venv/bin/uart --token-file "$HOME/.config/uart-gateway/com3.token" reopen ch_uart_1
+```
+
+若重開結果未確認或請求逾時，先 R／channels 查詢，不直接重送；Driver 尚未收斂會拒絕 CHANNEL_BUSY。重開核對原 Selector 及本程序前次成功開啟時已知身分；換成不同 Adapter 或 COM 變動時不猜測，需在 Gateway 電腦核對私人配置再正常啟動。只有 Port 且一直沒有身分資訊時仍為 unverified，操作者須自行核對實體接線。
+
+舊版本或沒有管理權限時，可由管理者重開單路；整體 Gateway 重啟仍是人工備援，會中斷全部通道並清除記憶體歷史。工作台不代操 Gateway 程序。上述新增功能只有 Linux 自動化模擬證據，Win11 USB／MobaXterm 重測尚待回報；原第 1～4 項的既有成功與第 6 項雙 UART 待測維持分開。
 
 ## 安裝與更新步驟
 
