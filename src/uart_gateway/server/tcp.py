@@ -152,7 +152,8 @@ class Gateway:
             self.handlers.discard(task)
             return
         session = Session(new_id(), writer, frame_bytes=self.limits.max_frame_bytes,
-            queue_bytes=self.connection_queue_bytes, subscription_bytes=self.subscription_queue_bytes)
+            queue_bytes=self.connection_queue_bytes, subscription_bytes=self.subscription_queue_bytes,
+            replay_bytes=2 * self.limits.rx_ring_bytes, replay_timeout=self.limits.idle_timeout_ms / 1000)
         self.sessions[session.id] = session
         session.task = asyncio.create_task(session.run())
         state, principal, previous = "connected", None, 0
@@ -289,7 +290,12 @@ class Gateway:
                 epoch=params.get("stream_epoch"),
                 offset=int(params["from_offset"]) if params["mode"] == "resume" else None,
                 skip=params.get("gap_policy", "error") == "skip")
-            after = [(session.id, event) for event in events]
+            try:
+                # 此段無 await；先安裝快照，再由 _accept 排入 Response，Writer 才有機會執行。
+                session.replay(result["subscription_id"], events, lambda event: event_message(event, channel))
+            except DomainError:
+                channel.subscriptions.pop(result["subscription_id"], None)
+                raise
         elif method == "lease.acquire":
             result = channel.acquire(session.id, context(params))
         elif method == "lease.renew":

@@ -28,6 +28,8 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 ## Gateway 與網路
 
+歷史重播由 Session Writer 逐筆送出，使用獨立有界快照，不占用整段即時輸出佇列。每 Session 快照共用上限為目前 RX Ring 設定的兩倍（預設 8 MiB，原始 payload＋每事件 512 bytes 預留），期限沿用 idle_timeout_ms（預設 15 秒）；不新增 TOML 參數或修改 Hello 欄位。Writer 額外至多持有一個不超過 max_frame_bytes 的編碼中／傳送中 Frame。即時訂閱佇列及 Connection 輸出上限維持原值，快照配額不足回 QUEUE_FULL，慢接收超限或重播期限到達仍會明示斷線／記錄原因。
+
 遠端雙路工作區在 `menu --remote` 清單輸入兩個不同編號啟用，最多兩路，不新增設定欄位。雙路共用原顯示 Writer（256 項／262144 bytes，含寫入中批次），每路各用獨立 SDK 有界事件佇列；另建短期管理連線。`examples/gateway.dual.rx-reopen.toml` 是 COM3／COM4 明確選用的 read＋configure 範例，沒有 tx，不影響既有只讀配置。工作區指令上限 128 字元，R／O／S 皆需人工觸發；原 API 與 Gateway 四路／八 Client 上限不變。
 
 ### 本機啟動器配置（已實作）

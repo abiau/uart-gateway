@@ -19,6 +19,24 @@ from tests.fakes import FakeClock, eventually
 
 
 class GatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_replay_budget_rejection_removes_new_subscription_and_keeps_connection_usable(self):
+        self.gateway.channels["a"].ingest(b"history")
+        client = await self.client(True)
+        channel = await client.get_channel("a")
+        session = self.gateway.sessions[client.auth["session_id"]]
+        session.replay_max = 1
+        with self.assertRaises(RemoteError) as error:
+            await client.subscribe("a", epoch=channel["stream_epoch"], offset="0")
+        self.assertEqual(error.exception.code, "QUEUE_FULL")
+        self.assertFalse(self.gateway.channels["a"].subscriptions)
+        self.assertFalse(session.replays)
+        self.assertFalse(session.closed)
+        self.assertEqual((await client.get_channel("a"))["state"], "ready")
+        await client.subscribe("a")
+        self.ports[0].inject(b"live")
+        event = await asyncio.wait_for(client.next_event(), 1)
+        self.assertEqual(binary_decode(event["data"]["data_b64"]), b"live")
+
     async def test_replay_survives_temporarily_stalled_console(self):
         import io
         import time

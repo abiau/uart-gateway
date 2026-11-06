@@ -2,6 +2,8 @@
 
 ## 遠端工作台驗證
 
+長歷史重播回歸另以真 CLI／PTY 重現 Q 返回後重新選 1,2／R，第一路 20 個歷史區塊、第二路 1200 個小區塊；原版第二路因 Server 一次填滿訂閱佇列而關閉連線，修正後兩路歷史與後續即時皆須收到。跨通道先後不固定，測試各自核對，不依賴交錯順序。Session 測試涵蓋逐筆傳送、Response／Gap／Replay／Live 順序、輪流排程、快照預算拒絕、原 Live 上限、重播期限與傳送中取消；真 SDK 另驗證配額拒絕撤銷新訂閱且連線仍可監看。不以此宣稱 Windows／IPCAM 重測成功。
+
 雙路工作區新增 `test_console_input.py`，以模擬 msvcrt 驗證鍵盤編輯、特殊鍵、Ctrl+C／EOF 與輸入上限，以 POSIX 管線驗證未完成指令不阻塞、逐行讀取與 EOF，不建立 input 執行緒。`test_remote_group.py` 以真 Gateway／SDK／既有有界 Writer 驗證雙路來源／顏色、重播、快照失效、活動訂閱不重複、單路斷線不自動重連、重開取消／權限／失敗與慢開啟時另一路持續、顯示故障／容量不足及退出清理。真 CLI／PTY 測鍵盤指令、拔除、確認期間持續 RX、重開後接收、Q／SIGINT 返回清單且 Gateway 持續。這些模擬／POSIX 證據不取代 Win11 鍵盤及實體 UART 畫面驗收。
 
 恢復選單另覆蓋 lost 快照／訂閱結束後空白 Enter 保持等待、不新增連線、R 僅查詢、ready 後恢復正常取消，以及 EOF 不忙迴圈。真 CLI／PTY 用 Fake Serial 重現拔除、端點回來仍維持 lost，再由測試端以相同 Token 重啟真 Gateway；R 後取得新 Instance 並再次收到資料。產品 UI 不執行此重啟，這是手動恢復路徑的模擬驗證。

@@ -137,3 +137,5 @@ python -m unittest discover -s tests -v
 前次日誌與單通道 RX 重開：完整 262 項自動化測試通過，包含無 Client／Recorder 的狀態日誌、管理權限／舊快照／裝置身分保護、關閉與逾時失敗、另一路接收隔離、錄製新舊世代，以及真 CLI／PTY 與 pySerial 虛擬端點恢復。這是 Linux 自動化證據，Win11 實體 USB／MobaXterm 已由使用者回報通過，dxan 新操作仍待回報。
 
 遠端雙路工作區：完整 283 項自動化測試通過，新增 21 項涵蓋鍵盤、有界輸出、雙路接收、快照／錯誤隔離及畫面內手動重開；真 CLI／PTY 已測 Q／Ctrl+C 清理，Win11 新合併畫面與公司 dxan 仍待實機驗證。
+
+長歷史重播修正：完整 292 項自動化測試通過。Server 改為有界快照逐筆送出，修復 Q 返回後雙路 R 重播因較長歷史一次塞滿佇列而斷線；原即時佇列上限不變。更新後須正常重啟 Gateway 才生效；Win11 重測步驟見 Windows Quickstart。

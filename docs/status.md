@@ -15,7 +15,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：283 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看及本機／遠端單雙路工作台／RX 重開 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：292 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台及長歷史重播排程 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -527,3 +527,13 @@ console_input 使用 Windows msvcrt／POSIX select 非阻塞輪詢，每輪最�
 Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，以 .venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v 執行完整 **283 項通過**，23.615 秒、無略過、無 RuntimeWarning。新增 21 項，原 262 項亦通過。涵蓋模擬 Windows 鍵盤編輯／特殊鍵／Ctrl+C／EOF／容量、POSIX 非阻塞逐行讀取、雙路選擇及取消、來源／顏色、重播、重複訂閱拒絕、單路快照失效、裝置／網路／認證錯誤隔離、管理確認／取消／舊快照／權限／占用、慢開啟期間另一路接收且訂閱／Epoch 不變、共享輸出故障／容量不足，以及 EOF／Q／SIGINT／重開等待中止的清理與不明結果提示。真 CLI／PTY 完成 1,2 選擇、拔除、等待 Y 時另一路持續、重開後接收、返回清單且 Gateway 繼續；新路徑 Fake Serial UART 寫入次數為零。
 
 此輪未存取 Win11 實體 COM3／COM4 或公司環境。前次雙 Client 實機隔離與單路恢復成功保留；本次合併畫面、Windows 鍵盤／Ctrl+C 與新工作區實體重開仍待使用者測試，公司 dxan 新操作維持下週回公司後再測。雙路錄製完整性、完整 TUI、五至六條容量與其餘 Phase 1 驗收不據此完成。同步更新 README、工作台、Windows Quickstart、架構、設定、開發規範與路線圖；沿用 work 分支交付，提交版本以 Git 紀錄為準。
+
+## 雙路長歷史重播斷線修正（2026-11-07，Asia/Taipei）
+
+使用者回報雙路工作區 Q 返回後，重新選 1,2 的 L 即時正常，但 R 歷史＋即時只有一路接收；提供 Log 顯示 ch_uart_2 在建立重播時出現「Gateway 已關閉連線」，ch_uart_1 較短歷史仍正常。這不等於 USB 遺失或 S 指令使用錯誤。Agent 以真 Gateway／CLI／PTY、第一路 20 與第二路 1200 個小歷史區塊重現：原 Server 在 rx.subscribe 後同步將全部 Replay 塞入訂閱輸出佇列，較長歷史的序列化訊框超過 262144 bytes 上限而 abort 該 Session。原版回歸測試未通過，先前的小歷史測試未跨過此界限。
+
+Server 改由 Session 單一 Writer 逐筆編碼／傳送歷史快照，Response 優先、不同訂閱輪流、同訂閱 Gap／Replay／Live 有序。歷史快照獨立計費與有界保留：每 Session 共用兩倍 RX Ring 配額，payload＋每事件 512 bytes 的 Metadata／引用預留，期限沿用 idle_timeout_ms，預設 15 秒。配額不足以既有 QUEUE_FULL 拒絕並撤銷該次新訂閱，不關閉既有訂閱；取消、Epoch 結束或關閉立即清空剩餘快照引用。原即時與 Connection 輸出限制不變，真正慢接收超限或重播超時仍關閉該連線並印出原因；沒有忽略資料、擴大原即時佇列、加固定 Sleep 或自動重新訂閱。Core、SDK、API 方法／欄位／錯誤碼不變，不增加 UART TX。
+
+Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，.venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v 完整 **292 項通過**，22.748 秒、無略過、無 RuntimeWarning；新增 9 項，原 283 項亦通過。真 CLI／PTY 的 Q→R 查詢→1,2→R 已確認兩路完整測試歷史尾端皆出現，隨後兩路都有新即時資料；跨通道到達順序不作固定假設。新增 Session 單元覆蓋超過原訂閱佇列的歷史逐筆傳送、Response／Gap／Replay／Live 順序、輪流排程、快照配額、Live 仍有界、期限釋放與傳送中取消；真 SDK 覆蓋快照拒絕後不留新訂閱且原連線仍可讀取。
+
+這是自動化模擬與 POSIX 證據，未直接存取 Win11 COM3／COM4 或公司環境，不宣稱使用者的 Windows 情境已重測成功。新版需正常關閉並重啟 Gateway 才載入 Server 修正，保留原配置與 Token；只重開 Client 不足。重啟的記憶體歷史會清空，Quickstart 提供累積持續輸出後再 Q／R 重播的驗證方式；錄製檔仍保留。Win11 長歷史雙路重測與公司 dxan 新操作仍待回報，公司維持下週回公司後再測。文件已同步，依既有 work 分支交付方式提交／推送，版本以 Git 紀錄為準。

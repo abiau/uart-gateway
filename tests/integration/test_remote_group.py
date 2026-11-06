@@ -347,3 +347,30 @@ class GroupProcessTests(unittest.IsolatedAsyncioTestCase):
         await self.finish()
         self.devices[1].inject(b"still-running")
         await eventually(lambda: self.gateway.channels["b"].offset == 13)
+
+    async def test_q_then_dual_replay_with_unequal_long_history_keeps_both_streams(self):
+        for index in range(20):
+            self.gateway.channels["a"].ingest(f"a-history-{index:04d}\n".encode())
+        for index in range(1200):
+            self.gateway.channels["b"].ingest(f"b-history-{index:04d}\n".encode())
+        await self.launch()
+        self.answer("q")
+        await self.expect("目前沒有監看連線")
+        self.answer("r")
+        await self.expect("輸入 Channel 編號")
+        self.answer("1,2")
+        await self.expect("雙路模式")
+        self.answer("r")
+        await self.expect("b-history-1199")
+        if b"a-history-0019" not in self.output:
+            await self.expect("a-history-0019")
+        transcript = self.output.decode(errors="replace")
+        self.assertIn("a-history-0019", transcript)
+        self.assertNotIn("監看失敗", transcript)
+        self.devices[0].inject(b"a-live-after-replay\n")
+        await self.expect("a-live-after-replay")
+        self.devices[1].inject(b"b-live-after-replay\n")
+        await self.expect("b-live-after-replay")
+        self.answer("q")
+        await self.expect("目前沒有監看連線")
+        await self.finish()

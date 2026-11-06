@@ -109,7 +109,11 @@ $UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gatewa
 
 ### 一個視窗同時監看 COM3／COM4（新功能）
 
-本節是新的雙路合併畫面；先前使用兩個獨立 Client 視窗的實機隔離通過，不代表本入口亦已驗證。若已有雙通道 Gateway 且權限正確，可沿用原程序，更新 Client 後直接從下方 menu 命令開始。需要另行啟動時，先正常停止原 Gateway，保留原 Token，關閉 MobaXterm 的 COM 連線，再於專案根目錄使用以下範例：
+**長歷史重播修正需要更新並重啟 Gateway。** 舊版可能在 Q 返回後重選 1,2／R 時，將較長歷史一次塞滿 Server 輸出佇列，顯示其中一路「Gateway 已關閉連線」。此次修正位於 Server；只更新檔案或重開 Client 不會替換已載入的程式。請先在 Gateway 視窗 Ctrl+C 正常關閉，執行 git pull --ff-only origin work，再以原配置與原 Token 重啟，然後重開工作台。正常重啟會建立新 Instance 並清除記憶體歷史，已保存錄製檔不變。
+
+驗證時先確認兩路即時正常，再讓兩台 IPCAM 持續輸出累積歷史（例如每秒一行累積 15 分鐘），Q 返回、R 查詢、1,2、選 R 歷史＋即時。應看到兩路各自重播，隨後兩路都有新的時間戳；不需 S 補回其中一路。重複 Q／重新進入 R 模式也應正常。此長歷史修正已有 Linux 自動化重現與回歸證據，Win11 重測待回報。
+
+本節是新的雙路合併畫面；先前使用兩個獨立 Client 視窗的實機隔離通過，不代表本入口亦已驗證。Gateway 已更新並重啟、且雙通道權限正確後，往後可直接從下方 menu 命令開始。需要啟動時，保留原 Token、關閉 MobaXterm 的 COM 連線，再於專案根目錄使用以下範例；若有舊 Gateway，先正常停止再啟動：
 
 ```powershell
 git pull --ff-only origin work
