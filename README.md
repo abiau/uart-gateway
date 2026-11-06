@@ -8,7 +8,7 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 遠端選單使用 `uart --token-file <受保護的Token檔案> menu --remote`，連線既有 Gateway 後以編號選 Channel，再選即時或重播；Ctrl+C 返回清單，Gateway 繼續執行。居家同機與公司 dxan 的具體步驟見 [Windows Quickstart](docs/windows-quickstart.md)。
 
-遠端 USB 拔插後，COM 重新出現不會自動重開原 Channel；新版可在 `menu --remote` 選擇不可用通道，再 O／Y 手動重開該路 RX，或執行 `uart reopen ch_uart_1`。需 configure 權限，原只讀配置不變；明確啟用方式見 [Windows Quickstart](docs/windows-quickstart.md)。Gateway 會獨立顯示狀態日誌；恢復維持未 Confirm，不取得 Lease、不傳送 UART 指令、不重啟其他通道。新功能的 Win11 USB 驗證與雙 UART 仍待測。
+遠端 USB 拔插後，COM 重新出現不會自動重開原 Channel；新版可在 `menu --remote` 選擇不可用通道，再 O／Y 手動重開該路 RX，或執行 `uart reopen ch_uart_1`。需 configure 權限，原只讀配置不變；明確啟用方式見 [Windows Quickstart](docs/windows-quickstart.md)。Gateway 會獨立顯示狀態日誌；恢復維持未 Confirm，不取得 Lease、不傳送 UART 指令、不重啟其他通道。使用者已回報 Win11 單通道恢復／占用，以及雙 IPCAM 的 COM3 拔除與重開時 COM4 接收不中斷；dxan 新操作仍待測。
 
 ## 目標與設計方向
 
@@ -23,7 +23,7 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 本機端點可用 `uart ports` 只讀列出；雙擊 `run-uart.cmd` 或執行 `uart local --select --read-only --watch` 可互動選擇，再沿用既有只讀啟動流程。支援重新整理與取消，不會預設開啟第一個裝置。中斷後的恢復選單可按 Enter 重新整理，輸入 Q 或按 Ctrl+C 離開；輸入結束會另行明示 EOF。這一輪已完成 Mock／PTY 測試；使用者亦已回報居家 USB-UART／IPCAM 接收成功、`--terminal` 顏色正確。使用者另回報 USB 拔插會中斷監控、IPCAM 重新上電仍可顯示；本輪新增中斷清理後回到選單、由使用者重新選擇的流程，完整 Windows 插拔恢復仍待驗證。
 
-使用者後續已確認 USB 拔除後能返回並停留於恢復選單。最新切片新增 `uart local --select --count 2 --read-only --watch --terminal` 與 `run-dual-uart.cmd`，以**一個 Gateway** 同時接收兩條 UART，畫面標明 Channel／名稱；一路遺失時另一路繼續。可用 `--save-profile bench.local.toml` 保存名稱與裝置條件，下次以 `--profile bench.local.toml` 重新核對後啟動。多通道畫面顏色獨立，CR／退格採跳脫顯示；完整步驟見 [Windows Quickstart](docs/windows-quickstart.md)。目前為 Mock／雙 PTY 自動化 Tested，Win11 雙實體 UART 尚未驗證。
+使用者後續已確認 USB 拔除後能返回並停留於恢復選單。最新切片新增 `uart local --select --count 2 --read-only --watch --terminal` 與 `run-dual-uart.cmd`，以**一個 Gateway** 同時接收兩條 UART，畫面標明 Channel／名稱；一路遺失時另一路繼續。可用 `--save-profile bench.local.toml` 保存名稱與裝置條件，下次以 `--profile bench.local.toml` 重新核對後啟動。多通道畫面顏色獨立，CR／退格採跳脫顯示；完整步驟見 [Windows Quickstart](docs/windows-quickstart.md)。已有 Mock／雙 PTY 自動化證據；Win11 手動雙通道 Gateway 的單路恢復隔離已由使用者回報通過，雙擊及 Profile 的雙實體操作仍需個別驗證。
 
 Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win11 手動 watch 已讀到 IPCAM 開機訊息。使用者亦已回報新 Quickstart、關閉後重啟、重複啟動及 MobaXterm 占用交叉測試通過。
 
@@ -105,7 +105,7 @@ uart-gatewayd --fake --config examples/gateway.fake.toml
 
 錄製後可用 `uart recording-text <Channel目錄> --output uart-readable.txt` 匯出所有分段並以記事本查看。命令處理跨區塊 UTF-8，保留時間／Epoch／位移，跳脫控制字元，並在末尾標明完整性；詳細 PowerShell 操作見 [Windows Quickstart](docs/windows-quickstart.md)。
 
-可用 `uart local --select --read-only --watch --terminal --record-dir ./recordings` 啟用 Gateway RX 錄製，單 UART 即可使用。各通道保存原始 bytes 與裝置／Epoch 快照，分段及佇列有界；錄製故障會告警，RX 繼續。停止後以 `uart recording-info 錄製的Channel目錄` 檢查正常收尾、位移與雜湊。操作見 [Windows Quickstart](docs/windows-quickstart.md)，格式及限制見 [錄製規格](docs/recording.md)。雙 UART 實機依使用者指示延後到公司，公司遠端持續接收 30 分鐘已回報通過；錄製完整性與其他長時間情境仍需個別驗證。
+可用 `uart local --select --read-only --watch --terminal --record-dir ./recordings` 啟用 Gateway RX 錄製，單 UART 即可使用。各通道保存原始 bytes 與裝置／Epoch 快照，分段及佇列有界；錄製故障會告警，RX 繼續。停止後以 `uart recording-info 錄製的Channel目錄` 檢查正常收尾、位移與雜湊。操作見 [Windows Quickstart](docs/windows-quickstart.md)，格式及限制見 [錄製規格](docs/recording.md)。雙 UART 故障／恢復隔離與公司遠端持續接收 30 分鐘已回報通過；雙路錄製完整性與其他長時間情境仍需個別驗證。
 
 ```sh
 python -m unittest discover -s tests -v
@@ -132,4 +132,4 @@ python -m unittest discover -s tests -v
 
 前次恢復提示改善：完整 239 項自動化測試通過；恢復選單 Enter 保持等待與同 Token 手動重啟後恢復已有模擬證據。
 
-最新日誌與單通道 RX 重開：完整 262 項自動化測試通過，包含無 Client／Recorder 的狀態日誌、管理權限／舊快照／裝置身分保護、關閉與逾時失敗、另一路接收隔離、錄製新舊世代，以及真 CLI／PTY 與 pySerial 虛擬端點恢復。這是 Linux 自動化證據，Win11 實體 USB／MobaXterm 與 dxan 新操作仍待回報。
+最新日誌與單通道 RX 重開：完整 262 項自動化測試通過，包含無 Client／Recorder 的狀態日誌、管理權限／舊快照／裝置身分保護、關閉與逾時失敗、另一路接收隔離、錄製新舊世代，以及真 CLI／PTY 與 pySerial 虛擬端點恢復。這是 Linux 自動化證據，Win11 實體 USB／MobaXterm 已由使用者回報通過，dxan 新操作仍待回報。

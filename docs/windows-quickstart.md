@@ -105,7 +105,7 @@ $UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gatewa
 
 若重開結果未確認或請求逾時，先 R／channels 查詢，不直接重送；Driver 尚未收斂會拒絕 CHANNEL_BUSY。重開核對原 Selector 及本程序前次成功開啟時已知身分；換成不同 Adapter 或 COM 變動時不猜測，需在 Gateway 電腦核對私人配置再正常啟動。只有 Port 且一直沒有身分資訊時仍為 unverified，操作者須自行核對實體接線。
 
-舊版本或沒有管理權限時，可由管理者重開單路；整體 Gateway 重啟仍是人工備援，會中斷全部通道並清除記憶體歷史。工作台不代操 Gateway 程序。上述新增功能只有 Linux 自動化模擬證據，Win11 USB／MobaXterm 重測尚待回報；原第 1～4 項的既有成功與第 6 項雙 UART 待測維持分開。
+舊版本或沒有管理權限時，可由管理者重開單路；整體 Gateway 重啟仍是人工備援，會中斷全部通道並清除記憶體歷史。工作台不代操 Gateway 程序。2026-11-07 使用者回報 Win11 同機 USB 手動恢復、未插回及 MobaXterm 占用／釋放後恢復通過；後續雙 IPCAM 測試亦回報 COM3 拔除與手動重開時 COM4 未曾中斷。公司 dxan 新操作仍待測；雙擊／Profile 與雙路錄製須另行驗證。
 
 ## 安裝與更新步驟
 
@@ -204,7 +204,7 @@ Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清�
 4. 讓 MobaXterm 占用其中一條後啟動，確認提示占用並清理本次整組，MobaXterm 仍正常。
 5. 保存配置、關閉後重開；有序號且條件唯一的裝置重編 COM 時核對新的對應。條件改變時應拒絕，不自動選第一個裝置。
 
-目前通過的是 Linux／Mock 枚舉／兩個 PTY 的自動化測試。**Win11 雙實體 UART、CMD 雙擊與 30 分鐘持續接收尚未驗證**；五至六條 UART 與完整 TUI 仍待後續容量評估。
+此 Launcher／Profile 流程已有 Linux／Mock 枚舉／兩個 PTY 自動化證據。Win11 手動雙通道 Gateway 的 COM3 故障／重開、COM4 持續接收已由使用者回報通過；不據此推論上述 CMD 雙擊、配置重用／重編 COM、整組占用清理或雙路長時間接收都已驗證。公司單路遠端 30 分鐘另有成功回報；五至六條 UART 與完整 TUI 仍待後續容量評估。
 
 ## 保存 RX 錄製（單 UART 可測，Win11 實機待驗證）
 

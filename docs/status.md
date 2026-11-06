@@ -2,7 +2,7 @@
 
 > 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
-更新日期：2026-11-06（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
+更新日期：2026-11-07（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
 ## 真實狀態
 
@@ -20,11 +20,12 @@
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
 | USB 遺失後回到選單並停留 | Verified（使用者執行並回報） | `34842cd` 後使用者回報正常；不推論所有 EOF 情境或重新插回接收皆通過 |
-| 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與單路遺失隔離；新增 19 項測試通過，Win11 雙實體 UART 待驗證 |
+| 兩條只讀 UART 啟動與配置 | Implemented／自動化 Tested | 單一 Gateway、兩條 SDK Session、分來源顯示與配置；手動雙通道隔離已另列實機通過，Launcher／Profile 的雙實體操作流程仍待個別驗證 |
+| Win11 雙 UART 故障與恢復隔離 | Verified（使用者執行並回報） | COM3／COM4 各接一台持續輸出的 IPCAM；COM3 拔除與手動重開期間，COM4 未曾中斷。反向故障、雙路錄製完整性及 dxan 新操作不據此推論通過 |
 | Gateway RX 錄製及離線檢查 | Verified（一般流程，使用者回報） | 原第 2～3 項本機錄製與離線操作通過；故障／容量等情境仍以自動化證據及個別實測為準 |
 | 本機只讀互動式工作台 | Verified（一般流程，使用者回報） | 原第 1～3 項更新／枚舉、監看錄製清理返回及離線檔案操作通過；雙擊與 USB 完整恢復不另推論 |
 | 遠端只讀監看工作台 | Verified（Win11 同機一般流程，使用者回報） | 原第 4 項通過；新版人工 RX 重開另列，dxan 新選單及實體恢復仍待測 |
-| Gateway 狀態日誌與單通道手動 RX 重開 | Implemented／自動化 Tested | configure＋Expected Context＋可選能力；保持同 Instance、只恢復單路、未 Confirm；真 TCP／CLI／Fake／pySerial PTY 通過，Win11 USB／MobaXterm／dxan 新操作待測 |
+| Gateway 狀態日誌與單通道手動 RX 重開 | Verified（Win11，使用者回報） | 2026-11-07 回報日誌、USB 拔插、O／Y 恢復、未插回拒絕、MobaXterm 占用與釋放後恢復通過；後續亦回報雙實體單路恢復隔離通過，dxan 新操作仍待測 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
@@ -493,3 +494,21 @@ CLI 新增 `uart reopen <Channel>`；遠端工作台先查到 capability 與 con
 Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，`.venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v` 完整 **262 項通過**，21.380 秒、無略過、無 RuntimeWarning。新增 23 項，原 239 項亦通過；證據涵蓋無 Client／Recorder 日誌且不洩漏 Token／RX、嚴格協定參數與範例、權限及舊快照／重複操作拒絕、開關失敗／占用／裝置缺少、身分核對、Worker／Driver 逾時與晚到完成、能力缺少、結果不明不重試、選單取消與確認、真 CLI／PTY 同 Instance 恢復、其他通道 RX／訂閱持續、錄製新舊 Epoch 與既有 unknown 完整性，以及真 pySerial／PTY 關閉後重新開啟接收。新恢復路徑未產生 UART 寫入；既有 TX 模擬測試仍屬原範圍。
 
 另檢查新舊 COM3 配置可由既有載入器讀取，原檔仍 read、管理檔 read＋configure，均未因此開啟 Serial。Windows Quickstart、工作台、設定、架構與路線圖已同步。此輪沒有存取 Win11 實體 COM3、MobaXterm、d3s1 或 dxan；新版 USB 拔插／重開／占用、管理權限及雙實體隔離須由使用者實測。既有使用者第 1～4 項與公司 30 分鐘通過證據保留，第 6 項雙 UART 繼續待測。依既有 Git 交付方式提交並推送 origin/work，版本以 Git 紀錄為準。
+
+## Win11 單通道 RX 恢復驗收（2026-11-07，Asia/Taipei）
+
+使用者依 6bb40bf 後提供的 Win11 同機 COM3 測試步驟回報「測試都通過」。記錄正常接收、USB 拔除時 Gateway 狀態日誌及 Client 返回恢復選單、插回後 R 僅查詢、O／Y 手動重開後重新接收，以及未插回時 DEVICE_MISSING、MobaXterm 占用時 PORT_BUSY、釋放占用後人工恢復為 Verified（使用者執行並回報）。流程預期維持同 Instance、新 Epoch／未 Confirm；未另取得原始 Log 或逐 byte 計數，不據此聲稱零遺失、控制線量測或全部權限／競態實機通過。
+
+本次是使用者現場回報，不是 Agent 直接操作 Win11。雙 UART 實體隔離、公司 dxan 經 SSH Tunnel 的新版重開操作仍待測；原公司 30 分鐘成功證據保留。僅更新驗收文件，程式維持 6bb40bf，沿用最近 262 項自動化通過證據，不重跑未變更程式。
+
+## Win11 雙 UART 故障與恢復隔離驗收（2026-11-07，Asia/Taipei）
+
+使用者確認 COM3 與 COM4 各接一台持續輸出的 IPCAM，依本次提供的雙通道測試步驟回報「測試正常。com4 未曾中斷。」。測試使用手動啟動的同一 Gateway 與私人 dual-rx-test.local.toml，COM4 以獨立 Client 持續監看，COM3 經遠端工作台拔除、插回、R 查詢、O／Y 手動重開並再次監看。此方向的雙實體故障／恢復隔離記為 Verified（使用者執行並回報）。
+
+步驟包含前後 Epoch 比較；本次未附快照、原始 Log 或逐 byte 計數，不據此聲稱零遺失、反向拔除 COM4、雙路錄製完整性、雙擊 Launcher／Profile 全流程或五至六條容量均已通過。此為 Win11 同機結果，不是公司 dxan 經 SSH Tunnel 的新版管理操作驗證；該項仍待測。
+
+本次僅更新驗收文件並保留前次單通道成功紀錄，程式仍為 6bb40bf，沿用既有 262 項自動化通過證據，未重跑未變更程式；已檢查文件格式與相對連結。私人配置、Token 與 UART 原文未加入版本庫；使用者已授權提交並推送本輪驗收文件。
+
+## 公司驗證排程與交接（2026-11-07，Asia/Taipei）
+
+使用者授權 commit／push 本輪單通道與雙 UART 實機驗收文件；公司 dxan 經 SSH Tunnel 的新版單通道手動重開驗證，延至下週回公司後再測，維持待驗證，不阻擋居家開發。程式維持 6bb40bf，沿用最近 262 項自動化證據。本次只有文件變更，未執行公司測試或新增產品功能。
