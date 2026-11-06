@@ -144,4 +144,4 @@ python -m unittest discover -s tests -v
 
 長歷史重播修正：完整 292 項自動化測試通過。Server 改為有界快照逐筆送出，修復 Q 返回後雙路 R 重播因較長歷史一次塞滿佇列而斷線；原即時佇列上限不變。更新後須正常重啟 Gateway 才生效；使用者已回報 Win11 重測正常，未據此量測零遺失。步驟見 Windows Quickstart。
 
-原生 Epoch 摘要：完整 304 項自動化測試通過；既有錄製可直接用 recording-info 檢查，不需 PowerShell 管線內的 Python 腳本。Win11 新顯示待使用者回報，檔案原有完整性警告保持可見。
+原生 Epoch 摘要：完整 304 項自動化測試通過；Win11 已以既有錄製核對兩路世代、位移、區塊／bytes 與狀態紀錄，加總一致，原未知／無已知缺口判定正確保留。可直接用 recording-info 檢查已停止的指定 Capture，不需 PowerShell 管線內的 Python 腳本；正在錄製的最新 Capture 尚無 Footer，不能當作已完成錄製判讀。

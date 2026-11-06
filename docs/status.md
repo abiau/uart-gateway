@@ -25,7 +25,7 @@
 | Gateway RX 錄製及離線檢查 | Verified（一般流程，使用者回報） | 原第 2～3 項本機錄製與離線操作通過；故障／容量等情境仍以自動化證據及個別實測為準 |
 | 雙路錄製單路遺失隔離 | Verified（Win11，使用者提供 Log／檢查摘要） | COM3 拔除後正常收尾且連續性未知；COM4 持續接收、正常收尾且對已觀測資料無已知缺口。雙路皆健康的一輪、長時間／輪替／磁碟錯誤與逐 byte 完整性不據此推論 |
 | 錄製中單路手動 RX 重開 | Verified（Win11，使用者提供快照／檢查／Epoch 統計） | COM3 新舊兩個 Epoch 各自從位移 0 記錄且均有資料；COM4 Epoch 不變。兩路正常收尾，COM3 保留連續性未知、COM4 無已知缺口；統計與 recording-info 一致 |
-| recording-info 原生 Epoch 摘要 | Implemented／自動化 Tested | 每世代首末位移、區塊／bytes、狀態／切換紀錄與總計核對；跨分段、未知／損壞、輸出上限及真 CLI 通過。Win11 新顯示仍待使用者用既有錄製驗證 |
+| recording-info 原生 Epoch 摘要 | Verified（Win11，使用者提供原生命令輸出） | cda10c2 後使用已停止的同一 Capture 核對 COM3 兩個／COM4 一個 Epoch、首末位移、區塊／bytes、狀態及總計一致；原未知／無已知缺口判定保留。超限／損壞等負向情境仍以自動化證據為準 |
 | 本機只讀互動式工作台 | Verified（一般流程，使用者回報） | 原第 1～3 項更新／枚舉、監看錄製清理返回及離線檔案操作通過；雙擊與 USB 完整恢復不另推論 |
 | 遠端只讀監看工作台 | Verified（Win11 同機一般流程，使用者回報） | 原第 4 項通過；新版人工 RX 重開另列，dxan 新選單及實體恢復仍待測 |
 | 遠端雙路同時監看工作區 | Verified（Win11 一般流程，使用者回報） | 使用者已實際操作合併畫面與 O／Y；03fbc96 長歷史重播修正後回報測試正常。不推論全部鍵盤／錯誤子情境通過，dxan 新操作仍待測 |
@@ -591,3 +591,13 @@ COM3 合計 141 區塊／4794 bytes，COM4 合計 171 區塊／5304 bytes，均�
 Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，以 .venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v 執行完整 **304 項通過**，23.462 秒、無略過、無 RuntimeWarning。新增 12 項單元／真 CLI 測試，原 292 項亦通過；既有真 Gateway 錄製／重開整合案例另擴充新摘要及離線 CLI 驗證。涵蓋 91＋50 區塊／3094＋1700 bytes 的合成案例、跨分段／二進位、缺口、缺 Footer／壞雜湊、零資料、數量／長識別上限、輸出控制字元、總計核對、來源不改與無 Token 的原退出碼。原文字匯出／回看及單雙路工作台也通過回歸。
 
 Windows Quickstart 已提供既有 recordings-reopen-test 的直接檢查步驟，不需重錄或重啟 Gateway；新顯示的 Win11 重測待回報，未直接讀取使用者實體錄製檔或存取 COM3／COM4。公司 dxan 新管理操作仍待下週回公司後再測，長時間／輪替／磁碟等實機驗收不擴大宣稱。本次功能、測試及文件沿用 work 分支提交／推送，版本以 Git 紀錄為準。
+
+## recording-info 原生摘要 Win11 驗收（2026-11-07，Asia/Taipei）
+
+使用者在 cda10c2 交付後提供 Windows 原生命令的兩路輸出，指定同一個已停止的 Capture b16640eb920d4eb6ad1ad1041517770c。ch_uart_1 顯示兩個 Epoch，首筆 offset 各為 0、末筆 next_offset 為 3094／1700，分別 91 區塊／3094 bytes 與 50 區塊／1700 bytes，加總 141／4794；ch_uart_2 一個 Epoch，0..5304、171 區塊／5304 bytes。兩路加總核對均一致，且與前次 ASCII 腳本及 recording-info 原總計相符。
+
+兩路正常收尾皆為是，COM3 正確保留裝置遺失造成的連續性未知，COM4 對已觀測資料無已知缺口。COM3 狀態紀錄包含遺失、關閉中、關閉、開啟及新舊 Epoch 切換；COM4 無世代切換。原生摘要一般流程記為 Verified（使用者執行並提供輸出），沒有直接取得或修改 Windows 錄製檔，不推論全部容量、損壞／超限等負向情境或前段零遺失均已實測。
+
+前一次選檔誤取剛啟動、仍錄製中的新 Capture 71e30d7c72634fe2a296b93ccc9a40ce，兩路各只有新 Epoch 且缺 Footer。這符合尚未正常收尾的狀態，不能當作原生摘要錯誤或舊錄製損壞；依舊 Epoch 定位已完成錄製後，上述核對正常。Quickstart 已改成先列出 Capture 並明確選擇已停止者，避免以最新目錄推論是前次目標。
+
+本次只更新驗收文件與選檔教學，程式維持 cda10c2，沿用最近 304 項自動化通過證據，未重跑未變更程式。公司 dxan 新管理操作維持下週回公司後再測；來源檔案、Token 與私人配置未加入版本庫。使用者已授權提交並推送本輪文件至 origin/work，版本以 Git 紀錄為準。
