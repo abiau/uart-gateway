@@ -71,6 +71,8 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `local_profile` | 本機通道名稱／裝置條件的驗證、保存及重新解析 | 只讀枚舉、產生既有 TOML 通道欄位；不保存 Token／確認資格、不開啟 Serial |
 | `workbench` | 同步本機只讀工作台與錄製選單 | 只傳結構化 argv 給既有 CLI 路由；不使用 Shell，不存取 Serial／Core；清理失敗向外傳遞 |
 | `remote_workbench` | 遠端 RX 清單、監看與授權的單路手動重開 | 經注入的 SDK 連線及監看回呼操作；每次查詢／監看／重開獨立連線，選單輸入在事件迴圈外 |
+| `remote_group` | 遠端兩條 Channel 的同時接收、狀態及人工恢復 | 每路獨立 SDK／watch_client，共用有界 Writer；互動與管理操作不停止另一條接收，不管理 Gateway 程序 |
+| `console_input` | 雙路畫面的非阻塞鍵盤輪詢 | Windows msvcrt／POSIX select；128 字元有界指令，不建立 input 背景執行緒，不接觸 UART |
 
 ```mermaid
 flowchart TB

@@ -1,0 +1,58 @@
+# Win11 COM3／COM4 雙通道 RX 管理範例；使用前核對端點與接線。
+# 明確選用的 RX 管理設定：read＋configure；不授予 tx。
+# configure 同時允許既有 Binding 管理；只提供給有權管理此通道的人。
+# menu --remote／reopen 只執行 RX 重開，不執行 Confirm、Lease 或 UART TX。
+[network]
+bind_host = "127.0.0.1"
+port = 18081
+
+[gateway]
+lifecycle_timeout_ms = 10000
+
+[[channels]]
+id = "ch_uart_1"
+label = "ipcam_COM3"
+target_note = "COM3 接收驗證；尚未建立板子永久身分"
+auto_open_rx = true
+auto_reconnect = false
+
+[channels.adapter]
+port = "COM3"
+
+[channels.serial]
+baudrate = 115200
+bytesize = 8
+parity = "none"
+stopbits = 1
+flow_control = "none"
+dtr = false
+rts = false
+read_timeout_ms = 20
+write_timeout_ms = 1000
+
+[[channels]]
+id = "ch_uart_2"
+label = "ipcam_COM4"
+target_note = "COM4 接收驗證；尚未建立板子永久身分"
+auto_open_rx = true
+auto_reconnect = false
+
+[channels.adapter]
+port = "COM4"
+
+[channels.serial]
+baudrate = 115200
+bytesize = 8
+parity = "none"
+stopbits = 1
+flow_control = "none"
+dtr = false
+rts = false
+read_timeout_ms = 20
+write_timeout_ms = 1000
+
+[[auth.principals]]
+id = "local_rx_manager"
+token_secret_ref = "env:UART_GATEWAY_TOKEN"
+channels = ["ch_uart_1", "ch_uart_2"]
+permissions = ["read", "configure"]

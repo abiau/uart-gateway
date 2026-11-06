@@ -571,7 +571,13 @@ def main() -> None:
                     return await watch_client(client, channel_id, duration=None, text_mode=True,
                         terminal_mode=True, replay=replay, expected_context=expected)
 
-                raise SystemExit(run_remote_workbench(connect, monitor, host=args.host, port=args.port))
+                async def monitor_group(channels: list[dict], instance: str, replay: bool) -> int:
+                    from .remote_group import run_remote_group
+                    return await run_remote_group(connect, channels, instance, replay, watch=watch_client,
+                        sink_factory=lambda: _WatchOutput(terminal=True))
+
+                raise SystemExit(run_remote_workbench(connect, monitor, host=args.host, port=args.port,
+                                                     monitor_group=monitor_group))
             from .workbench import run_workbench
             _check_local_args(args)
 

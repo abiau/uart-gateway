@@ -28,6 +28,8 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 ## Gateway 與網路
 
+遠端雙路工作區在 `menu --remote` 清單輸入兩個不同編號啟用，最多兩路，不新增設定欄位。雙路共用原顯示 Writer（256 項／262144 bytes，含寫入中批次），每路各用獨立 SDK 有界事件佇列；另建短期管理連線。`examples/gateway.dual.rx-reopen.toml` 是 COM3／COM4 明確選用的 read＋configure 範例，沒有 tx，不影響既有只讀配置。工作區指令上限 128 字元，R／O／S 皆需人工觸發；原 API 與 Gateway 四路／八 Client 上限不變。
+
 ### 本機啟動器配置（已實作）
 
 互動工作台 `uart menu --recordings-dir 路徑` 的根目錄預設為目前工作目錄下的 `recordings`，用於本次錄製及離線瀏覽，不寫入下列端點 Profile 或 Server 的持久設定。`uart --port 18082 menu` 可指定本機 Gateway 的 TCP Port；工作台為本機／離線入口，不接受外部 Token 或遠端 host 選項。操作與掃描上限見 [工作台說明](workbench.md)。

@@ -15,7 +15,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：262 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看及本機／遠端工作台／單路 RX 重開 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：283 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看及本機／遠端單雙路工作台／RX 重開 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -25,6 +25,7 @@
 | Gateway RX 錄製及離線檢查 | Verified（一般流程，使用者回報） | 原第 2～3 項本機錄製與離線操作通過；故障／容量等情境仍以自動化證據及個別實測為準 |
 | 本機只讀互動式工作台 | Verified（一般流程，使用者回報） | 原第 1～3 項更新／枚舉、監看錄製清理返回及離線檔案操作通過；雙擊與 USB 完整恢復不另推論 |
 | 遠端只讀監看工作台 | Verified（Win11 同機一般流程，使用者回報） | 原第 4 項通過；新版人工 RX 重開另列，dxan 新選單及實體恢復仍待測 |
+| 遠端雙路同時監看工作區 | Implemented／自動化 Tested | 兩編號選擇、來源標記、獨立接收及畫面內 R／O＋Y／S；故障、慢開啟與確認期間另一路持續，真 CLI／PTY 通過。Win11 新合併畫面／鍵盤與 dxan 待測，不沿用先前兩個獨立 Client 視窗的硬體結論 |
 | Gateway 狀態日誌與單通道手動 RX 重開 | Verified（Win11，使用者回報） | 2026-11-07 回報日誌、USB 拔插、O／Y 恢復、未插回拒絕、MobaXterm 占用與釋放後恢復通過；後續亦回報雙實體單路恢復隔離通過，dxan 新操作仍待測 |
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
@@ -512,3 +513,17 @@ Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，`.venv/
 ## 公司驗證排程與交接（2026-11-07，Asia/Taipei）
 
 使用者授權 commit／push 本輪單通道與雙 UART 實機驗收文件；公司 dxan 經 SSH Tunnel 的新版單通道手動重開驗證，延至下週回公司後再測，維持待驗證，不阻擋居家開發。程式維持 6bb40bf，沿用最近 262 項自動化證據。本次只有文件變更，未執行公司測試或新增產品功能。
+
+## 遠端雙路同時監看工作區（2026-11-07，Asia/Taipei）
+
+使用者核准開始實作前次提出的雙通道遠端工作台。在 menu --remote 清單輸入兩個不同編號（例如 1,2），可同時監看最多兩條，選擇即時或各自歷史＋即時；未就緒的一路等待，其他路正常接收。每批／每行顯示 Channel／名稱，重用既有 UTF-8、終端過濾、來源標記與有界 Writer，顏色獨立，CR／退格跳脫，無分割窗格／TUI Framework。
+
+新增 remote_group 協調工作區，透過注入的 SDK 連線、watch_client 與共用 Writer 操作；每路獨立 Session／事件佇列，沿用 Instance／Revision／Epoch 及訂閱回覆核對。原 Gateway、Core、SDK、API Contract、四路／八 Client 容量均不改。單路裝置遺失、網路失聯或快照失效不取消另一路，也不自動重連；共享顯示故障／佇列滿才結束整組並清理。跨通道的輸出先後不保證，原 bytes 不因畫面轉換改變。
+
+畫面內 R 只查詢與更新權限／狀態，O 1／O 2 選一路再 Y 確認，使用既有 configure／能力與 Expected Context 重開；等待確認或慢 Driver 開啟時另一路持續。成功只替該路建立新世代的歷史＋即時監看，維持未 Confirm，不授予 Lease／TX，不改控制線。取消／失敗／結果未確認不自動重試；S 1／S 2 可對已停止、快照 ready 的一路人工重新訂閱即時資料。R 發現新 Instance 後，需 Q 返回外層並重選，不在舊工作區操作新 Gateway。Q／Ctrl+C 清理雙路 Client 後返回；外層 R 才查詢，Q 離開。重開等待被中止亦明示結果可能未確認。
+
+console_input 使用 Windows msvcrt／POSIX select 非阻塞輪詢，每輪最多 128 字元、指令緩衝最多 128 字元；不建立 input 工作執行緒，不解析 UART 成為操作。Windows 指令輸入也經同一 Writer 顯示；RX 會穿插提示，屬合併文字畫面。新增 examples/gateway.dual.rx-reopen.toml，明確指定 COM3／COM4 與 read＋configure，無 tx；載入檢查通過且沒有開啟 Serial。私人配置與原 Token 來源可以沿用，不須為新 Client 重啟既有 Gateway。
+
+Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，以 .venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v 執行完整 **283 項通過**，23.615 秒、無略過、無 RuntimeWarning。新增 21 項，原 262 項亦通過。涵蓋模擬 Windows 鍵盤編輯／特殊鍵／Ctrl+C／EOF／容量、POSIX 非阻塞逐行讀取、雙路選擇及取消、來源／顏色、重播、重複訂閱拒絕、單路快照失效、裝置／網路／認證錯誤隔離、管理確認／取消／舊快照／權限／占用、慢開啟期間另一路接收且訂閱／Epoch 不變、共享輸出故障／容量不足，以及 EOF／Q／SIGINT／重開等待中止的清理與不明結果提示。真 CLI／PTY 完成 1,2 選擇、拔除、等待 Y 時另一路持續、重開後接收、返回清單且 Gateway 繼續；新路徑 Fake Serial UART 寫入次數為零。
+
+此輪未存取 Win11 實體 COM3／COM4 或公司環境。前次雙 Client 實機隔離與單路恢復成功保留；本次合併畫面、Windows 鍵盤／Ctrl+C 與新工作區實體重開仍待使用者測試，公司 dxan 新操作維持下週回公司後再測。雙路錄製完整性、完整 TUI、五至六條容量與其餘 Phase 1 驗收不據此完成。同步更新 README、工作台、Windows Quickstart、架構、設定、開發規範與路線圖；沿用 work 分支交付，提交版本以 Git 紀錄為準。

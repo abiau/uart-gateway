@@ -43,7 +43,8 @@ async def reopen_channel(connect: Callable[[], Awaitable[Client]], channel: dict
 
 def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Callable[..., Awaitable[int]], *,
                          host: str, port: int, read: Callable[[], str] | None = None,
-                         report: Callable[[str], None] | None = None) -> int:
+                         report: Callable[[str], None] | None = None,
+                         monitor_group: Callable[..., Awaitable[int]] | None = None) -> int:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError("遠端工作台需要互動式終端機輸入與輸出。")
     if not host or not host.isprintable() or type(port) is not int or not 1 <= port <= 65535:
@@ -102,6 +103,8 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                           "目前沒有監看連線；R 重新連線／查詢；Enter 保持等待；Q 離開：")
             else:
                 prompt = "輸入 Channel 編號；R 更新／重新連線；Q 或 Enter 離開："
+            if monitor_group is not None:
+                report("雙路同時監看可輸入兩個不同編號，例如 1,2；上限兩路。")
             choice = ask(prompt)
             if choice == "q" or (not choice and not recovering):
                 report("已離開遠端工作台，Gateway 繼續執行。")
@@ -111,6 +114,25 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                 continue
             if choice == "r":
                 refresh = True
+                continue
+            if monitor_group is not None and ("," in choice or " " in choice):
+                parts = choice.replace(",", " ").split()
+                if not (connected and len(parts) == 2 and all(p.isascii() and p.isdigit() and len(p) <= 6
+                        and 1 <= int(p) <= len(channels) for p in parts) and int(parts[0]) != int(parts[1])):
+                    report("請輸入兩個不同且有效的 Channel 編號，例如 1,2。")
+                    continue
+                selected = [channels[int(p) - 1] for p in parts]
+                mode = ask("雙路模式：L 或 Enter 即時；R 歷史＋即時；其他輸入取消：")
+                if mode not in ("", "l", "r"):
+                    continue
+                try:
+                    asyncio.run(monitor_group(selected, instance, mode == "r"))
+                except (KeyboardInterrupt, asyncio.CancelledError):
+                    report("雙路監看已中止，SDK 連線已清理；Gateway 繼續執行。")
+                except (OSError, ValueError, ProtocolError, RemoteError, TimeoutError) as exc:
+                    failed(exc)
+                connected, recovering = False, True
+                report("已返回清單；按 R 重新查詢後選擇，Q 離開。")
                 continue
             if not (connected and choice.isascii() and choice.isdigit() and len(choice) <= 6
                     and 1 <= int(choice) <= len(channels)):

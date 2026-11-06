@@ -2,6 +2,8 @@
 
 ## 遠端工作台驗證
 
+雙路工作區新增 `test_console_input.py`，以模擬 msvcrt 驗證鍵盤編輯、特殊鍵、Ctrl+C／EOF 與輸入上限，以 POSIX 管線驗證未完成指令不阻塞、逐行讀取與 EOF，不建立 input 執行緒。`test_remote_group.py` 以真 Gateway／SDK／既有有界 Writer 驗證雙路來源／顏色、重播、快照失效、活動訂閱不重複、單路斷線不自動重連、重開取消／權限／失敗與慢開啟時另一路持續、顯示故障／容量不足及退出清理。真 CLI／PTY 測鍵盤指令、拔除、確認期間持續 RX、重開後接收、Q／SIGINT 返回清單且 Gateway 持續。這些模擬／POSIX 證據不取代 Win11 鍵盤及實體 UART 畫面驗收。
+
 恢復選單另覆蓋 lost 快照／訂閱結束後空白 Enter 保持等待、不新增連線、R 僅查詢、ready 後恢復正常取消，以及 EOF 不忙迴圈。真 CLI／PTY 用 Fake Serial 重現拔除、端點回來仍維持 lost，再由測試端以相同 Token 重啟真 Gateway；R 後取得新 Instance 並再次收到資料。產品 UI 不執行此重啟，這是手動恢復路徑的模擬驗證。
 
 `tests/unit/test_remote_workbench.py` 覆蓋即時／重播選擇、空清單與未就緒、認證錯誤與手動 R、TTY／EOF／Ctrl+C、路徑／環境變數 Token 重讀、模式互斥，以及選擇快照或訂閱回覆的 Instance／Revision／Epoch 不一致時不輸出 RX。

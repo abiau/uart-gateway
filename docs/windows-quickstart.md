@@ -107,6 +107,36 @@ $UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gatewa
 
 舊版本或沒有管理權限時，可由管理者重開單路；整體 Gateway 重啟仍是人工備援，會中斷全部通道並清除記憶體歷史。工作台不代操 Gateway 程序。2026-11-07 使用者回報 Win11 同機 USB 手動恢復、未插回及 MobaXterm 占用／釋放後恢復通過；後續雙 IPCAM 測試亦回報 COM3 拔除與手動重開時 COM4 未曾中斷。公司 dxan 新操作仍待測；雙擊／Profile 與雙路錄製須另行驗證。
 
+### 一個視窗同時監看 COM3／COM4（新功能）
+
+本節是新的雙路合併畫面；先前使用兩個獨立 Client 視窗的實機隔離通過，不代表本入口亦已驗證。若已有雙通道 Gateway 且權限正確，可沿用原程序，更新 Client 後直接從下方 menu 命令開始。需要另行啟動時，先正常停止原 Gateway，保留原 Token，關閉 MobaXterm 的 COM 連線，再於專案根目錄使用以下範例：
+
+```powershell
+git pull --ff-only origin work
+if (-not $env:UART_GATEWAY_TOKEN) { throw '目前 PowerShell 沒有原 Token，請先恢復原 Token 來源。' }
+$UartPython = (Resolve-Path .\.venv\Scripts\python.exe).Path
+$UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gateway.server.app --serial --config examples/gateway.dual.rx-reopen.toml' -WorkingDirectory (Get-Location).Path -PassThru
+```
+
+此範例明確使用 COM3／COM4、115200／8N1／無流控、DTR／RTS false，兩路均為 read＋configure，沒有 tx。也可沿用先前的私人 `dual-rx-test.local.toml`；公司既有多路／錄製／file: Token 配置請用原私人檔，不直接以範例取代。
+
+等 Gateway 顯示兩路就緒與已接聽後，在同一個 PowerShell 執行：
+
+```powershell
+.\.venv\Scripts\uart.exe menu --remote
+```
+
+1. 核對清單，輸入 `1,2`，再按 Enter 即時接收。畫面應同時出現 `[ch_uart_1／ipcam_COM3]` 及 `[ch_uart_2／ipcam_COM4]` 的新資料；不必再開另一個 watch 視窗。
+2. 拔掉 COM3 的 USB-UART，應只有第一路停止，第二路繼續顯示新資料。輸入 `R` 再按 Enter，核對第一路為裝置遺失。
+3. 插回原 Adapter，輸入 `O 1` 並按 Enter，再輸入 `Y` 並按 Enter。確認等待期間 COM4 仍持續，成功後 COM3 在同一畫面重新接收，新 Epoch／未 Confirm；COM4 的 Epoch 不變。
+4. 在重開確認時輸入 N 應取消；若尚未插回或被 MobaXterm 占用，應明示失敗且不自動重試。釋放占用後 R 更新，再 O 1／Y 重開。
+5. `S 1`／`S 2` 只對已停止、快照 ready 的一路重新建立即時訂閱，不操作 Serial。需要時先 R；對正在接收的一路應拒絕重複訂閱。
+6. 輸入 `Q` 或按 Ctrl+C，兩條 Client 都清理、回到外層清單，Gateway 繼續。再按 R 才重新查詢；外層 Q 離開。測完到 Gateway 視窗按 Ctrl+C 正常關閉。
+
+工作區的 1／2 依本次選擇順序；若以 `2,1` 進入，O 1 即操作第二條原清單通道。R／Enter 不重開或自動重連。顏色各路獨立，合併畫面的 CR／退格採跳脫顯示；RX 會穿插提示與指令輸入，這是可互動的合併文字畫面，沒有固定分割窗格。只有 read 的 Token 可雙路監看，不能重開。
+
+這輪為 Linux Fake Serial／真 TCP／SDK／CLI／PTY 與模擬 Windows 鍵盤驗證；Win11 新畫面與公司 dxan 操作仍待回報，公司驗證維持下週回公司後再測。完整行為見 [工作台說明](workbench.md)。
+
 ## 安裝與更新步驟
 
 建議使用 Git 的 `work` 分支取得最新版，安裝後根目錄有固定 COM3 的 `run-com3.cmd` 與互動選擇的 `run-uart.cmd`。先前提供的 ZIP 屬當時快照，不包含之後所有功能；若要測本輪選單，請從 Git 更新。

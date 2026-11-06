@@ -21,7 +21,7 @@ def channel(state="ready"):
 
 
 class RemoteMenuTests(unittest.TestCase):
-    def run_menu(self, answers, *, channels=None, query=None, monitor=None, reopen=None):
+    def run_menu(self, answers, *, channels=None, query=None, monitor=None, reopen=None, group=None):
         read = Mock(side_effect=answers)
         messages = []
         query = query or AsyncMock(return_value=("instance", channels if channels is not None else [channel()]))
@@ -31,8 +31,26 @@ class RemoteMenuTests(unittest.TestCase):
                 patch("uart_gateway.remote_workbench.reopen_channel", reopen or AsyncMock()), \
                 patch("uart_gateway.remote_workbench.monitor_channel", monitor):
             result = run_remote_workbench(AsyncMock(), AsyncMock(), host="127.0.0.1", port=18081,
-                                           read=read, report=messages.append)
+                                           read=read, report=messages.append, monitor_group=group)
         return result, query, monitor, messages
+
+    def test_dual_selection_routes_two_snapshots_and_requires_manual_refresh_on_return(self):
+        entries = [channel(), dict(channel(), channel_id="b")]
+        group = AsyncMock(return_value=0)
+        result, query, monitor, _ = self.run_menu(["1,2", "r", "", "q"], channels=entries, group=group)
+        self.assertEqual(result, 0)
+        group.assert_awaited_once_with(entries, "instance", True)
+        query.assert_awaited_once()
+        monitor.assert_not_awaited()
+
+    def test_invalid_dual_selection_and_cancel_never_start_workspace(self):
+        for choice in ("1,1", "1,3", "0,2", "1,2,3", "1,b"):
+            group = AsyncMock()
+            self.run_menu([choice, "q"], channels=[channel(), dict(channel(), channel_id="b")], group=group)
+            group.assert_not_awaited()
+        group = AsyncMock()
+        self.run_menu(["1 2", "q", "q"], channels=[channel(), dict(channel(), channel_id="b")], group=group)
+        group.assert_not_awaited()
 
     def test_reopen_requires_explicit_selection_o_and_y_and_refreshes_after_success(self):
         selected = dict(channel("lost"), reopen_rx_available=True)

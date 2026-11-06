@@ -8,6 +8,8 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 遠端選單使用 `uart --token-file <受保護的Token檔案> menu --remote`，連線既有 Gateway 後以編號選 Channel，再選即時或重播；Ctrl+C 返回清單，Gateway 繼續執行。居家同機與公司 dxan 的具體步驟見 [Windows Quickstart](docs/windows-quickstart.md)。
 
+新版遠端選單可輸入 `1,2` 同時監看兩條 Channel，在同一畫面以 R 查詢、O 1／O 2 加 Y 手動重開故障通道；另一路持續接收。每行標明來源、顏色各自保存，CR／退格跳脫顯示；Q／Ctrl+C 清理 Client 後返回清單。重開需原 configure 權限，監看仍只讀，不新增 API 或 TX。此新入口已有自動化證據，Win11 合併畫面與鍵盤仍待實測，詳見 [工作台說明](docs/workbench.md)。
+
 遠端 USB 拔插後，COM 重新出現不會自動重開原 Channel；新版可在 `menu --remote` 選擇不可用通道，再 O／Y 手動重開該路 RX，或執行 `uart reopen ch_uart_1`。需 configure 權限，原只讀配置不變；明確啟用方式見 [Windows Quickstart](docs/windows-quickstart.md)。Gateway 會獨立顯示狀態日誌；恢復維持未 Confirm，不取得 Lease、不傳送 UART 指令、不重啟其他通道。使用者已回報 Win11 單通道恢復／占用，以及雙 IPCAM 的 COM3 拔除與重開時 COM4 接收不中斷；dxan 新操作仍待測。
 
 ## 目標與設計方向
@@ -132,4 +134,6 @@ python -m unittest discover -s tests -v
 
 前次恢復提示改善：完整 239 項自動化測試通過；恢復選單 Enter 保持等待與同 Token 手動重啟後恢復已有模擬證據。
 
-最新日誌與單通道 RX 重開：完整 262 項自動化測試通過，包含無 Client／Recorder 的狀態日誌、管理權限／舊快照／裝置身分保護、關閉與逾時失敗、另一路接收隔離、錄製新舊世代，以及真 CLI／PTY 與 pySerial 虛擬端點恢復。這是 Linux 自動化證據，Win11 實體 USB／MobaXterm 已由使用者回報通過，dxan 新操作仍待回報。
+前次日誌與單通道 RX 重開：完整 262 項自動化測試通過，包含無 Client／Recorder 的狀態日誌、管理權限／舊快照／裝置身分保護、關閉與逾時失敗、另一路接收隔離、錄製新舊世代，以及真 CLI／PTY 與 pySerial 虛擬端點恢復。這是 Linux 自動化證據，Win11 實體 USB／MobaXterm 已由使用者回報通過，dxan 新操作仍待回報。
+
+遠端雙路工作區：完整 283 項自動化測試通過，新增 21 項涵蓋鍵盤、有界輸出、雙路接收、快照／錯誤隔離及畫面內手動重開；真 CLI／PTY 已測 Q／Ctrl+C 清理，Win11 新合併畫面與公司 dxan 仍待實機驗證。
