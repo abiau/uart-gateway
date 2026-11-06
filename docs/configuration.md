@@ -26,6 +26,8 @@ Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開�
 
 互動工作台 `uart menu --recordings-dir 路徑` 的根目錄預設為目前工作目錄下的 `recordings`，用於本次錄製及離線瀏覽，不寫入下列端點 Profile 或 Server 的持久設定。`uart --port 18082 menu` 可指定本機 Gateway 的 TCP Port；工作台為本機／離線入口，不接受外部 Token 或遠端 host 選項。操作與掃描上限見 [工作台說明](workbench.md)。
 
+遠端工作台以 `menu --remote` 明確啟用，與 --recordings-dir 互斥。連線參數沿用全域 --host／--port／--token-file 或 --token-env，未指定時為 127.0.0.1:18081 及 UART_GATEWAY_TOKEN；Client Port 可為 1～65535（例如 SSH 本地轉送的端點），不套用 Server 綁定 Port 的限制。每次連線重讀 Token 參照，不新增持久連線設定；只列出有 read 權限的 Channel，並使用其既有終端監看，不提供 TX 或遠端設定 API。
+
 `uart local --select --count 2 --save-profile bench.local.toml` 保存的是本機選擇配置，與 `uart-gatewayd --config` 的伺服器配置分開。前者沒有 network、auth、UART 修改或控制線選項；啟動器驗證後才轉為既有伺服器 TOML，Serial 固定 115200／8N1／無流控、DTR／RTS false。直接交給伺服器的完整設定格式不變。
 
 | 欄位 | 格式與限制 |

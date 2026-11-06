@@ -12,6 +12,8 @@ Phase 0 基線已核准，Phase 1 已實作 Gateway、SDK／CLI、本機只讀�
 
 ## 開始工作前的閱讀順序
 
+遠端工作台授權補充（2026-11-06）：使用者已選擇沿用 CLI 位址／Port／Token 參照，第一版一次一條 Channel，並核准所提計畫。新增 menu --remote 時重用 SDK 與 watch_client，不管理 Gateway 程序或自動重連；Instance／Binding Revision／Epoch 與訂閱回覆必須核對，不符時不顯示 RX 並要求重選。此模式不提供錄製設定、Confirm、Lease 或 TX。
+
 工作台授權補充（2026-11-06）：使用者要求先開發可回家測的下一步，已延伸為本機只讀文字工作台，重用既有 CLI／SDK／Launcher 與離線錄製工具。不得以一般退出碼吞掉 LauncherCleanupError 後繼續啟動；清理不明必須結束工作台。完整 TUI／遠端設定 API／TX 不屬此切片。
 
 後續授權補充：使用者目前沒有兩個 UART，雙實體驗證延後到公司，不標為成功；並核准接續實作只讀 RX 錄製。沿用 Gateway 端 Recorder、明確啟用、有界交接與容量限制，檔案失敗須回報完整性；不得新增 UART TX。錄製格式以 docs/recording.md 為準，單實體錄製與 30 分鐘測試也需另行回報。

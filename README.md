@@ -6,6 +6,8 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`，從文字工作台選擇本機監看、錄製、既有配置，以及錄製檔的檢查／回看／文字匯出。監控中 Ctrl+C 清理後返回工作台，選單輸入處 Q／Enter 離開。步驟見 [工作台說明](docs/workbench.md)；Win11 工作台實機流程尚待驗證。
 
+遠端選單使用 `uart --token-file <受保護的Token檔案> menu --remote`，連線既有 Gateway 後以編號選 Channel，再選即時或重播；Ctrl+C 返回清單，Gateway 繼續執行。居家同機與公司 dxan 的具體步驟見 [Windows Quickstart](docs/windows-quickstart.md)。
+
 ## 目標與設計方向
 
 - 單一 Windows Gateway Process（程序），內部採模組化。
@@ -123,3 +125,5 @@ python -m unittest discover -s tests -v
 離線回看切片：完整 200 項自動化測試通過，包含原 190 項與新增 10 項回看測試；Win11 終端回看仍待實機驗證。
 
 最新工作台切片：完整 215 項自動化測試通過，包含原 200 項與新增 15 項工作台測試；Win11 雙擊及實體工作台流程仍待驗證。
+
+最新遠端工作台切片：完整 234 項自動化測試通過，包含原 215 項及新增 19 項；Win11／dxan 新選單仍待實際驗證。

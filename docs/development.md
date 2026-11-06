@@ -1,5 +1,11 @@
 # 開發規範
 
+## 遠端工作台驗證
+
+`tests/unit/test_remote_workbench.py` 覆蓋即時／重播選擇、空清單與未就緒、認證錯誤與手動 R、TTY／EOF／Ctrl+C、路徑／環境變數 Token 重讀、模式互斥，以及選擇快照或訂閱回覆的 Instance／Revision／Epoch 不一致時不輸出 RX。
+
+`tests/integration/test_remote_workbench.py` 使用真 Gateway／SDK 與 Fake Serial 測 ACL 清單、即時與歷史接收、連線清理、Instance／訂閱 Epoch 競態、裝置遺失及網路斷線後 Gateway 保持運作；真 CLI／PTY 測錯誤 Token 更新後 R 恢復、即時／重播、Ctrl+C 返回與 Gateway 持續 RX。所有 Fake Serial 的 TX 次數保持零；不是 Win11 或公司 SSH 實機證據。
+
 ## 工作台驗證
 
 `tests/unit/test_workbench.py` 覆蓋取消／EOF／TTY、只讀監看與錄製參數、路徑不經 Shell、一般錯誤可返回、清理失敗必須停止、Ctrl+C 邊界、錄製選擇與手動路徑、掃描／顯示上限、控制字元跳脫及真 CLI 路由。內部操作保留 LauncherCleanupError，不遞迴呼叫會把錯誤轉為一般退出碼的 main。

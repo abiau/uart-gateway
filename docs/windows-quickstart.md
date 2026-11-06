@@ -24,6 +24,45 @@
 
 此入口屬本機／離線操作；需要 d3s1 遠端 RX 時，使用後文原手動 Gateway、共用 Token 與 watch 流程。詳細選單、限制與驗收見 [工作台說明](workbench.md)。目前為 Linux／PTY 自動化驗證，Win11 雙擊、Ctrl+C 及實體 UART 工作台流程尚待實測。
 
+## 遠端工作台：家裡同機與公司 dxan
+
+`menu --remote` 連線既有 Gateway，不需手動輸入 Channel ID；公司仍須先維持共用 Token 與 SSH Tunnel。家裡可用同一台 Win11 的單 UART 測試，不必連 d3s1。
+
+先關閉舊本機 Gateway 與 MobaXterm 的 COM3 連線，在專案根目錄的同一個 PowerShell 執行：
+
+```powershell
+git pull --ff-only origin work
+$env:UART_GATEWAY_TOKEN = & .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(32))"
+$UartPython = (Resolve-Path .\.venv\Scripts\python.exe).Path
+$UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gateway.server.app --serial --config examples/gateway.com3.toml' -WorkingDirectory (Get-Location).Path -PassThru
+```
+
+等待 Gateway 視窗顯示「Gateway 已接聽 127.0.0.1:18081」，再於原 PowerShell 執行：
+
+```powershell
+.\.venv\Scripts\uart.exe menu --remote
+```
+
+新 Gateway 視窗繼承這個 PowerShell 的 Token 環境變數，工作台使用同一份來源；Token 不放在命令列。這是手動 Gateway 流程，測完要到 Gateway 視窗按 Ctrl+C 關閉；退出遠端工作台不會停止它。如果 COM 不是 COM3，先在私人設定副本中修正 adapter.port，並將啟動指令的 --config 指向該副本。
+
+在公司已建好 Gateway／SSH Tunnel 時，dxan 執行：
+
+```sh
+cd ~/uart-gateway-remote-test
+git pull --ff-only origin work
+.venv/bin/uart --token-file "$HOME/.config/uart-gateway/com3.token" menu --remote
+```
+
+驗收順序：
+
+1. 核對 Channel 名稱、端點及狀態，輸入編號，再按 Enter 看即時資料。
+2. Ctrl+C 後應返回清單，Gateway 視窗繼續執行；重新選相同 Channel，選 R 可看到仍保留的歷史，再接即時資料。
+3. 選單中的 R 會重新查詢；Q／Enter 離開工作台。選單提示時 Ctrl+C 則退出整個工作台。
+4. 若 Token 不符，應顯示 AUTH_FAILED；更新指定檔案或環境變數後，按 R 才重讀並連線，不會自動重試。
+5. 若 Gateway 在選擇後重啟，或 Channel 的資料流／Binding 已改變，應要求重新選擇，不顯示另一個資料流。Tunnel 斷線則顯示原因並等待手動 R。
+
+目前新增遠端選單的證據是 Linux Fake Serial＋真 Gateway／SDK／CLI／PTY；尚未在 Win11 或公司 d3s1 執行此新入口。既有公司遠端 30 分鐘成功紀錄保留，不擴大視為新選單也已驗收。
+
 ## 安裝與更新步驟
 
 建議使用 Git 的 `work` 分支取得最新版，安裝後根目錄有固定 COM3 的 `run-com3.cmd` 與互動選擇的 `run-uart.cmd`。先前提供的 ZIP 屬當時快照，不包含之後所有功能；若要測本輪選單，請從 Git 更新。

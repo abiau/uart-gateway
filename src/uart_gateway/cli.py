@@ -39,6 +39,21 @@ class ChineseArgumentParser(argparse.ArgumentParser):
         self.exit(2, f"參數錯誤：{translated}\n")
 
 
+class StreamSelectionChanged(ValueError):
+    """選單快照已失效；不可顯示另一個資料流。"""
+
+
+def read_client_token(args: argparse.Namespace) -> str:
+    try:
+        token = (Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file
+                 else os.environ.get(args.token_env, ""))
+    except (OSError, UnicodeError) as exc:
+        raise ValueError("無法讀取 Token 檔案，請確認路徑、權限與 UTF-8 編碼。") from exc
+    if not token:
+        raise ValueError("請透過環境變數或受保護的檔案提供 Token")
+    return token
+
+
 async def output(value: object) -> None:
     line = json.dumps(value, ensure_ascii=True, separators=(",", ":")) + "\n"
     await asyncio.to_thread(sys.stdout.write, line)
@@ -124,17 +139,31 @@ class _WatchOutput:
 
 async def watch_client(client: Client, channel_id: str, *, duration: float | None,
                        text_mode: bool, replay: bool, terminal_mode: bool = False,
-                       shared_sink: _WatchOutput | None = None, label: str | None = None) -> int:
+                       shared_sink: _WatchOutput | None = None, label: str | None = None,
+                       expected_context: tuple[str, str, str | None] | None = None) -> int:
     text_mode = text_mode or terminal_mode
     renderer = TerminalRenderer() if terminal_mode else None
-    if replay:
+    if expected_context is not None and client.instance != expected_context[0]:
+        raise StreamSelectionChanged("Gateway 已重新啟動，請按 R 更新清單後重新選擇。")
+    if replay or expected_context is not None:
         channel = await client.get_channel(channel_id)
+        if expected_context is not None and (channel["state"] != "ready" or
+                (client.instance, channel["binding"]["revision"], channel["stream_epoch"]) != expected_context):
+            raise StreamSelectionChanged("所選通道狀態或資料流已改變，請按 R 更新清單後重新選擇。")
+    if replay:
         if channel["stream_epoch"] is None:
             raise ValueError("通道沒有可讀資料流，請先查看 channels 的 last_error")
         sub = await client.subscribe(channel_id, epoch=channel["stream_epoch"],
                                      offset=channel["rx"]["earliest_offset"])
     else:
         sub = await client.subscribe(channel_id)
+    if expected_context is not None and (client.instance, sub["binding_revision"], sub["stream_epoch"]) != expected_context:
+        error = StreamSelectionChanged("訂閱時資料流已改變，未顯示 RX；請按 R 更新清單後重新選擇。")
+        try:
+            await client.unsubscribe(sub["subscription_id"])
+        except Exception as exc:
+            error.add_note(f"取消失效訂閱另有錯誤：{type(exc).__name__}")
+        raise error
     decoder = codecs.getincrementaldecoder("utf-8")(errors="backslashreplace")
     last_delivery = None
     text_parts: list[str] = []
@@ -435,10 +464,7 @@ async def run(args: argparse.Namespace) -> int:
                                   gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
                                   startup_timeout=args.startup_timeout, selector=selector,
                                   record_directory=args.record_dir)
-    token = (Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file
-             else os.environ.get(args.token_env, ""))
-    if not token:
-        raise ValueError("請透過環境變數或受保護的檔案提供 Token")
+    token = read_client_token(args)
     async with await Client.connect(args.host, args.port, token) as client:
         if args.command == "channels":
             await output(await client.list_channels())
@@ -474,8 +500,10 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("channels", help="列出通道")
     commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
-    menu = commands.add_parser("menu", help="開啟本機只讀工作台：監看、錄製與離線操作")
-    menu.add_argument("--recordings-dir", type=Path, default=Path("recordings"), help="錄製與瀏覽的根目錄，預設 recordings")
+    menu = commands.add_parser("menu", help="開啟只讀工作台：本機操作或連線既有 Gateway")
+    menu_mode = menu.add_mutually_exclusive_group()
+    menu_mode.add_argument("--remote", action="store_true", help="連線既有 Gateway，選擇一條 Channel 監看")
+    menu_mode.add_argument("--recordings-dir", type=Path, default=Path("recordings"), help="本機錄製與瀏覽的根目錄，預設 recordings")
     menu.add_argument("--pause-on-error", action="store_true", help="失敗時按 Enter 關閉，供雙擊入口使用")
     play = commands.add_parser("recording-play", help="離線快速回看錄製，不連線 UART")
     play.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
@@ -527,6 +555,18 @@ def main() -> None:
         parser.error("--count 與 --save-profile 僅能搭配 --select 使用")
     try:
         if args.command == "menu":
+            if args.remote:
+                from .remote_workbench import run_remote_workbench
+
+                async def connect() -> Client:
+                    token = await asyncio.to_thread(read_client_token, args)
+                    return await Client.connect(args.host, args.port, token)
+
+                async def monitor(client: Client, channel_id: str, replay: bool, expected: tuple) -> int:
+                    return await watch_client(client, channel_id, duration=None, text_mode=True,
+                        terminal_mode=True, replay=replay, expected_context=expected)
+
+                raise SystemExit(run_remote_workbench(connect, monitor, host=args.host, port=args.port))
             from .workbench import run_workbench
             _check_local_args(args)
 
