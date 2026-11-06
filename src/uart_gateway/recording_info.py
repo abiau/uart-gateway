@@ -118,3 +118,106 @@ def inspect_capture(directory: Path, *, on_record: Callable[[dict | None], None]
         issue("缺少最終收尾標記，不能確認 Capture 正常結束。", "unknown")
     return {"integrity": integrity, "closed_cleanly": final, "segments": len(files),
             "rx_chunks": rx_count, "rx_bytes": byte_count, "issues": issues}
+
+
+class EpochSummary:
+    """只保留有界摘要；計數解碼後 bytes，不以位移跨度猜測資料量。"""
+
+    def __init__(self, *, max_epochs: int = 1024, max_boundaries: int = 256):
+        if type(max_epochs) is not int or type(max_boundaries) is not int or min(max_epochs, max_boundaries) < 1:
+            raise ValueError("摘要上限必須為正整數。")
+        self.max_epochs, self.max_boundaries = max_epochs, max_boundaries
+        self.epochs: dict[str, dict] = {}
+        self.boundaries: list[dict] = []
+        self.epochs_truncated = self.boundaries_truncated = False
+        self.omitted_rx_chunks = self.omitted_rx_bytes = 0
+        self.identity: dict | None = None
+        self.last_epoch: str | None = None
+        self.last_state: tuple | None = None
+
+    @staticmethod
+    def short(value: object) -> str:
+        value = str(value)
+        return value[:128] + ("…" if len(value) > 128 else "")
+
+    def boundary(self, kind: str, timestamp: object, *, epoch: str | None = None,
+                 previous: str | None = None) -> None:
+        if len(self.boundaries) >= self.max_boundaries:
+            self.boundaries_truncated = True
+            return
+        self.boundaries.append({"kind": kind, "timestamp_utc": self.short(timestamp or "未提供"),
+                                "epoch": epoch, "previous_epoch": previous})
+
+    def observe_epoch(self, epoch: object, timestamp: object) -> dict | None:
+        if not isinstance(epoch, str) or not epoch:
+            return None
+        if len(epoch) > 128:
+            self.epochs_truncated = True
+            self.last_epoch = None
+            return None
+        if epoch != self.last_epoch:
+            self.boundary("epoch_changed" if self.last_epoch else "epoch_started", timestamp,
+                          epoch=epoch, previous=self.last_epoch)
+            self.last_epoch = epoch
+        if epoch not in self.epochs:
+            if len(self.epochs) >= self.max_epochs:
+                self.epochs_truncated = True
+                return None
+            self.epochs[epoch] = {"epoch": epoch, "first_offset": None, "last_offset": None,
+                                  "rx_chunks": 0, "rx_bytes": 0}
+        return self.epochs[epoch]
+
+    def visit(self, record: dict | None) -> None:
+        if record is None:
+            # 異常仍以原檢查器的完整性與 issues 為準，不補造未知資料。
+            return
+        kind, timestamp = record["type"], record.get("timestamp_utc")
+        if kind == "rx":
+            item = self.observe_epoch(record["stream_epoch"], timestamp)
+            size = len(binary_decode(record["data_b64"]))
+            if item is None:
+                self.omitted_rx_chunks += 1
+                self.omitted_rx_bytes += size
+                return
+            if item["first_offset"] is None:
+                item["first_offset"] = record["offset"]
+            item["last_offset"] = record["next_offset"]
+            item["rx_chunks"] += 1
+            item["rx_bytes"] += size
+        elif kind in ("segment_start", "channel_state"):
+            if kind == "segment_start" and self.identity is None:
+                self.identity = {key: self.short(record[key]) for key in
+                                 ("capture_id", "gateway_instance_id", "channel_id")}
+            channel = record.get("channel")
+            if not isinstance(channel, dict):
+                return
+            epoch, state = channel.get("stream_epoch"), channel.get("state")
+            self.observe_epoch(epoch, timestamp)
+            current = (self.short(state), self.short(epoch))
+            if current != self.last_state:
+                self.last_state = current
+                if state in ("lost", "faulted", "opening", "draining", "closed"):
+                    self.boundary(state, timestamp, epoch=self.last_epoch)
+        elif kind == "gap":
+            self.boundary("gap", timestamp, epoch=self.last_epoch)
+
+    def result(self, inspected: dict) -> dict:
+        chunks = sum(item["rx_chunks"] for item in self.epochs.values())
+        size = sum(item["rx_bytes"] for item in self.epochs.values())
+        return {"identity": self.identity, "epochs": list(self.epochs.values()), "boundaries": self.boundaries,
+                "epochs_truncated": self.epochs_truncated, "boundaries_truncated": self.boundaries_truncated,
+                "listed_rx_chunks": chunks, "listed_rx_bytes": size,
+                "omitted_rx_chunks": self.omitted_rx_chunks, "omitted_rx_bytes": self.omitted_rx_bytes,
+                "totals_match": (chunks + self.omitted_rx_chunks == inspected["rx_chunks"] and
+                                 size + self.omitted_rx_bytes == inspected["rx_bytes"])}
+
+
+def inspect_capture_summary(directory: Path) -> dict:
+    """在原檢查器同一次掃描中彙整，不改匯出／回看的既有回傳值。"""
+    summary = EpochSummary()
+    result = inspect_capture(directory, on_record=summary.visit)
+    result["summary"] = summary.result(result)
+    if not result["summary"]["totals_match"]:
+        result["integrity"] = "incomplete"
+        result["issues"].append("Epoch 摘要與整份 RX 統計不一致，不可視為完整。")
+    return result

@@ -261,6 +261,22 @@ $UartCapture = Get-ChildItem .\recordings -Directory -Filter 'capture-*' | Sort-
 
 此命令只讀錄製檔，不需要 Token、不開啟 UART。應顯示正常收尾、RX bytes 及「對已觀測資料無已知缺口」；退出碼 0 表示這些檢查通過，2 表示不完整或連續性未知，1 為參數／檔案等操作失敗。請在 Capture 已停止後檢查；錄製中尚未出現最終 Footer 屬預期。
 
+新版 recording-info 已內建 Epoch 統計，不需再貼 Python 腳本。可直接使用先前錄製中重開的檔案測試：
+
+```powershell
+git pull --ff-only origin work
+$UartCapture = Get-ChildItem .\recordings-reopen-test -Directory -Filter 'capture-*' |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+
+.\.venv\Scripts\uart.exe recording-info (Join-Path $UartCapture.FullName 'ch_uart_1')
+.\.venv\Scripts\uart.exe recording-info (Join-Path $UartCapture.FullName 'ch_uart_2')
+```
+
+沿用先前回報的那份檔案，COM3 應列出兩個 Epoch：91 區塊／3094 bytes 與 50 區塊／1700 bytes，各自首筆位移 0，加總 141／4794；COM4 應一個 Epoch、171／5304。若選到其他 Capture，以該份實際數值為準。核對行應顯示與整份 RX 統計一致，狀態紀錄可看到遺失、開啟與世代切換；COM3 的整份檢查仍為連續性未知且退出 2，COM4 無已知缺口退出 0。正常收尾與連續性未知可以同時成立。
+
+這次只更新離線命令；既有 Gateway 可繼續執行，不必重新錄製或重啟 Gateway。摘要量有上限，超限會列出省略告知及未列 RX 總計，完整性檢查仍涵蓋全檔；細節見 [錄製規格](recording.md)。也可在 uart menu 選 5 後對同一份錄製執行檢查。此新顯示的 Win11 實測仍待回報，先前硬體錄製成功不等於新命令已經實測。
+
 檔案是 JSONL，`data_b64` 可還原任意 bytes，不能直接當成純文字 Log。格式、容量及判讀見 [RX 錄製規格](recording.md)。預設每段 64 MiB、本次每通道最多 1 GiB；超過上限停止該條錄製並告警，RX 監控繼續。這一版不自動刪除舊 Capture，請自行管理磁碟空間。
 
 單 UART 驗收建議：

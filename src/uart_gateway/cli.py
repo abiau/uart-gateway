@@ -415,11 +415,42 @@ async def run(args: argparse.Namespace) -> int:
             return 2
         return 0
     if args.command == "recording-info":
-        from .recording_info import inspect_capture
-        result = await asyncio.to_thread(inspect_capture, args.directory)
+        from .recording_info import inspect_capture_summary
+        result = await asyncio.to_thread(inspect_capture_summary, args.directory)
         states = {"no_known_gap": "對已觀測資料無已知缺口", "unknown": "連續性未知", "incomplete": "資料不完整"}
         print(f"錄製檢查：{states[result['integrity']]}；正常收尾：{'是' if result['closed_cleanly'] else '否'}；"
               f"分段：{result['segments']}；RX 區塊：{result['rx_chunks']}；RX bytes：{result['rx_bytes']}", flush=True)
+        summary = result["summary"]
+
+        def field(value: object) -> str:
+            return safe_text(str(value)).replace("\n", "\\n").replace("\t", "\\t")
+
+        if summary["identity"]:
+            identity = summary["identity"]
+            print(f"通道：{field(identity['channel_id'])}；Capture：{field(identity['capture_id'])}；"
+                  f"Gateway Instance：{field(identity['gateway_instance_id'])}", flush=True)
+        print(f"Epoch 統計：已列出 {len(summary['epochs'])} 個世代；末筆結束位移不包含右端點。", flush=True)
+        for number, epoch in enumerate(summary["epochs"], 1):
+            print(f"{number}. Epoch={field(epoch['epoch'])}；首筆位移：{epoch['first_offset'] if epoch['first_offset'] is not None else '無 RX'}；"
+                  f"末筆結束位移：{epoch['last_offset'] if epoch['last_offset'] is not None else '無 RX'}；"
+                  f"RX 區塊：{epoch['rx_chunks']}；RX bytes：{epoch['rx_bytes']}", flush=True)
+        print(f"已列世代加總：RX 區塊：{summary['listed_rx_chunks']}；RX bytes：{summary['listed_rx_bytes']}。", flush=True)
+        if summary["epochs_truncated"]:
+            print(f"注意：Epoch 摘要達到數量或識別長度上限，未完整列出；未列 RX 區塊：{summary['omitted_rx_chunks']}；"
+                  f"未列 RX bytes：{summary['omitted_rx_bytes']}；原完整性掃描仍繼續。", flush=True)
+        print(f"含未列資料後與整份 RX 統計核對：{'一致' if summary['totals_match'] else '不一致'}。", flush=True)
+        names = {"epoch_started": "資料流建立", "epoch_changed": "世代切換", "lost": "裝置遺失",
+                 "faulted": "通道故障", "opening": "通道開啟中", "draining": "通道關閉中",
+                 "closed": "通道已關閉", "gap": "已知資料缺口"}
+        print("狀態／世代紀錄（依檔案順序，世代切換不單獨證明重開原因）：", flush=True)
+        for event in summary["boundaries"]:
+            context = (f"{field(event['previous_epoch'])} → {field(event['epoch'])}" if event["previous_epoch"]
+                       else field(event["epoch"] or "無"))
+            print(f"- {field(event['timestamp_utc'])}：{names[event['kind']]}；關聯 Epoch：{context}", flush=True)
+        if summary["boundaries_truncated"]:
+            print("注意：狀態／世代紀錄已達 256 筆上限，後續僅省略顯示，完整性檢查仍涵蓋全檔。", flush=True)
+        if result["integrity"] != "no_known_gap":
+            print("注意：以上摘要僅涵蓋可解析紀錄，不消除整份錄製的完整性警告。", flush=True)
         for issue in result["issues"]:
             print(f"注意：{issue}", flush=True)
         print("此結果不代表 UART／USB／Driver 前段零遺失。", flush=True)

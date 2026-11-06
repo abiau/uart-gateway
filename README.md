@@ -111,6 +111,8 @@ uart-gatewayd --fake --config examples/gateway.fake.toml
 
 錄製中手動重開亦已取得 Win11 實機證據：COM3 中斷前後保存兩個 Epoch，各自從位移 0 記錄；COM4 維持原 Epoch。正常收尾後，COM3 仍標示連續性未知，COM4 無已知缺口。此流程使用具 configure 權限、啟用錄製的手動 Gateway，與只讀 local Launcher 分開。
 
+新版 `uart recording-info <Channel目錄>` 直接列出每個 Epoch 的首末位移、RX 區塊／bytes、裝置遺失／開啟及世代切換紀錄，並核對加總。工作台「瀏覽錄製→檢查」亦適用，取代臨時 Python 統計腳本；沿用整份完整性檢查，摘要達上限時會明示省略。可直接用既有錄製驗證，詳見 [Windows Quickstart](docs/windows-quickstart.md)。
+
 ```sh
 python -m unittest discover -s tests -v
 ```
@@ -141,3 +143,5 @@ python -m unittest discover -s tests -v
 遠端雙路工作區：完整 283 項自動化測試通過，新增 21 項涵蓋鍵盤、有界輸出、雙路接收、快照／錯誤隔離及畫面內手動重開；真 CLI／PTY 已測 Q／Ctrl+C 清理；Win11 雙路一般流程已回報正常，其餘鍵盤子情境及公司 dxan 新操作待個別驗證。
 
 長歷史重播修正：完整 292 項自動化測試通過。Server 改為有界快照逐筆送出，修復 Q 返回後雙路 R 重播因較長歷史一次塞滿佇列而斷線；原即時佇列上限不變。更新後須正常重啟 Gateway 才生效；使用者已回報 Win11 重測正常，未據此量測零遺失。步驟見 Windows Quickstart。
+
+原生 Epoch 摘要：完整 304 項自動化測試通過；既有錄製可直接用 recording-info 檢查，不需 PowerShell 管線內的 Python 腳本。Win11 新顯示待使用者回報，檔案原有完整性警告保持可見。

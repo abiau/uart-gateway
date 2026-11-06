@@ -15,7 +15,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：292 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台及長歷史重播排程 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：304 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播與離線 Epoch 摘要 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -25,6 +25,7 @@
 | Gateway RX 錄製及離線檢查 | Verified（一般流程，使用者回報） | 原第 2～3 項本機錄製與離線操作通過；故障／容量等情境仍以自動化證據及個別實測為準 |
 | 雙路錄製單路遺失隔離 | Verified（Win11，使用者提供 Log／檢查摘要） | COM3 拔除後正常收尾且連續性未知；COM4 持續接收、正常收尾且對已觀測資料無已知缺口。雙路皆健康的一輪、長時間／輪替／磁碟錯誤與逐 byte 完整性不據此推論 |
 | 錄製中單路手動 RX 重開 | Verified（Win11，使用者提供快照／檢查／Epoch 統計） | COM3 新舊兩個 Epoch 各自從位移 0 記錄且均有資料；COM4 Epoch 不變。兩路正常收尾，COM3 保留連續性未知、COM4 無已知缺口；統計與 recording-info 一致 |
+| recording-info 原生 Epoch 摘要 | Implemented／自動化 Tested | 每世代首末位移、區塊／bytes、狀態／切換紀錄與總計核對；跨分段、未知／損壞、輸出上限及真 CLI 通過。Win11 新顯示仍待使用者用既有錄製驗證 |
 | 本機只讀互動式工作台 | Verified（一般流程，使用者回報） | 原第 1～3 項更新／枚舉、監看錄製清理返回及離線檔案操作通過；雙擊與 USB 完整恢復不另推論 |
 | 遠端只讀監看工作台 | Verified（Win11 同機一般流程，使用者回報） | 原第 4 項通過；新版人工 RX 重開另列，dxan 新選單及實體恢復仍待測 |
 | 遠端雙路同時監看工作區 | Verified（Win11 一般流程，使用者回報） | 使用者已實際操作合併畫面與 O／Y；03fbc96 長歷史重播修正後回報測試正常。不推論全部鍵盤／錯誤子情境通過，dxan 新操作仍待測 |
@@ -578,3 +579,15 @@ COM3 合計 141 區塊／4794 bytes，COM4 合計 171 區塊／5304 bytes，均�
 第一版臨時核對腳本含中文資料鍵值，經 PowerShell 管線後變成問號；區塊數及資料量都變成同一個 ???，使數值累加成 bytes＋chunks。修正版只用 ASCII 鍵值，重新讀取同一錄製檔後統計吻合，無需重做實驗；此為臨時核對腳本的編碼問題，沒有證據指出產品錄製格式損壞。
 
 本輪只更新驗收文件與操作核對說明，程式仍為 03fbc96，沿用最近 292 項自動化通過證據，未重跑未變更程式。保留前次實機成功紀錄，公司 dxan 新操作維持下週回公司後再測；私人配置、Token、UART 原文與錄製檔未加入版本庫。文件尚未 commit／push。
+
+## recording-info 原生 Epoch 摘要（2026-11-07，Asia/Taipei）
+
+使用者核准先保存實機驗收文件，再開發 recording-info 內建逐 Epoch 統計。前次 Win11 雙路重播、單路遺失錄製及錄製中手動重開的快照／數字已保存為文件提交 61b4bea；這些是使用者現場回報，不代表新摘要命令已實機驗證。
+
+新增 inspect_capture_summary，使用原 inspect_capture 的同步 on_record 回呼，在同一次逐行掃描中聚合；原函式、匯出／回看回呼及回傳值保留。CLI 原命令與工作台檢查直接顯示通道／Capture／Instance、每 Epoch 首筆 offset／末筆 next_offset（不含）、區塊與解碼後 bytes，按檔案順序列出建立／切換、遺失、故障、開啟／關閉及已知缺口。只見 Epoch 改變不推論具體重開原因；有 ready Epoch 但無 RX 時列零筆及無 RX。
+
+最多保留 1024 個 Epoch、256 筆邊界事件及 128 字元摘要識別；超限後仍完成原檔案掃描，明示未完整列出並計算未列區塊／bytes。已列與未列共同核對原 RX 總計，不以位移跨度代替 payload 長度。摘要本身不是每世代完整性認證；原雜湊／序號／位移／Footer／未知檢查與 0／1／2 退出碼保留，核對不一致則標 incomplete。沒有新增 Token、API、UART I/O、檔案格式或來源改寫；先前指示使用的 recordings-reopen-test 目錄已加入忽略清單。
+
+Implemented／自動化 Tested：Linux／Python 3.12.14／pySerial 3.5，以 .venv/bin/python -W error::RuntimeWarning -m unittest discover -s tests -v 執行完整 **304 項通過**，23.462 秒、無略過、無 RuntimeWarning。新增 12 項單元／真 CLI 測試，原 292 項亦通過；既有真 Gateway 錄製／重開整合案例另擴充新摘要及離線 CLI 驗證。涵蓋 91＋50 區塊／3094＋1700 bytes 的合成案例、跨分段／二進位、缺口、缺 Footer／壞雜湊、零資料、數量／長識別上限、輸出控制字元、總計核對、來源不改與無 Token 的原退出碼。原文字匯出／回看及單雙路工作台也通過回歸。
+
+Windows Quickstart 已提供既有 recordings-reopen-test 的直接檢查步驟，不需重錄或重啟 Gateway；新顯示的 Win11 重測待回報，未直接讀取使用者實體錄製檔或存取 COM3／COM4。公司 dxan 新管理操作仍待下週回公司後再測，長時間／輪替／磁碟等實機驗收不擴大宣稱。本次功能、測試及文件沿用 work 分支提交／推送，版本以 Git 紀錄為準。

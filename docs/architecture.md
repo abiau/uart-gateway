@@ -59,7 +59,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `server.auth` | Principal（認證身分）與 Channel ACL（通道存取規則） | 設定與認證資料；不信任自報的 Client ID |
 | `server.session` | 連線所屬身分、訂閱、Heartbeat（心跳）與清理 | 呼叫 Core 釋放資源；不是 RX 必經的轉呼叫層 |
 | `server.recording` | 非同步 RX 錄製、分段、容量限制與完整性 | Core 事件與檔案系統；不得阻塞 UART Reader；Audit 尚未實作 |
-| `recording_info` | 本機 Capture 的格式／雜湊／位移與收尾檢查 | 只讀檔案，不連線、不操作 UART；不是磁碟 Replay API |
+| `recording_info` | 本機 Capture 的格式／雜湊／位移與收尾檢查，及有界 Epoch／狀態摘要 | 只讀檔案；摘要以原掃描回呼聚合，保留舊檢查／匯出／回看介面，不連線、不操作 UART |
 | `recording_text` | 檢查中的紀錄串流轉為 UTF-8 可讀文字 | 共用 recording_info 的有界掃描回呼；不連線 UART，不覆寫來源或既有輸出 |
 | `recording_play` | 錄製檔快速回看、邊界提示與取消 | 共用 recording_info／TerminalRenderer；慢終端直接減慢離線掃描，不建立 Gateway 連線 |
 | `server.config`、`server.app` | 驗證設定、組裝具體物件、啟停順序 | 組裝層可以知道具體 Backend，不把此依賴帶入 Core |

@@ -19,7 +19,7 @@ from uart_gateway.fake_serial import FakeSerial
 from uart_gateway.local_launcher import _gateway_profile
 from uart_gateway.local_profile import LocalChannel
 from uart_gateway.protocol.codec import binary_decode
-from uart_gateway.recording_info import inspect_capture
+from uart_gateway.recording_info import inspect_capture, inspect_capture_summary
 from uart_gateway.serial_backend import AdapterSelector
 from uart_gateway.server.app import load
 from uart_gateway.server.auth import Principal
@@ -121,6 +121,19 @@ class RecordingIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(inspect_capture(self.capture("a"))["integrity"], "unknown")
         self.assertEqual(inspect_capture(self.capture("b"))["integrity"], "no_known_gap")
         self.assertEqual(self.devices[0].write_count, 0)
+        info = inspect_capture_summary(self.capture("a"))
+        self.assertEqual([item["epoch"] for item in info["summary"]["epochs"]], [old_epoch, result["stream_epoch"]])
+        self.assertEqual([item["first_offset"] for item in info["summary"]["epochs"]], ["0", "0"])
+        self.assertEqual([item["rx_bytes"] for item in info["summary"]["epochs"]], [6, 5])
+        self.assertTrue(info["summary"]["totals_match"])
+        self.assertEqual(info["integrity"], "unknown")
+        process = await asyncio.create_subprocess_exec(sys.executable, "-m", "uart_gateway.cli", "recording-info",
+            str(self.capture("a")), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        stdout, stderr = await asyncio.wait_for(process.communicate(), 5)
+        self.assertEqual(process.returncode, 2, stderr.decode())
+        self.assertIn("世代切換", stdout.decode())
+        self.assertIn("RX 區塊：2；RX bytes：11", stdout.decode())
 
     async def test_slow_disk_overflow_notifies_sdk_without_blocking_either_rx(self):
         entered, release = threading.Event(), threading.Event()
