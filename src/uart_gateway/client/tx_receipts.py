@@ -66,7 +66,7 @@ class TxJournal:
                         raw = stream.read(4097)
                     if len(raw) > 4096:
                         raise ValueError
-                    # 收據不含秘密且只能用來查詢；不為每筆 Metadata 啟動 PowerShell。
+                    # 收據不含秘密且只能用來查詢；此處只掃描有界的 Metadata。
                     value = json.loads(raw)
                     required = {"tx_id", "channel_id", "instance", "principal", "created", "result"}
                     if not required <= set(value) or set(value) - required - {"last_query", "execution"}:

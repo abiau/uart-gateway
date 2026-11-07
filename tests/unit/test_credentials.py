@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 from uart_gateway.auth_setup import initialize, export_credential, import_credential, select_default
 from uart_gateway.client import ConnectionSettings, resolve_connection
@@ -238,12 +238,18 @@ class WindowsPrivateFileTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     read_private(path, 1024)
 
-    def test_powershell_uses_static_script_and_path_environment_only(self):
-        with patch("uart_gateway.protected_files.subprocess.run", return_value=Mock(returncode=0)) as run:
-            windows_acl(Path("literal $(do-not-execute).secret"), protect=True)
-        argv = run.call_args.args[0]
-        self.assertNotIn("literal", " ".join(argv))
-        self.assertIn("UART_GATEWAY_PRIVATE_PATH", run.call_args.kwargs["env"])
-        with patch("uart_gateway.protected_files.subprocess.run", return_value=Mock(returncode=3)):
-            with self.assertRaisesRegex(ValueError, "ACL"):
-                windows_acl(Path("blocked"))
+    @unittest.skipUnless(os.name == "nt", "需要 Windows 實際 ACL")
+    def test_windows_rejects_existing_grant_to_everyone_and_reprotects_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "測試 $(literal).secret"
+            write_private(path, b"fixture")
+            subprocess.run(["icacls.exe", str(path), "/grant", "*S-1-1-0:(R)"],
+                           check=True, capture_output=True, timeout=5)
+            with self.assertRaisesRegex(ValueError, "Windows ACL"):
+                read_private(path, 1024)
+            with self.assertRaisesRegex(ValueError, "Windows ACL"):
+                write_private(path, b"replacement", replace=True)
+            self.assertEqual(path.read_bytes(), b"fixture")
+            self.assertEqual(list(path.parent.glob("*.tmp-*")), [])
+            windows_acl(path, protect=True)
+            self.assertEqual(read_private(path, 1024), b"fixture")

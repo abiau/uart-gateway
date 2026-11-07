@@ -62,7 +62,7 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 包是一次性秘密傳輸資料，不是普通設定檔；欄位僅 version=1、deployment_id、access、token、port，驗證格式後才寫入。部署 ID 只用於拒絕混合不同部署，不是 Server 身分驗證或 wire 欄位。傳輸沿用 SSH，無匿名配對端點；Server 啟動時載入 file: 秘密，輪替需協調更新與重啟，本輪不提供自動輪替／reload。
 
-SDK 模組匯入不讀檔或連線；檔案 I/O 在工作執行緒，Token 不保存於連線設定物件 repr、命令列、一般設定或 Log。CLI read_client_token 僅保留相容薄轉接，來源處理由 SDK 提供。Windows ACL 的實際環境相容性仍待實機驗證；Linux SDK 不需要 Windows PowerShell。
+SDK 模組匯入不讀檔或連線；檔案 I/O 在工作執行緒，Token 不保存於連線設定物件 repr、命令列、一般設定或 Log。CLI read_client_token 僅保留相容薄轉接，來源處理由 SDK 提供。Windows 使用原生 ACL API 處理使用者私有檔案，操作與驗證見 [認證說明](authentication.md)。
 
 ## 多窗格 TUI（2026-11-07）
 
@@ -105,7 +105,7 @@ SDK 模組匯入不讀檔或連線；檔案 I/O 在工作執行緒，Token 不�
 
 TX 工作台由 `uart tx` 或 `uart --access tx tui` 明確啟用；工作台 X 路由相同 SDK，`--connection`／`--connections-dir` 共用原來源。只連既有 Gateway，不修改本機 RX Launcher。F2／F3、權限與驗收見 [TX 說明](tx-workbench.md)。單次 Payload 上限為 Hello.max_tx_bytes 與 4096 的較小值，含明確選的換行；文字／Hex 表單輸入最多 12288 字元，不自動拆分。單次結果等待預設 5 秒，逾時釋放本次租約與連線，只能人工查詢；不明狀態不自動重送。
 
-TX 收據位於 SDK 設定根目錄 tx-receipts／連線名稱，不含命令、Payload 或秘密。每檔最多 4096 bytes、掃描最多 256 項；每連線新操作前用檔案鎖檢查最多 128 筆，不明／pending 保留，已知終態維持最近約 64 筆。收據保存成功才 write；失敗不傳送。收據只供查詢原 Principal／Instance／TX ID，不能授權寫入。metadata 一般檔案有界讀取、拒絕符號連結，不為每筆 metadata 啟動 PowerShell；寫入沿用原私有檔案機制。`status --instance` 可指定原程序；過期查詢及其他工作台的較舊回覆不抹除已知終態。
+TX 收據位於 SDK 設定根目錄 tx-receipts／連線名稱，不含命令、Payload 或秘密。每檔最多 4096 bytes、掃描最多 256 項；每連線新操作前用檔案鎖檢查最多 128 筆，不明／pending 保留，已知終態維持最近約 64 筆。收據保存成功才 write；失敗不傳送。收據只供查詢原 Principal／Instance／TX ID，不能授權寫入。metadata 掃描只讀有界的一般檔案並拒絕符號連結；寫入沿用私有檔案機制。`status --instance` 可指定原程序；過期查詢及其他工作台的較舊回覆不抹除已知終態。
 
 歷史重播由 Session Writer 逐筆送出，使用獨立有界快照，不占用整段即時輸出佇列。每 Session 快照共用上限為目前 RX Ring 設定的兩倍（預設 8 MiB，原始 payload＋每事件 512 bytes 預留），期限沿用 idle_timeout_ms（預設 15 秒）；不新增 TOML 參數或修改 Hello 欄位。Writer 額外至多持有一個不超過 max_frame_bytes 的編碼中／傳送中 Frame。即時訂閱佇列及 Connection 輸出上限維持原值，快照配額不足回 QUEUE_FULL，慢接收超限或重播期限到達仍會明示斷線／記錄原因。
 

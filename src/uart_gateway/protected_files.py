@@ -4,59 +4,18 @@ import os
 from pathlib import Path
 import secrets
 import stat
-import subprocess
 import sys
 
 WINDOWS = sys.platform == "win32"
 
-# 使用固定腳本，路徑經環境變數傳入，不組合 Shell 指令或傳送秘密內容。
-ACL_SCRIPT = r"""
-$ErrorActionPreference = 'Stop'
-$p = $env:UART_GATEWAY_PRIVATE_PATH
-$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-if ($env:UART_GATEWAY_PRIVATE_ACTION -eq 'protect') {
-    $acl = Get-Acl -LiteralPath $p
-    if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { exit 2 }
-    if (Test-Path -LiteralPath $p -PathType Container) {
-        $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
-    } else {
-        $inherit = [System.Security.AccessControl.InheritanceFlags]::None
-    }
-    $acl.SetAccessRuleProtection($true, $false)
-    foreach ($existing in @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))) {
-        [void]$acl.RemoveAccessRuleSpecific($existing)
-    }
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, 'None', 'Allow')
-    $acl.AddAccessRule($rule)
-    Set-Acl -LiteralPath $p -AclObject $acl
-}
-$acl = Get-Acl -LiteralPath $p
-if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { exit 2 }
-if ($env:UART_GATEWAY_PRIVATE_ACTION -eq 'protect' -and -not $acl.AreAccessRulesProtected) { exit 4 }
-$ownFullControl = $false
-foreach ($rule in $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
-    if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -ne $sid.Value) { exit 3 }
-    if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -eq $sid.Value -and
-        ($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl) {
-        $ownFullControl = $true
-    }
-}
-if ($env:UART_GATEWAY_PRIVATE_ACTION -eq 'protect' -and -not $ownFullControl) { exit 5 }
-"""
-
 
 def windows_acl(path: Path, *, protect: bool = False) -> None:
-    environment = dict(os.environ, UART_GATEWAY_PRIVATE_PATH=str(path.absolute()),
-                       UART_GATEWAY_PRIVATE_ACTION="protect" if protect else "check")
+    from .windows_acl import check_acl
+
     try:
-        result = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ACL_SCRIPT],
-                                env=environment, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
-    except (OSError, subprocess.TimeoutExpired):
-        raise ValueError("無法檢查 Windows 憑證 ACL，請確認系統 PowerShell 可用。") from None
-    if result.returncode:
-        if result.returncode == 1:
-            raise ValueError("Windows 無法設定或讀取憑證 ACL；請檢查目錄權限及 PowerShell 錯誤。")
-        raise ValueError(f"憑證 ACL 未通過安全檢查（代碼 {result.returncode}），請確認擁有者與權限。")
+        check_acl(str(path.absolute()), protect=protect)
+    except OSError as exc:
+        raise ValueError(f"Windows 無法設定或讀取 ACL（錯誤 {exc.winerror}），請檢查檔案權限。") from None
 
 
 def private_directory(path: Path) -> None:

@@ -26,7 +26,7 @@ TUI 為可選依賴，完整測試先安裝 `python -m pip install -e '.[server,
 
 ## 自動認證測試（2026-11-07）
 
-test_credentials 覆蓋受保護檔案、初始化兩角色、來源不變、匯出／匯入、部署衝突／重複、未知格式與界限、路徑 traversal、固定來源優先於舊環境、失效不降級、權限不符與 FIFO／symlink 拒絕、每次重讀、秘密不出現在 CLI，以及初始化／管理匯入寫入失敗清理。Windows 使用 ACL 呼叫替身，確認內容寫入前配置 ACL、錯誤拒絕及固定 PowerShell 腳本，不代表 Windows ACL 實際執行通過。
+test_credentials 覆蓋受保護檔案、初始化兩角色、來源不變、匯出／匯入、部署衝突／重複、未知格式與界限、路徑 traversal、固定來源優先於舊環境、失效不降級、權限不符與 FIFO／symlink 拒絕、每次重讀、秘密不出現在 CLI，以及初始化／管理匯入寫入失敗清理。ACL 呼叫替身驗證內容寫入前配置 ACL。Windows 測試另以真實 NTFS ACL 驗證私有目錄與檔案，以及暫存測試檔被授權給 Everyone 時拒絕讀取與覆蓋。
 
 test_auto_auth 以真 TCP Gateway／SDK、Fake Serial、CLI 與 POSIX PTY 驗證自動來源 RX、預設讀取拒絕管理／Confirm／Lease、管理重開但無 TX、錯配角色關閉、不因 AUTH_FAILED 換來源、Gateway 重啟與秘密重讀、無 Token 參數 CLI 及遠端 Workbench。既有 Confirm／Lease／Expected Context 與 TX 測試維持覆蓋；沒有實體 UART TX、Windows 權限或公司 SSH 實機證據。
 

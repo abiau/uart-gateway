@@ -6,7 +6,7 @@ TX 入口為 `uart tx`／工作台 X，需明確建立 tx 角色；原 read／ma
 
 Container／Codex 的 `shell-ready`／`exec`／`exec-status` 同樣由 SDK 載入固定 tx 憑證，不需每天管理 Token；先安全匯入該角色並由人核對已登入的 Shell。它不自動提升原 read／manage 權限，步驟見 [Shell 操作](shell-exec.md)。
 
-本機 `local`／工作台 S 沿用每次啟動的臨時 Token，不需設定。遠端使用固定受保護憑證：初始化及安裝一次後，CLI、遠端 Workbench、Python／Codex 工具都由 SDK 自動載入。這是已實作的新流程；自動化採 Linux／真 TCP／Fake Serial／PTY，Win11 ACL、實體 UART 與公司 SSH 路徑仍待實測。
+本機 `local`／工作台 S 沿用每次啟動的臨時 Token，不需設定。遠端使用固定受保護憑證，初始化及安裝一次後，CLI、遠端 Workbench、Python／Codex 工具都由 SDK 自動載入。Win11 ACL 與本機模擬 TX 的驗證見 [專案狀態](status.md)。公司 SSH 路徑仍待實測。
 
 初始化後，Win11 可使用：
 
@@ -34,7 +34,7 @@ Container 對應為：
 
 兩路使用 `examples\gateway.dual.rx-reopen.toml`，COM 不同時先修改私人設定副本。初始化只驗證設定並建立新副本，不開啟 Serial、不啟動 Gateway、不取得 Lease 或傳送指令；來源設定不改寫。新的副本授權為讀取及管理兩個獨立身分，不產生 tx 權限。
 
-預設資料在 `%LOCALAPPDATA%\uart-gateway\connections\default`。`gateway.toml` 只有受保護秘密的檔案參照；`read.secret`、`manage.secret` 由工具產生。Windows 在寫入內容前設定只允許目前使用者的 ACL，再於 SDK 讀取時檢查；系統 PowerShell 不可用或 ACL 不符時失敗，不降低保護。
+預設資料在 `%LOCALAPPDATA%\uart-gateway\connections\default`。`gateway.toml` 只有受保護秘密的檔案參照；`read.secret`、`manage.secret` 由工具產生。Windows 直接呼叫 Win32 API，在寫入內容前核對擁有者並設定僅允許目前使用者的 DACL，SDK 每次讀取時再核對擁有者及 DACL。一般使用者可操作自己擁有的私有檔案，檢查失敗會回報錯誤。
 
 在 Gateway 視窗啟動：
 
@@ -49,7 +49,7 @@ $UartGatewayConfig = Join-Path $env:LOCALAPPDATA 'uart-gateway\connections\defau
 
 ## 透過 SSH 安裝到 dxan，一次即可
 
-先讓 Win11 與 Container 都使用本版程式；公司 SSH／Podman 路徑沿用既有部署。下列沿用已知 `victor.hu-vo@d3s1`、容器 `dxan` 及容器內 `~/uart-gateway-remote-test`，路徑不同時需修正。Codex 未執行公司 SSH 或 Windows ACL，此節是待實測教學。
+先讓 Win11 與 Container 都使用本版程式；公司 SSH／Podman 路徑沿用既有部署。下列沿用已知 `victor.hu-vo@d3s1`、容器 `dxan` 及容器內 `~/uart-gateway-remote-test`，路徑不同時需修正。此節的公司 SSH 路徑待實測。
 
 Win11 先匯出讀取憑證到使用者私有目錄：
 
