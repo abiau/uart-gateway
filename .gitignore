@@ -12,3 +12,4 @@ recordings/
 recordings-reopen-test/
 *.secret
 *.local.jsonl
+.uart-workbench.local.json

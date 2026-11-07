@@ -1,5 +1,9 @@
 # 本機一鍵啟動器設計審查
 
+## 完整設定整合入口（2026-11-07）
+
+本輪 `uart start --config` 與工作台選 6 沿用下述 CMD＋Python 選擇，增加完整 Gateway 設定的只讀組裝驗證、錄製覆寫暫存副本與原 SDK 工作區。端點鎖、占用檢查、全部 Ready、錄製健康度及子程序退出清理仍經原 local_launcher；原 `local` 入口不變。完整設定可明確帶 read＋configure 供人工單路 RX 重開，但拒絕 tx，不自動 Confirm／Lease 或操作控制線。單一 Principal 與最多兩路的切片限制、秘密參照及參數詳見 [設定規格](configuration.md#依-gateway-設定整合啟動)。本機退出 Q／Ctrl+C 清理本次 Gateway；遠端工作台繼續只管理 Client。
+
 ## 兩條 UART 切片設計審查（2026-11-05）
 
 使用者已授權實作前次建議的兩條只讀 UART。採單一 Gateway 與既有多 Channel 模型，CLI 新增 `local --select --count 2`，依序選擇、命名；`--save-profile 路徑` 保存無秘密的本機配置，`--profile 路徑` 重新核對裝置後啟動。單端點入口保留。配置契約見 [設定規格](configuration.md)。

@@ -4,10 +4,34 @@
 
 更新日期：2026-11-07（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## 本輪操作簡化交接（2026-11-07）
+
+使用者核准依前次建議改善候選 1／3／4 的操作負擔，本輪已完成 S 統一啟動與上次設定、D 人工選端點自動保存無秘密 Profile、R 錄製切換、L 使用 Launcher 回報本次 Capture、按 Capture 分組選檔、搜尋命中編號回看／匯出前後片段、F 資料流編號／相對分鐘，以及 T 自動新檔名。原 CLI 與 A 進階工具保留，不新增線上 API 或 TX。
+
+證據：Linux／Python 3.12.14／pySerial 3.5，346 項單元／整合測試通過、無略過，RuntimeWarning 視為錯誤。新測試涵蓋偏好欄位與未知檔案保護、取消不啟動、重啟工作台帶回設定、已存身分條件重新解析 COM、來源 Profile 不變、清理不明立即停止、L 不選較新的無關目錄、同 Capture 雙路分組、資料流／相對時間、跨區塊命中時間跨度、損壞位移搜尋保留警告、缺時間不猜測、導覽取消等待工作結束及自動匯出。
+
+尚未執行：Win11 新 S／L／D、跨啟動偏好、實體 COM3／COM4、鍵盤／Ctrl+C、搜尋片段及自動輸出操作；公司 dxan 新工作區與人工重開仍依使用者安排延後。新便利入口不能沿用舊版實機通過作為證據。測試步驟已更新至 [Windows Quickstart](windows-quickstart.md)；使用者已明確授權將本輪與前輪程式、測試及文件一併提交並推送至 origin/work，交付版本以 Git 紀錄為準。
+
+已知限制：偏好與自動端點 Profile 需可寫位置，無效偏好不覆蓋；預設只記住本機無秘密來源與錄製選擇，L 的 Capture／搜尋結果僅在本次工作台記憶體。未收尾仍需明確 Y；收尾預覽非完整性驗證。片段按 RX 區塊時間取整塊，篩選後仍檢查整份 Capture；無有效時間時不能使用相對分鐘或命中時間窗。底層 I/O 卡住仍無法安全強殺工作執行緒。沒有新增遠端 Profile、常駐 Gateway 或容量擴充。
+
+## 前輪功能交接（2026-11-07）
+
+使用者明確要求依序實作候選 1／3／4，三項均已實作。配置啟動共用原 Server 純組裝驗證與 Launcher／SDK；清單預覽有界、不誤稱已驗證完整性；搜尋及篩選仍讀完原 Capture 並保留完整性警告。沒有新增線上 API、錄製格式、TX、自動重連、遠端連線 Profile、完整 TUI 或五至六路容量。
+
+自動化證據：Linux／Python 3.12.14／pySerial 3.5，330 項單元／整合測試通過，無略過，啟用 RuntimeWarning 視為錯誤。新增真子程序／TCP／單雙 PTY 設定啟動、認證與錄製就緒、重複端點鎖／既有 Listener 保護、Q／Ctrl+C 收尾後同工作台再次啟動、原檔及秘密值保護；清單有界／未收尾選擇；跨 UTF-8／分段搜尋、缺口／Epoch 隔離、時間時區與空選取、範圍外損壞仍告警、結果上限後全檔掃描、取消等待工作結束，以及真選單搜尋／篩選匯出。
+
+尚未執行：Win11 新選 6、雙擊／鍵盤／Ctrl+C 與實體 COM3／COM4 流程，新錄製清單／S／F 操作；公司 dxan 新版工作區與單路重開依使用者安排待下週。舊入口已回報的 Win11 隔離、錄製及 Epoch 摘要證據保留，但不當作本輪新入口實測。具體步驟見 [Windows Quickstart 驗收](windows-quickstart.md)。
+
+已知限制：整合入口需互動終端、一個 Principal、最多兩路與既有安全 UART 基線；臨時 Token 只供本機工作區。預覽達上限時不提供精確 Epoch 數，收尾標記不等於雜湊通過；未收尾不能區分仍在錄製或異常中止。時間以整個 RX 區塊選取，搜尋為區分大小寫且不重疊的 UTF-8 字面比對；底層檔案／終端 I/O 卡住仍無法安全強殺執行緒。離線搜尋不向 UART 送回資料。
+
 ## 真實狀態
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
+| 日常操作簡化 | Implemented／自動化 Tested | S 統一啟動／偏好、L 本次錄製、Capture 分組、命中編號回看匯出、資料流編號／相對分鐘及自動新檔名；Win11 新流程尚待驗證 |
+| 配置一鍵啟動整合（候選 1） | Implemented／自動化 Tested | 工作台選 6／uart start --config；完整 Gateway TOML、錄製覆寫、全部 Ready、原端點鎖與只清理本次程序；一至兩路 RX，configure 可人工重開，拒絕 tx。Win11 新入口待驗證 |
+| 錄製清單與明確選檔（候選 3） | Implemented／自動化 Tested | 時間／來源／收尾標記／Epoch 有界預覽，A／C／U 篩選、未收尾提示；預覽不代表 SHA-256 驗證。Win11 新清單操作待驗證 |
+| 關鍵字搜尋與區段回看匯出（候選 4） | Implemented／自動化 Tested | recording-search，工作台 S／F；UTF-8 跨連續區塊字面比對、時間／Epoch RX 篩選，全檔完整性仍掃描。Win11 新 S／F 操作待驗證 |
 | d3s1／dxan 遠端持續接收 30 分鐘 | Verified（使用者執行並回報） | IPCAM 每秒輸出 ps 資訊，dxan 資料正常；未量測逐 byte 完整性 |
 | Win11 錄製文字匯出與查看 | Verified（使用者執行並回報） | `262f702` 後回報可看到文字、此測項 OK；不據此推論零遺失、異常路徑或全部錄製情境通過 |
 | 本機 Repository（版本庫） | 已建立 | 分支 `work`；Phase 0 提交 `33eedba`、Phase 1 提交 `496ab13`；本次啟動器變更依使用者授權提交並推送，版本以 Git 紀錄為準 |
@@ -15,7 +39,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：304 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播與離線 Epoch 摘要 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：346 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播與離線 Epoch 摘要 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |

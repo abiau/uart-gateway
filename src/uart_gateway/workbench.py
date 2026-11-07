@@ -4,10 +4,14 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 import sys
+import secrets
+from dataclasses import replace
 
 from .local_launcher import LauncherCleanupError
 from .protocol.errors import ProtocolError, RemoteError
 from .recording_text import visible
+from .recording_catalog import preview_capture
+from .workbench_state import StartChoice, WorkbenchSession, choice_config, load_choice, save_choice
 
 SCAN_LIMIT = 2000
 DISPLAY_LIMIT = 50
@@ -47,12 +51,21 @@ def capture_paths(root: Path) -> tuple[list[Path], bool]:
 
 def run_workbench(dispatch: Callable[[list[str]], int], *, recordings: Path,
                   read: Callable[[], str] | None = None,
-                  report: Callable[[str], None] | None = None) -> int:
+                  report: Callable[[str], None] | None = None, session: WorkbenchSession | None = None,
+                  preferences_file: Path | None = None) -> int:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError("互動式工作台需要終端機輸入與輸出，請在 PowerShell 或終端機執行。")
     read = read or input
     report = report or (lambda message: print(message, file=sys.stderr, flush=True))
     recordings = recordings.absolute()
+    session = session or WorkbenchSession()
+    preferences_file = preferences_file or Path(".uart-workbench.local.json")
+    preferences_ok = True
+    try:
+        start_choice = load_choice(preferences_file)
+    except ValueError as exc:
+        report(str(exc))
+        start_choice, preferences_ok = StartChoice(), False
 
     def ask(prompt: str) -> str:
         report(prompt)
@@ -109,7 +122,107 @@ def run_workbench(dispatch: Callable[[list[str]], int], *, recordings: Path,
         report("只讀監控中按 Ctrl+C，等待本次 Gateway 清理後返回工作台。")
         invoke(argv)
 
+    def start_menu() -> None:
+        nonlocal start_choice
+        from .configured_launcher import prepare_config
+        from .local_ports import choose_channels
+        from .local_profile import save_profile
+        templates = [Path("examples/gateway.com3.toml"), Path("examples/gateway.com3.rx-reopen.toml"),
+                     Path("examples/gateway.dual.rx-reopen.toml")]
+        while True:
+            argv = ["start"]
+            if start_choice.recording == "on":
+                argv += ["--record-dir", str(recordings)]
+            elif start_choice.recording == "off":
+                argv += ["--no-record"]
+            # 摘要與真正啟動都重新驗證；偏好檔不保存憑證或裝置就緒狀態。
+            plan = None
+            try:
+                with choice_config(start_choice) as actual:
+                    plan = prepare_config(actual, record_directory=recordings if start_choice.recording == "on" else None,
+                                          no_record=start_choice.recording == "off")
+                    summary = "／".join(f"{c.adapter.port}（{c.label}）" for c in plan.channels)
+                    report("開始監看 | 裝置：" + label(summary))
+                    report("錄製：" + ("開啟 → " + label(plan.recording) if plan.recording else "關閉") +
+                           " | 手動 RX 恢復：" + ("允許" if all("configure" in g["permissions"] for g in plan.grants) else "未授權"))
+                    answer = ask("Enter 開始；D 更換裝置；R 切換錄製；C 沿用設定的錄製選擇；M 進階設定檔；Q 返回：").casefold()
+                    if not answer:
+                        if preferences_ok:
+                            try:
+                                save_choice(preferences_file, start_choice)
+                            except (OSError, ValueError) as exc:
+                                report(label(exc))
+                        invoke([*argv, "--config", str(actual)])
+                        return
+            except LauncherCleanupError:
+                raise
+            except (OSError, ValueError) as exc:
+                report("設定尚無法使用：" + label(exc))
+                answer = ask("D 更換裝置；R 切換錄製；M 選擇設定檔；Q 或 Enter 返回：").casefold()
+                if not answer:
+                    return
+            if answer == "q":
+                return
+            if answer == "r":
+                current = bool(plan.recording) if plan is not None else start_choice.recording == "on"
+                start_choice = replace(start_choice, recording="off" if current else "on")
+            elif answer == "c":
+                start_choice = replace(start_choice, recording="inherit")
+            elif answer == "m":
+                selected = path("輸入 Gateway TOML 路徑；Enter 或 Q 返回：")
+                if selected is not None:
+                    start_choice = replace(start_choice, config=selected, profile=None)
+            elif answer == "d":
+                report("1. COM3 單路，僅接收\n2. COM3 單路，可人工恢復 RX\n3. COM3＋COM4 雙路，可人工恢復 RX\n4. 從目前 USB-UART 清單選擇（僅接收）")
+                device = ask("輸入裝置方案編號；Enter 或 Q 取消：")
+                if device in ("1", "2", "3"):
+                    start_choice = replace(start_choice, config=templates[int(device) - 1], profile=None)
+                elif device == "4":
+                    count = ask("使用幾條 UART？1 或 Enter 單路；2 雙路；Q 取消：")
+                    if count not in ("", "1", "2"):
+                        continue
+                    channels = choose_channels(int(count or "1"), read=read, report=report)
+                    if channels:
+                        profile = preferences_file.parent / (".uart-workbench-" + secrets.token_hex(8) + ".local.toml")
+                        save_profile(profile, channels)
+                        start_choice = replace(start_choice, profile=profile)
+            else:
+                report("選項無效。")
+
+    def configured() -> None:
+        options = [Path("examples/gateway.com3.toml"), Path("examples/gateway.com3.rx-reopen.toml"),
+                   Path("examples/gateway.dual.rx-reopen.toml")]
+        report("選擇 Gateway 設定（與端點配置不同；不改寫原檔）：")
+        for number, option in enumerate(options, 1):
+            report(f"{number}. {option}")
+        answer = ask("輸入設定編號；M 自訂 Gateway TOML；Q 或 Enter 返回：").casefold()
+        if answer in ("", "q"):
+            return
+        if answer == "m":
+            selected = path("輸入 Gateway TOML 路徑；Enter 或 Q 返回：")
+        elif answer in ("1", "2", "3"):
+            selected = options[int(answer) - 1]
+        else:
+            report("設定編號無效。")
+            return
+        if selected is None:
+            return
+        answer = ask("錄製：C 或 Enter 沿用設定；Y 啟用至工作台錄製目錄；N 停用；Q 取消：").casefold()
+        if answer == "q":
+            return
+        if answer not in ("", "c", "y", "n"):
+            report("錄製選項無效。")
+            return
+        argv = ["start", "--config", str(selected)]
+        if answer == "y":
+            argv += ["--record-dir", str(recordings)]
+        elif answer == "n":
+            argv += ["--no-record"]
+        report("啟動後 Q 或 Ctrl+C 結束並清理本次 Gateway；原已啟動的程序不受影響。")
+        invoke(argv)
+
     def select_capture() -> Path | None:
+        category = "a"
         while True:
             entries, limited = capture_paths(recordings)
             report(f"錄製根目錄：{label(recordings)}")
@@ -117,11 +230,31 @@ def run_workbench(dispatch: Callable[[list[str]], int], *, recordings: Path,
                 report("目錄數量超過掃描上限，請以 M 指定 Channel 目錄，或縮小 --recordings-dir 範圍。")
             elif not entries:
                 report("目前沒有可列出的錄製，可用 M 手動指定 Channel 目錄。")
-            for number, entry in enumerate(entries, 1):
-                report(f"{number}. {label(entry.relative_to(recordings))}")
-            choice = ask("輸入錄製編號；R 重新整理；M 手動輸入 Channel 目錄；Q 或 Enter 返回：")
+            previews = [(entry, preview_capture(entry)) for entry in entries]
+            previews = [(entry, preview) for entry, preview in previews
+                        if category == "a" or preview.footer == (category == "c")]
+            entries = [entry for entry, _ in previews]
+            report("預覽尚未驗證 SHA-256；未收尾可能仍在錄製。Epoch 數僅涵蓋有界掃描，R 可更新。")
+            groups = {}
+            for entry, preview in previews:
+                groups.setdefault(entry.parent, []).append((entry, preview))
+            grouped = list(groups.values())
+            report("目前篩選：" + {"a": "全部", "c": "有收尾標記", "u": "未收尾"}[category])
+            if not grouped:
+                report("此篩選下沒有可列出的錄製；A 可顯示全部，M 可手動指定。")
+            for number, group in enumerate(grouped, 1):
+                stamp = next((p.timestamp for _, p in group if p.timestamp != "未提供"), group[0][0].parent.name)
+                report(f"{number}. {label(stamp)} | {len(group)} 條通道")
+                for entry, preview in group:
+                    ending = "已收尾（未驗證）" if preview.footer else "未收尾／可能錄製中"
+                    count = str(preview.epochs) if preview.complete_scan else f"至少 {preview.epochs}"
+                    report(f"  · {label(preview.source if preview.source != '未提供' else entry.name)} | {ending} | Epoch：{count}")
+            choice = ask("輸入錄製編號；R 重新整理；A 全部／C 有收尾標記／U 未收尾；M 手動輸入 Channel 目錄；Q 或 Enter 返回：")
             if not choice or choice.casefold() == "q":
                 return None
+            if choice.casefold() in ("a", "c", "u"):
+                category = choice.casefold()
+                continue
             if choice.casefold() == "r":
                 continue
             if choice.casefold() == "m":
@@ -132,42 +265,57 @@ def run_workbench(dispatch: Callable[[list[str]], int], *, recordings: Path,
                     report("找不到該 Channel 目錄。")
                     continue
                 return selected
-            if choice.isascii() and choice.isdigit() and len(choice) <= 6 and 1 <= int(choice) <= len(entries):
-                return entries[int(choice) - 1]
+            if choice.isascii() and choice.isdigit() and len(choice) <= 6 and 1 <= int(choice) <= len(grouped):
+                return select_channel(tuple(path for path, _ in grouped[int(choice) - 1]))
             report("錄製編號無效，請重新選擇。")
 
-    def recordings_menu() -> None:
-        selected = select_capture()
-        if selected is None:
-            return
+    def select_channel(channels: tuple[Path, ...]) -> Path | None:
+        if len(channels) == 1:
+            return channels[0]
+        for number, channel in enumerate(channels, 1):
+            source = preview_capture(channel).source
+            report(f"{number}. {label(source if source != '未提供' else channel.name)}")
         while True:
-            report(f"目前錄製：{label(selected)}")
-            choice = ask("I 檢查資訊；V 終端回看；T 匯出文字；Q 或 Enter 返回工作台：").casefold()
-            if choice in ("", "q"):
-                return
-            if choice == "i":
-                invoke(["recording-info", str(selected)])
-            elif choice == "v":
-                report("離線回看中 Ctrl+C 可返回工作台選單；不會連線 UART。")
-                if invoke(["recording-play", str(selected), "--terminal"]) == 130:
-                    return
-            elif choice == "t":
-                destination = path("輸入新的 .txt／.log 輸出路徑；Enter 或 Q 取消：")
-                if destination is not None:
-                    invoke(["recording-text", str(selected), "--output", str(destination)])
-            else:
-                report("請輸入 I、V、T 或 Q。")
+            answer = ask("輸入通道編號；Q 或 Enter 返回：")
+            if not answer or answer.casefold() == "q":
+                return None
+            if answer.isascii() and answer.isdigit() and len(answer) <= 6 and 1 <= int(answer) <= len(channels):
+                return channels[int(answer) - 1]
+            report("通道編號無效。")
+
+    def recordings_menu(selected: Path | None = None) -> None:
+        from .recording_workbench import browse_recording
+        selected = selected or select_capture()
+        if selected is not None:
+            try:
+                browse_recording(selected, root=recordings, session=session, ask=ask, path=path, report=report, invoke=invoke)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                report("離線操作已中止，掃描工作已結束，返回工作台。")
 
     try:
         while True:
-            report("\nUART 本機只讀工作台\n1. 列出 Serial 裝置\n2. 選擇 UART 並監看\n"
-                   "3. 選擇 UART 並錄製\n4. 使用已存端點配置\n5. 瀏覽錄製：檢查／回看／匯出\nQ. 離開")
-            choice = ask("輸入功能編號；Q 或 Enter 離開：").casefold()
+            report("\nUART 本機只讀工作台\nS. 開始監看（記住上次設定）\nL. 查看本次錄製\n5. 瀏覽錄製\nA. 進階工具\nQ. 離開")
+            choice = ask("輸入功能編號或字母；Q 或 Enter 離開：").casefold()
+            if choice == "a":
+                report("進階工具：1 列出裝置；2 手動選擇監看；3 手動選擇錄製；4 端點配置；6 Gateway 設定；Q 返回")
+                choice = ask("輸入進階功能編號；Q 或 Enter 返回：").casefold()
+                if choice in ("", "q"):
+                    continue
             if choice in ("", "q"):
                 report("已離開工作台。")
                 return 0
             try:
-                if choice == "1":
+                if choice == "s":
+                    start_menu()
+                elif choice == "l":
+                    if not session.capture_channels:
+                        report("本工作台尚未收到本次錄製位置；可用 5 瀏覽既有錄製，不會猜測最新檔案。")
+                    else:
+                        report("本工作台最近一次錄製：" + label(session.capture_channels[0].parent))
+                        selected = select_channel(session.capture_channels)
+                        if selected is not None:
+                            recordings_menu(selected)
+                elif choice == "1":
                     invoke(["ports"])
                 elif choice in ("2", "3"):
                     local(choice == "3")
@@ -181,6 +329,8 @@ def run_workbench(dispatch: Callable[[list[str]], int], *, recordings: Path,
                             report("選項無效，已返回工作台。")
                 elif choice == "5":
                     recordings_menu()
+                elif choice == "6":
+                    configured()
                 else:
                     report("功能編號無效，請重新選擇。")
             except LauncherCleanupError:

@@ -23,7 +23,7 @@ class WorkbenchTests(unittest.TestCase):
         reader = Mock(side_effect=answers)
         messages = []
         with patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True):
-            result = run_workbench(dispatch, recordings=self.root, read=reader, report=messages.append)
+            result = run_workbench(dispatch, recordings=self.root, read=reader, report=messages.append, preferences_file=self.root / "preferences.json")
         return result, dispatch, messages, reader
 
     def capture(self, name="capture-one", channel="ch_uart_1"):
@@ -91,7 +91,7 @@ class WorkbenchTests(unittest.TestCase):
     def test_recording_selection_check_play_export_and_return(self):
         selected = self.capture("capture-space name")
         destination = self.root / "view $(literal).txt"
-        result, dispatch, _, _ = self.run_menu(["5", "1", "i", "v", "t", str(destination), "q", "q"])
+        result, dispatch, _, _ = self.run_menu(["5", "1", "i", "v", "y", "t", "y", str(destination), "q", "q"])
         self.assertEqual(result, 0)
         self.assertEqual([call.args[0] for call in dispatch.call_args_list], [
             ["recording-info", str(selected)], ["recording-play", str(selected), "--terminal"],

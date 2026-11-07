@@ -4,7 +4,7 @@
 
 UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 獨占 USB-UART 對應的 COM Port，Linux d3s1 上的 Podman Container（容器）透過 SSH Tunnel 使用共同 Client SDK（用戶端開發套件），供 CLI（命令列介面）、未來 TUI（文字使用者介面）及 Agent（代理工具）操作。
 
-日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`，從文字工作台選擇本機監看、錄製、既有配置，以及錄製檔的檢查／回看／文字匯出。監控中 Ctrl+C 清理後返回工作台，選單輸入處 Q／Enter 離開。步驟見 [工作台說明](docs/workbench.md)；Win11 工作台實機流程尚待驗證。
+日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)；本輪簡化流程已有自動化證據，尚待 Win11 實機驗證。
 
 遠端選單使用 `uart --token-file <受保護的Token檔案> menu --remote`，連線既有 Gateway 後以編號選 Channel，再選即時或重播；Ctrl+C 返回清單，Gateway 繼續執行。居家同機與公司 dxan 的具體步驟見 [Windows Quickstart](docs/windows-quickstart.md)。
 

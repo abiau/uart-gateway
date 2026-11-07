@@ -402,14 +402,55 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "start":
+        from .configured_launcher import launch_config
+        from .remote_group import run_remote_group
+        _check_local_args(args)
+        if args.port != 18081:
+            raise ValueError("整合啟動的 TCP Port 由 Gateway 設定 network.port 決定，請移除全域 --port。")
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise ValueError("整合啟動需要互動式終端機，請在 PowerShell 或終端機執行。")
+
+        async def monitor(connect, channels, instance):
+            return await run_remote_group(connect, channels, instance, True, watch=watch_client,
+                sink_factory=lambda: _WatchOutput(terminal=True), owned=True)
+
+        return await launch_config(args.config, monitor, record_directory=args.record_dir,
+                                   no_record=args.no_record, startup_timeout=args.startup_timeout,
+                                   **({"capture_ready": args.capture_ready} if getattr(args, "capture_ready", None) else {}))
+    if args.command in ("recording-play", "recording-text", "recording-search"):
+        from .recording_selection import RXSelection
+        selection = RXSelection(args.epoch, args.from_time, args.to_time)
+    if args.command == "recording-search":
+        from .recording_search import search
+        result = await search(args.directory, args.keyword, selection=selection, max_results=args.max_results)
+        if getattr(args, "search_ready", None):
+            args.search_ready(result)
+        details = result["search"]
+        def field(value):
+            return safe_text(str(value)[:512]).replace("\n", "\\n").replace("\t", "\\t") + ("…" if len(str(value)) > 512 else "")
+        print("離線字面搜尋；區分大小寫；命中時間為完成該關鍵字的 RX 區塊時間，位移不含右端點。")
+        print(selection.description)
+        for number, match in enumerate(details["matches"], 1):
+            print(f"{number}. 時間={field(match['timestamp_utc'])} Epoch={field(match['epoch'])} "
+                  f"位移={match['offset']}..{match['next_offset']} | {field(match['preview'])}")
+        print(f"搜尋結果：已列出 {len(details['matches'])} 筆；選取 RX bytes：{details['selected_bytes']}。")
+        if details["limited"]:
+            print("已達結果上限，後續停止比對；仍已完成整份完整性掃描，請縮小時間或 Epoch 範圍。")
+        states = {"no_known_gap": "對已觀測資料無已知缺口", "unknown": "連續性未知", "incomplete": "資料不完整"}
+        print(f"整份錄製檢查：{states[result['integrity']]}；正常收尾：{'是' if result['closed_cleanly'] else '否'}。")
+        for issue in result["issues"]:
+            print("注意：" + issue)
+        print("時間篩選不納入缺少有效時間的區塊；此結果不代表 UART／USB／Driver 前段零遺失。")
+        return 0 if result["integrity"] == "no_known_gap" else 2
     if args.command == "recording-play":
         from .recording_play import playback
-        result = await playback(args.directory, terminal=args.terminal)
+        result = await playback(args.directory, terminal=args.terminal, selection=selection)
         return 0 if result["integrity"] == "no_known_gap" else 2
     if args.command == "recording-text":
         from .recording_text import export_text
-        result = await asyncio.to_thread(export_text, args.directory, args.output)
-        print(f"已匯出文字：{args.output}；RX bytes：{result['rx_bytes']}。", flush=True)
+        result = await asyncio.to_thread(export_text, args.directory, args.output, selection=selection)
+        print(f"已匯出文字：{args.output}；選取 RX bytes：{result['selected_bytes']}；整份 RX bytes：{result['rx_bytes']}。", flush=True)
         if result["integrity"] != "no_known_gap":
             print("原錄製不完整或連續性未知，請查看輸出末尾的檢查摘要。", file=sys.stderr, flush=True)
             return 2
@@ -484,7 +525,8 @@ async def run(args: argparse.Namespace) -> int:
 
             return await launch_channels(channels, monitor_group,
                 gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
-                startup_timeout=args.startup_timeout, record_directory=args.record_dir)
+                startup_timeout=args.startup_timeout, record_directory=args.record_dir,
+                **({"capture_ready": args.capture_ready} if getattr(args, "capture_ready", None) else {}))
         selector = getattr(args, "selected_adapter", None)
         if args.select and selector is None:
             raise ValueError("尚未完成端點選擇，請使用 uart local --select 進入選單。")
@@ -494,7 +536,8 @@ async def run(args: argparse.Namespace) -> int:
         return await launch_local(args.serial_port, monitor,
                                   gateway_port=args.gateway_port if args.gateway_port is not None else args.port,
                                   startup_timeout=args.startup_timeout, selector=selector,
-                                  record_directory=args.record_dir)
+                                  record_directory=args.record_dir,
+                                  **({"capture_ready": args.capture_ready} if getattr(args, "capture_ready", None) else {}))
     token = read_client_token(args)
     async with await Client.connect(args.host, args.port, token) as client:
         if args.command == "channels":
@@ -539,6 +582,8 @@ def main() -> None:
     menu_mode = menu.add_mutually_exclusive_group()
     menu_mode.add_argument("--remote", action="store_true", help="連線既有 Gateway，選擇一條 Channel 監看")
     menu_mode.add_argument("--recordings-dir", type=Path, default=Path("recordings"), help="本機錄製與瀏覽的根目錄，預設 recordings")
+    menu.add_argument("--preferences-file", type=Path, default=Path(".uart-workbench.local.json"),
+                      help="本機上次啟動設定，僅保存設定檔路徑與錄製選擇")
     menu.add_argument("--pause-on-error", action="store_true", help="失敗時按 Enter 關閉，供雙擊入口使用")
     play = commands.add_parser("recording-play", help="離線快速回看錄製，不連線 UART")
     play.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
@@ -548,6 +593,20 @@ def main() -> None:
     export = commands.add_parser("recording-text", help="將錄製所有分段匯出成可讀 UTF-8 文字")
     export.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
     export.add_argument("--output", type=Path, required=True, help="新文字檔路徑；不覆寫既有檔案")
+    search = commands.add_parser("recording-search", help="離線搜尋 UTF-8 字面關鍵字，列出時間、Epoch 與位移")
+    search.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
+    search.add_argument("--keyword", required=True, help="區分大小寫的字面文字，最多 4096 UTF-8 bytes")
+    search.add_argument("--max-results", type=int, default=200, help="最多列出 1 至 1000 筆，預設 200")
+    for command in (play, export, search):
+        command.add_argument("--epoch", help="只選此 Epoch 的 RX，仍掃描整份完整性")
+        command.add_argument("--from-time", help="含時區 ISO 8601 起始時間，包含此時間")
+        command.add_argument("--to-time", help="含時區 ISO 8601 結束時間，包含此時間")
+    start = commands.add_parser("start", help="依 Gateway 設定啟動、選擇錄製並進入本機 RX 工作區")
+    start.add_argument("--config", type=Path, required=True, help="既有 Gateway TOML；只接受一至兩路 RX 設定")
+    recording = start.add_mutually_exclusive_group()
+    recording.add_argument("--record-dir", type=Path, help="本次啟用錄製，原設定檔不變")
+    recording.add_argument("--no-record", action="store_true", help="本次停用錄製，省略則沿用設定")
+    start.add_argument("--startup-timeout", type=float, default=20, help="等待全部目標通道就緒的秒數")
     local = commands.add_parser("local", help="啟動自己的只讀 Gateway 並監控 RX")
     source = local.add_mutually_exclusive_group()
     source.add_argument("--port", dest="serial_port", default="COM3", help="本次使用的 Serial 端點，預設 COM3")
@@ -610,15 +669,20 @@ def main() -> None:
                 raise SystemExit(run_remote_workbench(connect, monitor, host=args.host, port=args.port,
                                                      monitor_group=monitor_group))
             from .workbench import run_workbench
+            from .workbench_state import WorkbenchSession
+            session = WorkbenchSession()
             _check_local_args(args)
 
             def dispatch(argv: list[str]) -> int:
                 child = parser.parse_args(["--port", str(args.port), *argv])
+                child.capture_ready = session.capture_ready
+                child.search_ready = session.search_ready
                 if child.command == "local" and child.select:
                     return _run_selected(child)
                 return asyncio.run(run(child))
 
-            raise SystemExit(run_workbench(dispatch, recordings=args.recordings_dir))
+            raise SystemExit(run_workbench(dispatch, recordings=args.recordings_dir, session=session,
+                                           preferences_file=args.preferences_file))
         if args.command == "local" and args.select:
             raise SystemExit(_run_selected(args))
         raise SystemExit(asyncio.run(run(args)))

@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+from collections.abc import Callable
 from dataclasses import asdict
 import json
 import logging
@@ -40,6 +41,12 @@ def secret(reference: str) -> str:
 
 def load(path: Path, *, fake: bool = True) -> tuple[Gateway, str, int]:
     config = tomllib.loads(path.read_text(encoding="utf-8"))
+    return assemble(config, fake=fake)
+
+
+def assemble(config: dict, *, fake: bool = True,
+             resolve_secret: Callable[[str], str] = secret) -> tuple[Gateway, str, int]:
+    """共用純組裝／驗證入口；不啟動 Listener 或開啟 Serial。"""
     _keys(config, {"channels", "auth"}, {"network", "gateway", "recording"})
     recording = config.get("recording", {})
     _keys(recording, set(), {"enabled", "directory", "queue_bytes", "segment_bytes", "max_capture_bytes"})
@@ -104,7 +111,7 @@ def load(path: Path, *, fake: bool = True) -> tuple[Gateway, str, int]:
             identifier(cid)
         if not all(isinstance(permission, str) for permission in entry["permissions"]):
             raise ValueError("認證權限型別不合法")
-        principals.append(Principal(entry["id"], secret(entry["token_secret_ref"]),
+        principals.append(Principal(entry["id"], resolve_secret(entry["token_secret_ref"]),
             {cid: frozenset(entry["permissions"]) for cid in entry["channels"]}))
     return Gateway(channels, tuple(principals), lifecycle_timeout=lifecycle_ms / 1000,
                    recording=recording_settings), host, port

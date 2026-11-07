@@ -18,14 +18,15 @@ ERRORS = (OSError, ValueError, ProtocolError, RemoteError, TimeoutError)
 
 class RemoteGroup:
     def __init__(self, connect: Callable[[], Awaitable[Client]], channels: list[dict], instance: str, *,
-                 watch: Callable[..., Awaitable[int]], sink: "_WatchOutput"):
-        if len(channels) != 2 or len({c["channel_id"] for c in channels}) != 2:
-            raise ValueError("雙路畫面需要兩個不同的 Channel。")
+                 watch: Callable[..., Awaitable[int]], sink: "_WatchOutput", owned: bool = False):
+        if not 1 <= len(channels) <= 2 or len({c["channel_id"] for c in channels}) != len(channels):
+            raise ValueError("工作區需要一至兩個不同的 Channel。")
         self.connect, self.instance, self.watch, self.sink = connect, instance, watch, sink
         self.channels = list(channels)
         self.tasks: dict[str, asyncio.Task] = {}
         self.states: dict[str, str] = {}
         self.valid = True
+        self.owned = owned
 
     def report(self, message: str) -> None:
         self.sink.put(RESET + "\n[工作台] " + message + "\n", diagnostic=True)
@@ -34,6 +35,8 @@ class RemoteGroup:
         return cid in self.tasks and not self.tasks[cid].done()
 
     def start(self, number: int, *, replay: bool) -> None:
+        if not 1 <= number <= len(self.channels):
+            raise ValueError("通道編號超出目前工作區範圍。")
         channel = self.channels[number - 1]
         cid = channel["channel_id"]
         if not self.valid:
@@ -53,14 +56,17 @@ class RemoteGroup:
                 self.states[cid] = "監看中（訂閱仍須通過快照核對）"
                 result = await self.watch(client, cid, duration=None, text_mode=True, replay=replay,
                     terminal_mode=True, shared_sink=self.sink,
-                    label=f"{label(cid)}／{label(channel['label'])}", expected_context=expected)
+                    label=f"{label(cid)}／{label(channel['label'])}" if len(self.channels) > 1 else None,
+                    expected_context=expected)
             self.states[cid] = "訂閱已停止" if result else "監看已結束"
-            self.report(f"{label(cid)}：{self.states[cid]}；另一路繼續，R 查詢後可 O 重開或 S 重新監看。")
+            other = "另一路繼續，" if len(self.channels) > 1 else ""
+            self.report(f"{label(cid)}：{self.states[cid]}；{other}R 查詢後可 O 重開或 S 重新監看。")
         except ERRORS as exc:
             self.states[cid] = "監看失敗"
             code = getattr(exc, "code", type(exc).__name__)
             detail = "請核對 Token 來源。" if code == "AUTH_FAILED" else label(exc)
-            self.report(f"{label(cid)}：監看失敗（{label(code)}）：{detail}；未自動重連，另一路繼續。")
+            other = "，另一路繼續" if len(self.channels) > 1 else ""
+            self.report(f"{label(cid)}：監看失敗（{label(code)}）：{detail}；未自動重連{other}。")
 
     async def refresh(self) -> None:
         instance, channels = await query_channels(self.connect)
@@ -74,7 +80,7 @@ class RemoteGroup:
         self.show()
 
     def show(self) -> None:
-        self.report(f"雙路工作區；Gateway Instance：{label(self.instance)}；狀態為最近查詢快照。")
+        self.report(f"{'本機 RX' if self.owned else '雙路'}工作區；Gateway Instance：{label(self.instance)}；狀態為最近查詢快照。")
         for number, channel in enumerate(self.channels, 1):
             cid = channel["channel_id"]
             error = channel.get("last_error") or {}
@@ -84,7 +90,9 @@ class RemoteGroup:
                 f"通道：{states.get(channel['state'], '未知')} | 接收：{self.states.get(cid, '未監看')} | "
                 f"修訂：{label(channel['binding']['revision'])} | Epoch：{label(channel['stream_epoch'] or '無')}" +
                 (f" | 錯誤：{label(error.get('code'))}：{label(error.get('message'))}" if error else ""))
-        self.report("輸入指令後按 Enter：R 查詢；O 1／O 2 手動重開；S 1／S 2 重新監看；Q 返回清單；Ctrl+C 停止雙路。")
+        numbers = "／".join(str(n) for n in range(1, len(self.channels) + 1))
+        end = "Q 或 Ctrl+C 結束並清理本次 Gateway。" if self.owned else "Q 返回清單；Ctrl+C 停止雙路。"
+        self.report(f"輸入指令後按 Enter：R 查詢；O {numbers} 手動重開；S {numbers} 重新監看；{end}")
 
     async def reopen(self, number: int, selected: dict) -> None:
         if not self.valid:
@@ -114,11 +122,12 @@ class RemoteGroup:
 async def run_remote_group(connect: Callable[[], Awaitable[Client]], channels: list[dict], instance: str,
                            replay: bool, *, watch: Callable[..., Awaitable[int]],
                            sink_factory: Callable[[], "_WatchOutput"],
-                           poll: Callable[[], str | None] | None = None) -> int:
-    if len(channels) != 2 or len({c["channel_id"] for c in channels}) != 2:
+                           poll: Callable[[], str | None] | None = None, owned: bool = False) -> int:
+    if ((len(channels) != 2 and not (owned and len(channels) == 1))
+            or len({c["channel_id"] for c in channels}) != len(channels)):
         raise ValueError("雙路畫面需要兩個不同的 Channel。")
     sink = sink_factory()
-    group = RemoteGroup(connect, channels, instance, watch=watch, sink=sink)
+    group = RemoteGroup(connect, channels, instance, watch=watch, sink=sink, owned=owned)
     pending = None
     try:
         poll = poll or ConsoleInput(echo=group.report).poll
@@ -136,14 +145,14 @@ async def run_remote_group(connect: Callable[[], Awaitable[Client]], channels: l
             try:
                 command = poll()
             except EOFError:
-                group.report("輸入來源已結束（EOF），停止雙路監看並返回清單。")
+                group.report("輸入來源已結束（EOF），結束並清理本次 Gateway。" if owned else "輸入來源已結束（EOF），停止雙路監看並返回清單。")
                 return 0
             if command is None:
                 await asyncio.sleep(0.05)
                 continue
             command = command.strip().casefold()
             if command == "q":
-                group.report("停止雙路監看並返回清單；Gateway 繼續執行。")
+                group.report("停止監看，正在清理本次 Gateway。" if owned else "停止雙路監看並返回清單；Gateway 繼續執行。")
                 return 0
             if pending is not None:
                 number, selected = pending
@@ -164,6 +173,8 @@ async def run_remote_group(connect: Callable[[], Awaitable[Client]], channels: l
                     group.start(int(command[-1]), replay=False)
                 elif command in ("o 1", "o 2"):
                     number = int(command[-1])
+                    if number > len(group.channels):
+                        raise ValueError("通道編號超出目前工作區範圍。")
                     selected = group.channels[number - 1]
                     if not group.valid or not selected.get("reopen_rx_available"):
                         raise ValueError("缺少有效快照、重開能力或 configure 權限；請 R 查詢或返回清單。")

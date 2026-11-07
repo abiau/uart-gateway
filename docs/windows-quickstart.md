@@ -8,21 +8,57 @@
 
 本次固定只讀：不 Confirm、不取得 TX Lease、不補換行、不發送 IPCAM 指令。DTR／RTS 沿用 false，不新增控制線操作；軟體設定不能證明 Driver 開啟瞬間沒有脈衝。
 
-## 日常入口：互動式工作台（新功能）
+## 日常入口：開始監看、查看本次錄製與搜尋片段
 
-更新並完成安裝後，可雙擊 `run-workbench.cmd`，或在專案根目錄的 PowerShell 執行：
+更新並完成安裝後，在專案根目錄雙擊 `run-workbench.cmd`，或執行：
 
 ```powershell
 .\.venv\Scripts\uart.exe menu
 ```
 
-選單整合本機裝置清單、單／雙通道監看、錄製、使用已存配置，以及錄製檔的檢查、回看與文字匯出。選 3 可選 UART 並錄製，預設存到 `recordings`；監控中 Ctrl+C 會清理本次 Gateway，再返回工作台。選 5 可手動選擇已有的錄製 Channel，不會自動播放最新檔案。
+1. 按 **S** 開始監看。COM3 可直接使用預設；其他端點按 **D → 4**，從裝置清單選一至兩條。需要 COM3／COM4 人工 RX 恢復時，可用 D 的 2／3；使用私人 Gateway TOML 則按 M。
+2. 按 **R** 開啟錄製，確認摘要的裝置與輸出位置，再按 **Enter** 啟動。下次進入 S 會帶回上次設定，仍需 Enter 才開始；裝置改變時重新核對，不會直接相信舊 COM。
+3. 確認有 IPCAM 資料後按 **Q**，等待「已清理本次啟動的 Gateway」。回主畫面按 **L** 查看本次錄製；雙路再選通道，先用 **I** 確認正常收尾與資料量。L 使用本次程序回報，與磁碟中哪個目錄較新無關。
+4. 按 **S** 搜尋確定存在的文字，例如 `ERROR`、`ps` 或某段開機訊息。輸入命中編號，按 Enter 回看前後各 30 秒；**W** 可調整秒數，**T → Enter** 匯出這一段，完成時會顯示新檔案位置。
+5. 需自訂範圍時按 **F**，依清單輸入資料流編號，再輸入起迄分鐘，例如 5／10。這是錄製起點後第 5～10 分鐘；也支援含時區的完整時間。三欄 Enter 清除篩選。
+6. 主畫面 **5** 可瀏覽其他錄製：先依日期選 Capture，同次雙路分組呈現，再選 Channel。未收尾仍會提示；預覽「已收尾」不等於完整性已驗證。選定後 D 可看完整路徑。
 
-晚上先用既有錄製檔測選 5 的 I／V／T，再用單 UART 測選 3；Ctrl+C 後確認返回工作台，能再次啟動。雙 UART 在兩組設備齊備時另測。選單輸入處 Q／Enter 或 Ctrl+C 可離開，EOF 也會明示並退出。
+自動匯出預設存到 `recordings\exports`，可用 `uart menu --recordings-dir 'D:\uart-recordings'` 改根目錄。偏好預設保存在專案的 `.uart-workbench.local.json`，僅含設定／端點 Profile 路徑及錄製選擇；自動選端點的 Profile 為 `.uart-workbench-*.local.toml`。兩者都不包含 Token，已由 Git 忽略。
 
-需要其他錄製位置，可執行 `uart menu --recordings-dir 'D:\uart-recordings'`。所有文字匯出與 Profile 保存仍只建立新檔。若無法確認 Gateway 已清理，整個工作台會停止，不會繼續開啟端點。
+原進階工具移到 A，舊教學的 1／2／3／4／6 仍可直接輸入；遠端選單仍使用 `menu --remote`。所有新便利操作沿用原就緒、權限、清理與完整性檢查；若清理不明，工作台會停止。
 
-此入口屬本機／離線操作；需要 d3s1 遠端 RX 時，使用後文原手動 Gateway、共用 Token 與 watch 流程。詳細選單、限制與驗收見 [工作台說明](workbench.md)。目前為 Linux／PTY 自動化驗證，Win11 雙擊、Ctrl+C 及實體 UART 工作台流程尚待實測。
+本節新增的簡化流程目前僅有 Linux／虛擬 Serial 自動化證據，**尚待 Win11 實機驗證**。請另測重啟工作台後設定記憶、Q／Ctrl+C、雙路 L 選檔、搜尋命中回看及自動匯出；公司 dxan 新工作區與恢復仍待回公司執行。
+
+## 進階整合入口與命令列驗收（尚待 Win11）
+
+以下保留進階命令的個別驗收。先關閉使用相同 COM 的舊 Gateway／MobaXterm，回到專案根目錄雙擊 `run-workbench.cmd`，或執行 `uart.exe menu`。
+
+1. 選 **6**，COM3 選 **2**（只收 RX，另有手動重開權限）；COM3／COM4 雙路選 **3**。也可 M 指定既有完整 Gateway TOML；COM 名稱不同先修改私人副本。
+2. 錄製選 **Y**，待全部 Channel Ready 與錄製健康檢查通過後，確認有 UART 資料。按 **Q**，應看到本次 Gateway 已清理並回到主選單；再啟動一次以 **Ctrl+C** 關閉，也應清理後返回。不要用強制關視窗代替正常收尾。
+3. 選 **5**，清單應顯示時間、Channel／端點、收尾標記與 Epoch 數；C 看有收尾項目，U 看未收尾項目，A 還原。依剛剛建立的 Capture／Channel 明確選檔，先 I 檢查，確認正常收尾。若預覽達上限，Epoch 顯示至少若干，精確摘要以 I 為準。
+4. 選 **S**，輸入已知 log 文字，例如 `ERROR` 或 `ps`，查看命中的時間、Epoch 與位移；字面比對區分大小寫。沒有命中是合法結果，可換成確定有輸出的文字。
+5. 選 **F**，填入 I 列出的 Epoch，時間先 Enter 不限；選 V 回看、T 指定新檔匯出，應只含該世代 RX。再以 F 填入一段已錄到的含時區起迄時間，比對 S／V／T。三欄 Enter 可清除篩選。原裝置曾遺失的 Capture 即使只選新 Epoch，仍應保留整份連續性未知警告。
+6. 啟動期間另開入口嘗試相同 COM，應顯示占用／重複啟動提示，原監看繼續。已有獨立 Gateway 時，新入口應失敗而不關閉原程序。未收尾 Capture 回看／搜尋／匯出應提示，非 Y 不執行；I 仍可直接檢查。
+
+若只想用一條命令整合啟動：
+
+```powershell
+.\.venv\Scripts\uart.exe start --config .\examples\gateway.com3.rx-reopen.toml --record-dir .\recordings
+```
+
+標準 Token 環境變數未設時會使用本次臨時憑證，無須手動生成。此憑證只給本機工作區；要從其他終端或 dxan 連線時，沿用下節共用 Token 參照與 SSH 流程。Q／Ctrl+C 會停止這次整合啟動的 Gateway，不適合要在退出選單後維持的常駐服務。
+
+離線命令可直接指定既有的 **Channel 目錄**（以下 $UartChannel 須先設為實際目錄，不自動猜最新 Capture）：
+
+```powershell
+$UartChannel = Read-Host '輸入已停止錄製的完整 Channel 目錄'
+.\.venv\Scripts\uart.exe recording-search $UartChannel --keyword 'ERROR'
+.\.venv\Scripts\uart.exe recording-play $UartChannel --terminal --from-time '2026-11-06T19:05:00Z' --to-time '2026-11-06T19:06:00Z'
+$UartEpoch = Read-Host '貼上 recording-info 列出的 Epoch'
+.\.venv\Scripts\uart.exe recording-text $UartChannel --epoch $UartEpoch --output .\uart-selected.txt
+```
+
+範例時間請換成實際錄製時間，可用 `2026-11-07T03:05:00+08:00` 表示台灣時間。篩選按 RX 區塊取整塊，包含兩端；文字輸出不得覆蓋既有檔案。新功能目前只有 Linux／虛擬 Serial 自動化證據，請回報 Win11 的上述結果；公司 dxan 新工作區測試仍待回公司另測。
 
 ## 遠端工作台：家裡同機與公司 dxan
 

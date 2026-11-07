@@ -160,6 +160,8 @@ class GroupTests(unittest.IsolatedAsyncioTestCase):
         self.devices[1].close()
         self.devices[0].close()
         await self.expect("[b／b] 裝置已失去連線")
+        # 兩個 Reader 獨立偵測遺失；B 已結束不代表 A 已更新狀態。
+        await eventually(lambda: all(c.state == "lost" for c in self.gateway.channels.values()))
         self.commands.append("r")
         await self.expect("通道：裝置遺失")
         with patch.object(self.devices[0], "open", wraps=self.devices[0].open) as opened:

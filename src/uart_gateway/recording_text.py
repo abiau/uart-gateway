@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .protocol.codec import binary_decode
 from .recording_info import inspect_capture
+from .recording_selection import RXSelection
 
 
 def visible(text: str) -> str:
@@ -18,7 +19,9 @@ class OutputError(Exception):
     """避免磁碟輸出錯誤被檢查器當成輸入檔損壞。"""
 
 
-def export_text(directory: Path, output: Path) -> dict:
+def export_text(directory: Path, output: Path, *, selection: RXSelection | None = None) -> dict:
+    selection = selection or RXSelection()
+    selected_chunks = selected_bytes = 0
     if output.suffix.lower() == ".jsonl":
         raise ValueError("文字輸出請使用 .txt 或 .log，避免與原錄製分段混淆。")
     # 先確認輸入目錄，避免參數錯誤時建立空白輸出。
@@ -55,7 +58,7 @@ def export_text(directory: Path, output: Path) -> dict:
         decoder.reset()
 
     def visit(record: dict | None) -> None:
-        nonlocal epoch, offset, last_prefix
+        nonlocal epoch, offset, last_prefix, selected_chunks, selected_bytes
         if record is None:
             boundary()
             write("[注意] 檢查發現不連續或異常；請以匯出末尾的完整性摘要為準。\n")
@@ -63,6 +66,12 @@ def export_text(directory: Path, output: Path) -> dict:
             return
         kind = record["type"]
         if kind == "rx":
+            if not selection.accepts(record):
+                boundary()
+                epoch, offset = None, 0
+                return
+            selected_chunks += 1
+            selected_bytes += int(record["next_offset"]) - int(record["offset"])
             current_epoch = record["stream_epoch"]
             start, end = int(record["offset"]), int(record["next_offset"])
             if current_epoch != epoch or start != offset:
@@ -96,10 +105,15 @@ def export_text(directory: Path, output: Path) -> dict:
             write("UART RX 可讀文字；匯出中，末尾必須有「匯出完成」才代表匯出已收尾。\n"
                   "原區塊位移不包含右端點；跨區塊字元於完成解碼時顯示並標示續字元。\n"
                   "控制字元與非 UTF-8 bytes 以跳脫形式顯示；此文字檔不是原始 bytes 的替代品。\n")
+            if selection.active:
+                write("[篩選] " + selection.description + "缺少有效時間的區塊不納入時間篩選。\n")
             result = inspect_capture(directory, on_record=visit)
+            result["selected_chunks"], result["selected_bytes"] = selected_chunks, selected_bytes
             boundary()
             status = {"no_known_gap": "對已觀測資料無已知缺口", "unknown": "連續性未知", "incomplete": "資料不完整"}[result["integrity"]]
             write(f"[匯出完成] {status}；RX bytes={result['rx_bytes']}；分段={result['segments']}。\n")
+            if selection.active:
+                write(f"[選取範圍] RX 區塊={selected_chunks}；RX bytes={selected_bytes}；完整性摘要屬整份錄製。\n")
             for issue in result["issues"]:
                 write("[注意] " + issue + "\n")
             write("此結果不代表 UART／USB／Driver 前段零遺失。\n")

@@ -9,6 +9,7 @@ from typing import TextIO
 
 from .protocol.codec import binary_decode
 from .recording_info import inspect_capture
+from .recording_selection import RXSelection
 from .recording_text import visible
 from .text_renderer import RESET, TerminalRenderer
 
@@ -22,7 +23,9 @@ class PlaybackOutputError(Exception):
 
 
 def play_capture(directory: Path, *, terminal: bool, stop: threading.Event,
-                 stdout: TextIO, stderr: TextIO) -> dict:
+                 stdout: TextIO, stderr: TextIO, selection: RXSelection | None = None) -> dict:
+    selection = selection or RXSelection()
+    selected_chunks = selected_bytes = 0
     decoder = codecs.getincrementaldecoder("utf-8")(errors="backslashreplace")
     renderer = TerminalRenderer() if terminal else None
     epoch, offset, revision = None, 0, None
@@ -60,7 +63,7 @@ def play_capture(directory: Path, *, terminal: bool, stop: threading.Event,
         return visible(str(value)).replace("\n", "\\n").replace("\t", "\\t")
 
     def visit(record: dict | None) -> None:
-        nonlocal epoch, offset, revision, first_header
+        nonlocal epoch, offset, revision, first_header, selected_chunks, selected_bytes
         if stop.is_set():
             raise PlaybackCancelled
         if record is None:
@@ -70,6 +73,12 @@ def play_capture(directory: Path, *, terminal: bool, stop: threading.Event,
             return
         kind = record["type"]
         if kind == "rx":
+            if not selection.accepts(record):
+                boundary()
+                epoch, offset, revision = None, 0, None
+                return
+            selected_chunks += 1
+            selected_bytes += int(record["next_offset"]) - int(record["offset"])
             current = record["stream_epoch"]
             start, end = int(record["offset"]), int(record["next_offset"])
             binding = record.get("binding_revision")
@@ -104,12 +113,17 @@ def play_capture(directory: Path, *, terminal: bool, stop: threading.Event,
         if stop.is_set():
             raise PlaybackCancelled
         write(stderr, "離線回看開始；依序快速顯示錄製內容，並非即時 UART。完整性須以最後摘要為準。\n")
+        if selection.active:
+            write(stderr, "[篩選] " + selection.description + "缺少有效時間的區塊不納入時間篩選。\n")
         result = inspect_capture(directory, on_record=visit)
+        result["selected_chunks"], result["selected_bytes"] = selected_chunks, selected_bytes
         if stop.is_set():
             raise PlaybackCancelled
         boundary()
         states = {"no_known_gap": "對已觀測資料無已知缺口", "incomplete": "資料不完整", "unknown": "連續性未知"}
         note(f"[離線回看完成] {states[result['integrity']]}；RX bytes={result['rx_bytes']}；分段={result['segments']}。")
+        if selection.active:
+            note(f"[選取範圍] RX 區塊={selected_chunks}；RX bytes={selected_bytes}；上方完整性摘要屬整份錄製。")
         for issue in result["issues"]:
             write(stderr, "注意：" + issue + "\n")
         return result
@@ -129,12 +143,12 @@ def play_capture(directory: Path, *, terminal: bool, stop: threading.Event,
                 failure.add_note(str(exc))
 
 
-async def playback(directory: Path, *, terminal: bool) -> dict:
+async def playback(directory: Path, *, terminal: bool, selection: RXSelection | None = None) -> dict:
     if terminal and not sys.stdout.isatty():
         raise ValueError("終端回看需要互動式終端機；輸出到檔案請使用 recording-text。")
     stop = threading.Event()
     task = asyncio.create_task(asyncio.to_thread(play_capture, directory, terminal=terminal,
-        stop=stop, stdout=sys.stdout, stderr=sys.stderr))
+        stop=stop, stdout=sys.stdout, stderr=sys.stderr, selection=selection))
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError as exc:
