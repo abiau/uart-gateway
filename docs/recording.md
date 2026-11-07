@@ -4,7 +4,13 @@
 
 使用者已授權只讀 RX 錄製。沿用 ADR-006：錄製在 Gateway，每通道一個有界非同步 Writer，不依賴 Client 訂閱、顯示模式或 SSH Tunnel；Core 只提供同步、不可阻塞的事件觀察回呼，檔案與協定轉換由 Server 負責。預設關閉，`uart local --record-dir 路徑` 明確啟用；手動 Gateway 使用 `[recording]`。不新增 UART 傳送或控制線操作。
 
-每次 Gateway 在指定目錄下建立唯一的 `capture-<instance>/<channel_id>`，不覆寫舊資料。各通道分段寫入 `000001.jsonl` 等 UTF-8 JSON Lines。記憶體佇列上限 1024 項及 1 MiB（包含寫入中資料），預設每段 64 MiB、每次每通道合計 1 GiB，包含 Metadata／Footer；達上限停止該通道錄製，明確回報不完整。此切片不自動刪除舊 Capture，跨啟動的年齡／總容量保留管理仍待後續實作。
+每次 Gateway 在指定目錄下建立唯一的 `capture-<instance>/<channel_id>`，不覆寫舊資料。各通道分段寫入 `000001.jsonl` 等 UTF-8 JSON Lines。記憶體佇列上限 1024 項及 1 MiB（包含寫入中資料），預設每段 64 MiB、每次每通道合計 1 GiB，包含 Metadata／Footer。達上限時停止該通道錄製，透過健康事件告警，並使用預留空間寫入標示不完整的 Footer。
+
+## 跨次錄製保留管理
+
+使用 `uart recording-retention <錄製根目錄> --days 7 --max-bytes 1073741824` 預覽。可只指定一項條件，兩項同時指定時先依期限移除，再依總量從最舊的 Capture 開始。核對候選清單後，以原參數加 `--apply <plan>` 套用。計畫改變時須重新預覽。清理只處理具有完整收尾結構、可驗證雜湊的 Capture；錄製中、已知不完整或不符合格式的目錄保留。受保護 Capture 可能使容量目標無法達成，結果會顯示 `target_exceeded`。掃描採有界中繼資料；套用才逐份檢查雜湊及原始完整性。
+
+清理前先在同一錄製根目錄將目標移入 `.retention-…` 暫存名稱，再移除已核對的分段。作業中斷時，預覽會列出這些暫存目錄供人工檢查。保留操作由操作者明確觸發。
 
 ## 檔案格式 V1
 

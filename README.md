@@ -20,6 +20,8 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 ## 目標與設計方向
 
+日常管理可用 `uart recording-retention` 預覽與清理舊錄製，`uart audit` 查操作紀錄，`uart gateway-config` 比對設定版本，或以 `uart --access manage configure-rx` 調整單路 UART。 [錄製保留](docs/recording.md) · [Gateway 設定與稽核](docs/configuration.md)
+
 - 單一 Windows Gateway Process（程序），內部採模組化。
 - 支援獨立 Channel（邏輯通道），避免把 Adapter（轉接器）、COM 名稱與 Project（專案）永久綁死。
 - RX 可供多個 Client 訂閱，具有有界緩衝、Replay（重播）及 Gap（資料缺口）回報。

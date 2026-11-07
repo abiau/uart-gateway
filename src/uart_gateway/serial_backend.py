@@ -122,6 +122,11 @@ class PySerialBackend:
     def reopen_rx(self) -> None:
         self._open(self._identity)
 
+    def set_settings(self, settings: SerialSettings) -> None:
+        if self._serial is not None:
+            raise RuntimeError("變更設定前必須關閉 Serial Handle。")
+        self.settings = settings
+
     def _open(self, expected: AdapterInfo | None = None) -> None:
         if self._serial is not None:
             raise SerialBackendError("PORT_BUSY", "此 Backend 尚有未釋放的 Handle，請先關閉。")

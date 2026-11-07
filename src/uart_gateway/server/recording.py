@@ -16,6 +16,10 @@ LOG = logging.getLogger(__name__)
 FOOTER_RESERVE = 8192
 
 
+class RecordingCapacityError(OSError):
+    """容量確定不足，現有分段仍保留收尾空間。"""
+
+
 @dataclass(frozen=True)
 class RecordingConfig:
     directory: Path
@@ -100,14 +104,18 @@ class Recorder:
         self.directory.mkdir(parents=True, mode=0o700, exist_ok=False)
         self._open_segment()
 
-    def _open_segment(self) -> None:
+    def _header(self, segment: int) -> bytes:
+        return encode_record({"type": "segment_start", "recording_format_version": 1,
+            "capture_id": f"{self.instance}:{self.channel_id}", "gateway_instance_id": self.instance,
+            "channel_id": self.channel_id, "segment": segment, "timestamp_utc": utc_now(),
+            "channel": self.channel})
+
+    def _open_segment(self, header: bytes | None = None) -> None:
         self.segment += 1
         self.segment_used = 0
         self.digest = hashlib.sha256()
-        header = encode_record({"type": "segment_start", "recording_format_version": 1,
-            "capture_id": f"{self.instance}:{self.channel_id}", "gateway_instance_id": self.instance,
-            "channel_id": self.channel_id, "segment": self.segment, "timestamp_utc": utc_now(),
-            "channel": self.channel})
+        if header is None:
+            header = self._header(self.segment)
         if (len(header) + FOOTER_RESERVE > self.config.segment_bytes or
                 self.total_used + len(header) + FOOTER_RESERVE > self.config.max_capture_bytes):
             raise OSError("錄製已達本次容量上限")
@@ -124,9 +132,12 @@ class Recorder:
         if hashed:
             self.digest.update(raw)
 
-    def _finish_segment(self, *, final: bool) -> None:
-        footer = encode_record({"type": "segment_end", "final": final, "integrity": self.integrity,
+    def _footer(self, final: bool) -> bytes:
+        return encode_record({"type": "segment_end", "final": final, "integrity": self.integrity,
             "reason_code": self.reason, "timestamp_utc": utc_now(), "sha256": self.digest.hexdigest()})
+
+    def _finish_segment(self, *, final: bool) -> None:
+        footer = self._footer(final)
         footer_offset = self.segment_used
         try:
             self._raw_write(footer, hashed=False)
@@ -144,12 +155,16 @@ class Recorder:
     def _write(self, raw: bytes, snapshot: dict | None) -> None:
         if snapshot is not None:
             self.channel = snapshot
-        if self.segment_used + len(raw) + FOOTER_RESERVE > self.config.segment_bytes:
+        required = len(raw) + FOOTER_RESERVE
+        if self.segment_used + required > self.config.segment_bytes:
+            header = self._header(self.segment + 1)
+            if (len(header) + required > self.config.segment_bytes or
+                    self.total_used + len(self._footer(False)) + len(header) + required > self.config.max_capture_bytes):
+                raise RecordingCapacityError("錄製已達本次容量上限")
             self._finish_segment(final=False)
-            self._open_segment()
-        if (self.segment_used + len(raw) + FOOTER_RESERVE > self.config.segment_bytes
-                or self.total_used + len(raw) + FOOTER_RESERVE > self.config.max_capture_bytes):
-            raise OSError("錄製已達本次容量上限")
+            self._open_segment(header)
+        if self.total_used + required > self.config.max_capture_bytes:
+            raise RecordingCapacityError("錄製已達本次容量上限")
         self._raw_write(raw)
         self.file.flush()
 
@@ -200,6 +215,12 @@ class Recorder:
                     self.used -= len(raw)
             if self.file is not None:
                 await disk_io(self._finish_segment, final=True)
+        except RecordingCapacityError:
+            self.fail("RECORDING_IO_FAILED", "本次錄製已達容量上限")
+            try:
+                await disk_io(self._finish_segment, final=True)
+            except OSError:
+                LOG.error("通道 %s 達容量上限後無法收尾。", self.channel_id)
         except OSError:
             self.fail("RECORDING_IO_FAILED", "寫入、刷新或分段失敗，請檢查磁碟空間與本次容量上限")
         finally:

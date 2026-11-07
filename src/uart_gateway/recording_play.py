@@ -147,15 +147,22 @@ async def playback(directory: Path, *, terminal: bool, selection: RXSelection | 
     if terminal and not sys.stdout.isatty():
         raise ValueError("終端回看需要互動式終端機；輸出到檔案請使用 recording-text。")
     stop = threading.Event()
-    task = asyncio.create_task(asyncio.to_thread(play_capture, directory, terminal=terminal,
-        stop=stop, stdout=sys.stdout, stderr=sys.stderr, selection=selection))
+
+    async def scan() -> dict:
+        try:
+            return await asyncio.to_thread(play_capture, directory, terminal=terminal,
+                stop=stop, stdout=sys.stdout, stderr=sys.stderr, selection=selection)
+        except PlaybackCancelled:
+            raise asyncio.CancelledError from None
+
+    task = asyncio.create_task(scan())
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError as exc:
         stop.set()
         try:
             await task
-        except PlaybackCancelled:
+        except asyncio.CancelledError:
             pass
         except Exception as cleanup:
             exc.add_note(f"回看清理另有錯誤：{cleanup}")

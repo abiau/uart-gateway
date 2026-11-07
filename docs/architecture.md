@@ -174,6 +174,8 @@ Confirm 對已開啟的唯讀端點可保留 Handle（裝置控制代碼），�
 
 Server Restart、裝置遺失及設定變更後取消既有確認資格。是否採用這個啟動與再次確認政策，見狀態文件 Q-05；不應假裝這是已核准操作偏好。
 
+單路 UART 參數調整重用 Rebind 的生命週期及裝置身分核對，完成後與人工 RX 重開一樣須重新確認 TX 目標。執行期調整保存在通道與 Backend；持久設定以本機 TOML 版本管理輸出新版。
+
 ## Session 與 Lease 生命週期
 
 歷史重播交由 Session 的單一 Writer 逐筆編碼與傳送，Response 優先、不同訂閱輪流排程，同一訂閱必須先送完快照再送已排入有界 Queue 的 Live。快照共用每 Session 兩倍 Ring 的預算與有期限保留，不會將大量歷史一次塞進訂閱即時 Queue。取消、Epoch 結束、期限或連線關閉釋放引用；配額不足撤銷當次新訂閱並回 QUEUE_FULL。此為 Server 內部排程修正，Core、SDK 及線上契約不變；限額見設定與協定文件。

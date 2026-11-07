@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import replace
 import json
 import logging
 import time
@@ -13,6 +14,7 @@ from uart_gateway.protocol.codec import binary_decode, binary_encode, read_frame
 from uart_gateway.protocol.errors import ProtocolError
 from uart_gateway.protocol.messages import request, uint, validate_params
 from .auth import Principal, authenticate
+from .audit import AUDITED, AuditConfig, AuditLog
 from .config import Limits
 from .session import Session
 from .views import event_message, snapshot, tx_result, unavailable
@@ -31,7 +33,7 @@ class Gateway:
                  *, limits: Limits | None = None, clock: Callable[[], float] = time.monotonic,
                  max_clients: int = 8, connection_queue_bytes: int = 1048576,
                  subscription_queue_bytes: int = 262144, lifecycle_timeout: float = 10,
-                 recording: RecordingConfig | None = None):
+                 recording: RecordingConfig | None = None, audit: AuditConfig | None = None):
         if not channels or len(channels) > 4 or len({c.id for c, _ in channels}) != len(channels):
             raise ValueError("通道數量或識別不合法")
         if len({c.label for c, _ in channels}) != len(channels) or not principals:
@@ -52,6 +54,7 @@ class Gateway:
             clock=clock, lifecycle_timeout=lifecycle_timeout, observe=self._observe) for cfg, port in channels}
         self.recorders = {cid: Recorder(recording, self.store.instance, cid,
             lambda health, cid=cid: self._recording_changed(cid, health)) for cid in self.channels} if recording else {}
+        self.audit = AuditLog(audit) if audit else None
         self.max_clients = max_clients
         self.connection_queue_bytes, self.subscription_queue_bytes = connection_queue_bytes, subscription_queue_bytes
         self.handlers: set[asyncio.Task] = set()
@@ -59,6 +62,12 @@ class Gateway:
         self.maintenance: asyncio.Task | None = None
 
     def notify(self, session_id: str, event: Event) -> None:
+        if self.audit and event.kind == "tx_result":
+            record = event.data["record"]
+            self.audit.record({"timestamp_utc": event.timestamp, "instance": self.store.instance,
+                "principal": record.principal, "session": record.session, "channel": record.channel_id,
+                "method": "tx.result", "tx_id": record.id, "outcome": record.state,
+                "reason": record.reason, "accepted_bytes": record.accepted})
         session = self.sessions.get(session_id)
         if session is not None and not session.closed:
             if event.kind == "subscription_state":
@@ -105,6 +114,8 @@ class Gateway:
             # 先保留接聽端點，避免 TCP Port 已占用時仍開啟 Serial。
             self.listener = await asyncio.start_server(self._accept, host, port,
                 limit=self.limits.max_frame_bytes - 1, start_serving=False, reuse_address=False)
+            if self.audit:
+                await self.audit.start()
             for cid, recorder in self.recorders.items():
                 await recorder.start(self.snapshot(self.channels[cid]))
             for channel in self.channels.values():
@@ -142,6 +153,21 @@ class Gateway:
         for channel in self.channels.values():
             await channel.stop()
         await asyncio.gather(*(recorder.close() for recorder in self.recorders.values()))
+        if self.audit:
+            await self.audit.close()
+
+    def _audit_request(self, session, principal, req, outcome, reason=None) -> None:
+        if not self.audit or req is None or req.method not in AUDITED or principal is None:
+            return
+        channel = req.params.get("channel_id")
+        tx_id = req.params.get("tx_id")
+        context_fields = {"expected": req.params["expected"]} if "expected" in req.params else {}
+        if outcome == "accepted" and req.method == "channel.configure_rx":
+            context_fields["serial"] = req.params["serial"]
+        self.audit.record({"timestamp_utc": utc_now(), "instance": self.store.instance,
+            "principal": principal.id, "session": session.id, "request_id": req.id,
+            "channel": channel, "method": req.method, "tx_id": tx_id,
+            "outcome": outcome, "reason": reason, **context_fields})
 
     async def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         task = asyncio.current_task()
@@ -162,6 +188,8 @@ class Gateway:
         try:
             while not session.closed:
                 req_id = None
+                req = None
+                validated = False
                 try:
                     timeout = (deadline - asyncio.get_running_loop().time() if principal is None
                                else self.limits.idle_timeout_ms / 1000)
@@ -175,13 +203,15 @@ class Gateway:
                     elif principal is None:
                         raise DomainError("AUTH_REQUIRED", "請先完成握手與認證。")
                     validate_params(req.method, req.params)
+                    validated = True
                     after: list[tuple[str, Event]] = []
                     if req.method == "hello":
                         if {"major": 1, "minor": 0} not in req.params["versions"]:
                             raise DomainError("UNSUPPORTED_VERSION", "沒有共同協定版本。",
                                               supported_versions=[{"major": 1, "minor": 0}])
                         result = {"version": {"major": 1, "minor": 0}, "gateway_instance_id": self.store.instance,
-                            "capabilities": ["rx.replay", "tx.status", "binding.confirm", "channel.reopen_rx"],
+                            "capabilities": ["rx.replay", "tx.status", "binding.confirm", "channel.reopen_rx",
+                                             "channel.configure_rx"],
                             "auth_methods": ["token"], "limits": self.limits.wire()}
                         state = "negotiated"
                     elif req.method == "auth.authenticate":
@@ -205,11 +235,14 @@ class Gateway:
                                   "next_cursor": cursor[0] if cursor else None}
                     else:
                         result, after = await self._dispatch(session, principal, req.method, req.params)
+                    self._audit_request(session, principal, req, "accepted")
                     session.send({"type": "response", "id": req_id, "ok": True, "result": result})
                     for owner, event in after:
                         self.notify(owner, event)
                 except (DomainError, ProtocolError) as exc:
                     code = exc.code
+                    if validated:
+                        self._audit_request(session, principal, req, "error", code)
                     session.send({"type": "response", "id": req_id, "ok": False,
                         "error": {"code": code, "message": str(exc), "details": getattr(exc, "details", {})}})
                     fatal = code in {"INVALID_FRAME", "FRAME_TOO_LARGE", "INVALID_REQUEST_ID",
@@ -243,7 +276,7 @@ class Gateway:
                     return {"unsubscribed": True}, after
             return {"unsubscribed": False}, after
         cid = params["channel_id"]
-        permission = ("configure" if method.startswith("binding.") or method == "channel.reopen_rx"
+        permission = ("configure" if method.startswith("binding.") or method in ("channel.reopen_rx", "channel.configure_rx")
                       else "tx" if method.startswith(("lease.", "tx.")) else "read")
         principal.require(cid, permission)
         channel = self.channels[cid]
@@ -256,6 +289,14 @@ class Gateway:
             except DomainError as exc:
                 LOG.warning("通道 %s | 人工 RX 重開未成功 | 錯誤：%s", cid, exc.code)
                 raise
+            after = [(owner, channel.event("channel_state", {})) for owner in recipients]
+            result = {"channel": self.snapshot(channel)}
+        elif method == "channel.configure_rx":
+            try:
+                settings = replace(channel.config.serial, **params["serial"])
+            except ValueError as exc:
+                raise DomainError("INVALID_PARAMS", str(exc)) from exc
+            recipients = await channel.configure_rx(context(params), settings)
             after = [(owner, channel.event("channel_state", {})) for owner in recipients]
             result = {"channel": self.snapshot(channel)}
         elif method == "binding.rebind":

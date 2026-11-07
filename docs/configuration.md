@@ -288,7 +288,7 @@ Server 不接受 Client 任意指定 Lease TTL；以握手公布值為準。SDK 
 
 容量或磁碟失敗停止該錄製並使用既有 `RECORDING_IO_FAILED` 原因，佇列滿使用 `RECORDING_OVERFLOW`；詳細中文原因放 Gateway 診斷。原 RX 及其他通道繼續。Launcher 明確要求錄製卻啟動失敗時會顯示錯誤並清理本次程序，避免誤以為已保存。Runtime 失敗由 CLI 顯示健康事件，不自動重試或清除檔案。
 
-實際格式及完整性以 [錄製規格](recording.md) 為準。本輪不提供年齡淘汰或跨 Capture 的磁碟總量管理，**不接受**下表候選的 `retention_days/max_bytes_per_channel/include_tx_payload`；未知欄位仍拒絕。
+實際格式及完整性以 [錄製規格](recording.md) 為準。跨 Capture 的年齡與總量保留政策透過 `recording-retention` 明確執行。Gateway 錄製設定仍拒絕下表候選的 `retention_days/max_bytes_per_channel/include_tx_payload`。
 
 ### 尚未全部實作的保留與稽核基線
 
@@ -307,6 +307,18 @@ Recording（UART 錄製）與 Audit（操作稽核）分開。Recorder 失敗不
 | `audit.max_bytes` | integer | 建議 67108864／Gateway | 1048576–1073741824 | 可省略 | 稽核輪替總上限 | 滿載或不可寫需顯示健康狀態，不能無聲丟棄 |
 
 保留時同時滿足年齡與總容量條件，優先淘汰最舊的已關閉分段，不刪除目前活動分段來偽裝正常。Phase 1 須補足錄製檔格式、輪替與非正常關閉標記的實作契約；本文件不代表已存在可讀取檔案。
+
+### Gateway 設定版本管理
+
+`uart gateway-config current.toml` 可離線驗證並顯示有效設定。提供 `--candidate next.toml` 顯示差異及計畫識別。核對後以同一組參數加 `--apply <plan> --output applied.toml` 寫入新版，輸出路徑必須全新。預覽只顯示秘密參照變更的身分，憑證內容在 Gateway 啟動時才讀取。以 `uart-gatewayd --serial --config applied.toml` 啟用新版，原檔可用於回退。模擬設定加 `--fake`。
+
+已啟動的 Gateway 可執行 `uart --access manage configure-rx ch_uart_1 --read-timeout-ms 25` 預覽單路變更。同一組參數加 `--apply <plan>` 才重新開啟該路。計畫與目前 Instance／Revision／Epoch 綁定，變動後須重新預覽。可調整 Baud Rate、資料位元、Parity、Stop Bits 及讀寫期限。執行期調整要長期保留時，另以設定版本管理建立新版 TOML。線上行為見 [協定 9.3](protocol/v1.md)。
+
+### 操作稽核
+
+在 Gateway TOML 加入 `[audit]` 啟用。 `directory` 為絕對路徑，Gateway 建立專用子目錄 `uart-audit` 與 SQLite 資料庫。 `max_entries` 預設 10000，範圍 1 至 100000，寫入後保留最新筆數。相同路徑可跨 Gateway 啟動查詢。 `uart audit <directory>` 由本機讀取，可用 `--principal`、`--channel`、`--tx-id`、`--limit` 篩選。
+
+稽核涵蓋已認證的 Confirm、Rebind、人工 RX 重開、UART 設定套用、租約取得／釋放及 TX 要求與最終結果。記錄身分、通道、時間、操作脈絡、結果及 TX 識別。稽核佇列有界且批次落盤；寫入失敗或超限時 Gateway 日誌會告警。已排隊的事件在正常關閉時寫完。稽核查詢使用 OS 檔案權限，資料庫不包含 Token、TX Payload 或目標備註。
 
 ## 跨欄位驗證與失敗行為
 

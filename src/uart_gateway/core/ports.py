@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from .models import AdapterInfo
+from .models import AdapterInfo, SerialSettings
 
 
 class SerialPort(Protocol):
@@ -14,3 +14,6 @@ class SerialPort(Protocol):
     def write(self, data: bytes) -> int: ...
     def close(self) -> None: ...
     def describe(self) -> AdapterInfo: ...
+    def set_settings(self, settings: SerialSettings) -> None:
+        """只更新已關閉 Backend 的設定，不操作 Driver。"""
+        ...

@@ -10,7 +10,7 @@ import threading
 import time
 
 from .lease import Lease
-from .models import ChannelConfig, Chunk, Context, DomainError, Event, TxRecord, new_id, utc_now
+from .models import ChannelConfig, Chunk, Context, DomainError, Event, SerialSettings, TxRecord, new_id, utc_now
 from .ports import SerialPort
 
 
@@ -239,6 +239,16 @@ class Channel:
             if self.state not in ("lost", "faulted", "closed"):
                 raise DomainError("INVALID_STATE", "通道已就緒，不需要重新開啟 RX。")
         recipients = await self.rebind(expected)
+        await self.start(reopen_rx=True)
+        return recipients
+
+    async def configure_rx(self, expected: Context, settings: SerialSettings) -> set[str]:
+        self.check_context(expected)
+        if settings == self.config.serial:
+            raise DomainError("INVALID_PARAMS", "UART 參數沒有變更。")
+        recipients = await self.rebind(expected)
+        self.port.set_settings(settings)
+        self.config = replace(self.config, serial=settings)
         await self.start(reopen_rx=True)
         return recipients
 

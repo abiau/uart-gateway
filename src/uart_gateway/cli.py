@@ -388,6 +388,21 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "recording-retention":
+        from .recording_retention import retention
+        await output(await asyncio.to_thread(retention, args.directory, days=args.days,
+                                             max_bytes=args.max_bytes, apply=args.apply))
+        return 0
+    if args.command == "audit":
+        from .server.audit import query_audit
+        await output(await asyncio.to_thread(query_audit, args.directory, principal=args.principal,
+                                             channel=args.channel, tx_id=args.tx_id, limit=args.limit))
+        return 0
+    if args.command == "gateway-config":
+        from .gateway_config import manage_config
+        await output(await asyncio.to_thread(manage_config, args.current, candidate=args.candidate,
+                                             output=args.output, apply=args.apply, fake=args.fake))
+        return 0
     if args.command in ("exec", "exec-status"):
         from .shell_cli import run_shell
         return await run_shell(args)
@@ -586,6 +601,24 @@ async def run(args: argparse.Namespace) -> int:
         elif args.command == "watch":
             return await watch_client(client, args.channel, duration=args.duration,
                                       text_mode=args.text, replay=args.replay, terminal_mode=args.terminal)
+        elif args.command == "configure-rx":
+            from hashlib import sha256
+            from .protocol.messages import RX_SETTING_FIELDS
+            channel = await client.get_channel(args.channel)
+            proposed = {key: getattr(args, key) for key in sorted(RX_SETTING_FIELDS)
+                        if getattr(args, key) is not None}
+            if not proposed:
+                raise ValueError("請指定要調整的 UART 參數。")
+            expected = client.expected(channel)
+            plan = sha256(json.dumps([args.channel, expected, proposed], sort_keys=True).encode()).hexdigest()
+            if args.apply is None:
+                await output({"channel": args.channel, "expected": expected, "plan": plan,
+                              "changes": {key: {"before": channel["serial"][key], "after": value}
+                                          for key, value in proposed.items()}})
+            elif args.apply == plan:
+                await output(await client.configure_rx(channel, proposed, instance=expected["gateway_instance_id"]))
+            else:
+                raise ValueError("UART 設定預覽已變更，請重新預覽。")
         elif args.command == "status":
             await output(await client.tx_status(args.channel, args.tx_id, instance=getattr(args, "instance", None)))
         else:
@@ -682,6 +715,32 @@ def main() -> None:
     play.add_argument("--terminal", action="store_true", help="在互動終端呈現換行、退格與允許的顏色")
     inspect = commands.add_parser("recording-info", help="離線檢查一個 Channel 的錄製目錄，不連線 UART")
     inspect.add_argument("directory", type=Path, help="包含 000001.jsonl 等分段的 Channel 目錄")
+    retention = commands.add_parser("recording-retention", help="預覽跨次錄製保留政策，依預覽識別明確套用")
+    retention.add_argument("directory", type=Path)
+    retention.add_argument("--days", type=int, help="保留天數")
+    retention.add_argument("--max-bytes", type=int, help="所有 Capture 的已觀測總容量上限")
+    retention.add_argument("--apply", help="套用預覽回報的計畫識別")
+    audit = commands.add_parser("audit", help="查詢本機 Gateway 操作稽核")
+    audit.add_argument("directory", type=Path, help="Gateway 設定的 audit.directory")
+    audit.add_argument("--principal")
+    audit.add_argument("--channel")
+    audit.add_argument("--tx-id")
+    audit.add_argument("--limit", type=int, default=50)
+    gateway_config = commands.add_parser("gateway-config", help="離線驗證、預覽及輸出新版 Gateway 設定")
+    gateway_config.add_argument("current", type=Path)
+    gateway_config.add_argument("--candidate", type=Path)
+    gateway_config.add_argument("--apply", help="套用預覽回報的計畫識別")
+    gateway_config.add_argument("--output", type=Path, help="新設定檔路徑")
+    gateway_config.add_argument("--fake", action="store_true", help="依模擬 Gateway 規則驗證")
+    configure_rx = commands.add_parser("configure-rx", help="預覽並明確套用單路 UART 設定")
+    configure_rx.add_argument("channel")
+    configure_rx.add_argument("--apply", help="套用預覽回報的計畫識別")
+    configure_rx.add_argument("--baudrate", type=int)
+    configure_rx.add_argument("--bytesize", type=int)
+    configure_rx.add_argument("--parity", choices=("none", "even", "odd", "mark", "space"))
+    configure_rx.add_argument("--stopbits", type=float, choices=(1, 1.5, 2))
+    configure_rx.add_argument("--read-timeout-ms", type=int)
+    configure_rx.add_argument("--write-timeout-ms", type=int)
     export = commands.add_parser("recording-text", help="將錄製所有分段匯出成可讀 UTF-8 文字")
     export.add_argument("directory", type=Path, help="錄製的 Channel 目錄")
     export.add_argument("--output", type=Path, required=True, help="新文字檔路徑；不覆寫既有檔案")

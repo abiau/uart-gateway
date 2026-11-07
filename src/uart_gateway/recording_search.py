@@ -86,15 +86,22 @@ def search_capture(directory: Path, keyword: str, *, selection: RXSelection | No
 
 async def search(directory: Path, keyword: str, *, selection: RXSelection, max_results: int = 200) -> dict:
     stop = threading.Event()
-    task = asyncio.create_task(asyncio.to_thread(search_capture, directory, keyword,
-                                               selection=selection, max_results=max_results, stop=stop))
+
+    async def scan() -> dict:
+        try:
+            return await asyncio.to_thread(search_capture, directory, keyword,
+                                           selection=selection, max_results=max_results, stop=stop)
+        except SearchCancelled:
+            raise asyncio.CancelledError from None
+
+    task = asyncio.create_task(scan())
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError as exc:
         stop.set()
         try:
             await task
-        except SearchCancelled:
+        except asyncio.CancelledError:
             pass
         except Exception as cleanup:
             exc.add_note(f"搜尋清理另有錯誤：{cleanup}")

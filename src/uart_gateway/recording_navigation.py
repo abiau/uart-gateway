@@ -47,14 +47,22 @@ def timeline_capture(directory: Path, *, stop: threading.Event | None = None) ->
 
 async def timeline(directory: Path) -> dict:
     stop = threading.Event()
-    task = asyncio.create_task(asyncio.to_thread(timeline_capture, directory, stop=stop))
+
+    async def scan() -> dict:
+        try:
+            return await asyncio.to_thread(timeline_capture, directory, stop=stop)
+        except NavigationCancelled:
+            # 工作執行緒正常回應取消，shield 不應將它列為背景故障。
+            raise asyncio.CancelledError from None
+
+    task = asyncio.create_task(scan())
     try:
         return await asyncio.shield(task)
     except asyncio.CancelledError as exc:
         stop.set()
         try:
             await task
-        except NavigationCancelled:
+        except asyncio.CancelledError:
             pass
         except Exception as cleanup:
             exc.add_note(f"資料流清單清理另有錯誤：{cleanup}")

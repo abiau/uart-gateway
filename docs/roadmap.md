@@ -49,6 +49,8 @@ RX 錄製切片已加入 Gateway 端有界 Queue、分段、每 Capture 容量�
 
 ## Phase 2：多設備與互動工具
 
+2026-11-08 加入本機設定版本預覽與套用，以及受 configure 權限保護的單通道 UART 調整。跨次錄製保留、集中操作稽核也已有獨立 CLI 入口。驗收以 [專案狀態](status.md) 為準。
+
 2026-11-07 使用者授權 Linux Container／Codex 透過 UART Client 執行 IPCAM 指令。已加入 CLI／SDK 的已登入 POSIX Shell 單次操作：人工 shell-ready 保存目標脈絡，exec 整段 Lease、拆分完成標記／exit code、有界 UART 輸出，以及 exec-status 原操作查詢。沒有新增通用 Server Shell RPC／MCP、自動登入、控制字元、重送或韌體更新。此小切片提前提供 Phase 4 的已知 Shell Helper；不代表 Phase 1–4 整體驗收完成。[Shell 文件](shell-exec.md) 區分自動化與 IPCAM／SSH 待測。
 
 2026-11-07 使用者明確授權 TX 操作介面與實機驗收規劃。整合既有 Confirm／Lease／傳送／查詢到工作台，以獨立明確 TX 角色、人工目標核對、完整 bytes 預覽與有界無 Payload 收據簡化日常操作；read／manage 與本機 RX Launcher 不升級。驗收包含零自動重送、舊脈絡／其他 Owner 拒絕、取消／斷線／部分寫入、原 Instance 查詢及另一路 RX；實體先迴路再 IPCAM 明確只讀指令，模擬與實機分開記錄。以下前輪不包含 TX 的文字只代表當時切片，現行 TX 範圍見 [TX 說明](tx-workbench.md)。

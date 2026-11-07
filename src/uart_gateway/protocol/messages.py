@@ -57,6 +57,9 @@ def request(message: dict, previous: int) -> Request:
     return Request(message["id"], message["method"], message["params"])
 
 
+RX_SETTING_FIELDS = frozenset({"baudrate", "bytesize", "parity", "stopbits", "read_timeout_ms", "write_timeout_ms"})
+
+
 SCHEMAS = {
     "hello": ({"versions", "client_name", "client_version"}, set()),
     "auth.authenticate": ({"scheme", "token"}, set()),
@@ -64,6 +67,7 @@ SCHEMAS = {
     "channel.list": (set(), {"limit", "cursor"}),
     "channel.get": ({"channel_id"}, set()),
     "channel.reopen_rx": ({"channel_id", "expected"}, set()),
+    "channel.configure_rx": ({"channel_id", "expected", "serial"}, set()),
     "binding.rebind": ({"channel_id", "expected"}, set()),
     "binding.confirm": ({"channel_id", "expected", "label"}, {"target_note"}),
     "rx.subscribe": ({"channel_id", "mode"}, {"stream_epoch", "from_offset", "gap_policy"}),
@@ -92,6 +96,11 @@ def validate_params(method: str, params: dict) -> None:
             identifier(expected["stream_epoch"])
     if "fencing_token" in params:
         uint(params["fencing_token"])
+    if method == "channel.configure_rx":
+        serial = params["serial"]
+        fields(serial, set(), RX_SETTING_FIELDS)
+        if not serial:
+            raise ProtocolError("INVALID_PARAMS", "請指定至少一項 UART 參數。")
     if method == "hello":
         text(params["client_name"], 64)
         text(params["client_version"], 32)

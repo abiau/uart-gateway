@@ -71,7 +71,9 @@ class RecorderTests(unittest.IsolatedAsyncioTestCase):
         self.assertLessEqual(sum(path.stat().st_size for path in files), 131072)
         self.assertEqual(self.recorder.health, {"state": "failed", "integrity": "incomplete"})
         self.assertEqual(self.changes[-1]["reason_code"], "RECORDING_IO_FAILED")
-        self.assertNotEqual(inspect_capture(self.recorder.directory)["integrity"], "no_known_gap")
+        info = inspect_capture(self.recorder.directory)
+        self.assertEqual(info["integrity"], "incomplete")
+        self.assertTrue(info["closed_cleanly"])
 
     async def test_overflow_includes_inflight_bytes_and_writes_incomplete_footer(self):
         entered, release = threading.Event(), threading.Event()

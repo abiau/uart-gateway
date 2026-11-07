@@ -20,6 +20,7 @@ from uart_gateway.protocol.errors import ProtocolError
 from .auth import Principal
 from .tcp import Gateway
 from .recording import RecordingConfig
+from .audit import AuditConfig
 
 
 def _keys(value: object, required: set[str], optional: set[str] = frozenset()) -> None:
@@ -47,7 +48,14 @@ def load(path: Path, *, fake: bool = True) -> tuple[Gateway, str, int]:
 def assemble(config: dict, *, fake: bool = True,
              resolve_secret: Callable[[str], str] = secret) -> tuple[Gateway, str, int]:
     """共用純組裝／驗證入口；不啟動 Listener 或開啟 Serial。"""
-    _keys(config, {"channels", "auth"}, {"network", "gateway", "recording"})
+    _keys(config, {"channels", "auth"}, {"network", "gateway", "recording", "audit"})
+    audit = None
+    if "audit" in config:
+        entry = config["audit"]
+        _keys(entry, {"directory"}, {"max_entries"})
+        if not isinstance(entry["directory"], str):
+            raise ValueError("稽核目錄必須是絕對路徑。")
+        audit = AuditConfig(Path(entry["directory"]), entry.get("max_entries", 10000))
     recording = config.get("recording", {})
     _keys(recording, set(), {"enabled", "directory", "queue_bytes", "segment_bytes", "max_capture_bytes"})
     enabled = recording.get("enabled", False)
@@ -114,7 +122,7 @@ def assemble(config: dict, *, fake: bool = True,
         principals.append(Principal(entry["id"], resolve_secret(entry["token_secret_ref"]),
             {cid: frozenset(entry["permissions"]) for cid in entry["channels"]}))
     return Gateway(channels, tuple(principals), lifecycle_timeout=lifecycle_ms / 1000,
-                   recording=recording_settings), host, port
+                   recording=recording_settings, audit=audit), host, port
 
 
 async def run(path: Path, *, fake: bool = True, shutdown_on_stdin_eof: bool = False) -> None:

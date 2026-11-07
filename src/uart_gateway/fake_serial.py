@@ -4,7 +4,7 @@ from collections import deque
 import queue
 import threading
 
-from .core.models import AdapterInfo
+from .core.models import AdapterInfo, SerialSettings
 
 
 class FakeSerial:
@@ -18,6 +18,10 @@ class FakeSerial:
         self.write_gate: threading.Event | None = None
         self.write_entered = threading.Event()
         self.opened = False
+        self.settings = SerialSettings()
+
+    def set_settings(self, settings: SerialSettings) -> None:
+        self.settings = settings
 
     def open(self) -> None:
         while not self.rx.empty():
@@ -38,7 +42,7 @@ class FakeSerial:
         if not self.opened:
             raise OSError("模擬裝置已關閉")
         try:
-            data = self.rx.get(timeout=0.02)
+            data = self.rx.get(timeout=self.settings.read_timeout_ms / 1000)
         except queue.Empty:
             return b""
         if len(data) > size:

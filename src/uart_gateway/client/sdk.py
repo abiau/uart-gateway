@@ -104,6 +104,18 @@ class Client:
             params.update(stream_epoch=epoch, from_offset=offset)
         return await self.transport.request("rx.subscribe", params)
 
+    async def configure_rx(self, channel: dict, serial: dict, *, instance: str) -> dict:
+        """套用人工預覽時記下的 Instance 與通道快照。"""
+        if "channel.configure_rx" not in self.hello.get("capabilities", []):
+            raise ProtocolError("UNKNOWN_METHOD", "此 Gateway 未提供單通道 UART 設定管理。")
+        expected = {**self.expected(channel), "gateway_instance_id": instance}
+        try:
+            result = await self.transport.request("channel.configure_rx", {"channel_id": channel["channel_id"],
+                "expected": expected, "serial": serial})
+        except (OSError, EOFError, TimeoutError, ProtocolError) as exc:
+            raise ConnectionError("UART 設定結果未確認，請查詢通道狀態後再操作。") from exc
+        return result["channel"]
+
     async def unsubscribe(self, subscription_id: str) -> bool:
         return (await self.transport.request("rx.unsubscribe", {"subscription_id": subscription_id}))["unsubscribed"]
 
