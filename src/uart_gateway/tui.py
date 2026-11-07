@@ -115,14 +115,21 @@ async def run_tui(args, *, settings=None) -> int:
 
         app = UARTApp(local_launch=launch, local_preview=preview, local_devices=devices, local_select=select, local_record=toggle_record, description="本機 RX｜Q 清理本次 Gateway")
     else:
-        app = UARTApp(settings.connect, description=f"遠端 RX｜{label(settings.host)}:{settings.port}｜"
-            f"{'管理' if settings.access == 'manage' else '讀取／明確來源'}", channels=args.channels)
+        from .client.connection import config_directory, connection_name
+        from .client.tx_receipts import TxJournal
+        journal = TxJournal((getattr(args, "connections_dir", None) or config_directory()) / "tx-receipts" /
+                            connection_name(settings.name or "direct")) if settings.access == "tx" else None
+        mode = {"manage": "管理", "tx": "TX 操作"}.get(settings.access, "讀取／明確來源")
+        app = UARTApp(settings.connect, description=f"遠端｜{label(settings.host)}:{settings.port}｜{mode}／{label(settings.name or '明確來源')}",
+                      channels=args.channels, tx_journal=journal)
     try:
         result = await app.run_async()
     finally:
         await app.cleanup()
         if app.controller.uncertain_reopen:
             print("RX 重開結果未確認；Gateway 可能已接受，請重新進入後先 R 查詢，不直接重送。", file=sys.stderr, flush=True)
+        if app.tx is not None and app.tx.notice:
+            print(app.tx.notice + " 重新開啟相同連線，R 查通道／F3 查 TX 收據。", file=sys.stderr, flush=True)
         if app.failure is not None:
             raise app.failure
     return result or 0

@@ -26,7 +26,7 @@ class Client:
     async def connect_auto(cls, name: str | None = None, *, access: str | None = None,
                            directory=None, host: str | None = None, port: int | None = None,
                            token_file=None, token_env: str | None = None, timeout: float = 5) -> "Client":
-        """共用固定來源認證；預設讀取，管理須明確選用，不重試其他身分。"""
+        """共用固定來源認證；預設讀取，管理／TX 須明確選用，不重試其他身分。"""
         from .connection import resolve_connection
         settings = await asyncio.to_thread(resolve_connection, name=name, access=access, directory=directory,
             host=host, port=port, token_file=token_file, token_env=token_env)

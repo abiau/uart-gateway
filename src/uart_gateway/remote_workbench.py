@@ -19,6 +19,8 @@ async def query_channels(connect: Callable[[], Awaitable[Client]]) -> tuple[str,
         allowed = {grant["channel_id"] for grant in client.auth["grants"] if "read" in grant["permissions"]}
         managers = {grant["channel_id"] for grant in client.auth["grants"] if "configure" in grant["permissions"]}
         channels = await client.list_channels()
+        transmitters = {g["channel_id"] for g in client.auth["grants"] if {"read", "configure", "tx"} <= set(g["permissions"])}
+        channels = [dict(c, tx_available=True) if c["channel_id"] in transmitters else c for c in channels]
         if "channel.reopen_rx" in client.hello.get("capabilities", []):
             channels = [dict(c, reopen_rx_available=True) if c["channel_id"] in managers else c for c in channels]
         return client.instance, sorted((c for c in channels if c["channel_id"] in allowed), key=lambda c: c["channel_id"])

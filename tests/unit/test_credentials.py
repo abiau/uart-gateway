@@ -122,7 +122,7 @@ class CredentialTests(unittest.TestCase):
 
     def test_explicit_missing_source_and_unsafe_profile_destination_do_not_fallback(self):
         with self.assertRaises(ValueError):
-            ConnectionSettings("127.0.0.1", 18081, explicit_source(), access="tx")
+            ConnectionSettings("127.0.0.1", 18081, explicit_source(), access="administrator")
         repository_target = Path.cwd() / "credential-test-must-not-exist"
         with self.assertRaisesRegex(ValueError, "版本庫"):
             initialize(self.source, directory=repository_target)

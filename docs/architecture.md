@@ -71,6 +71,11 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `server.config`、`server.app` | 驗證設定、組裝具體物件、啟停順序 | 組裝層可以知道具體 Backend，不把此依賴帶入 Core |
 | `client.transport`、`client.sdk` | 連線、版本、請求配對、訂閱、Lease 更新與重連 | Protocol；不依賴 Server 或 Windows Serial |
 | `client.rx` | SDK 共用快照／訂閱脈絡核對與 RX Cursor 位移／Gap 檢查 | 不依賴畫面、Server 或 Serial，CLI 共用訂閱核對 |
+| `client.tx_workflow` | 人工目標核對、既有 Confirm、單次 Lease／TX／結果查詢 | 只經 SDK，重驗身分／脈絡，無自動重送或硬體操作 |
+| `client.tx_receipts` | 有界無 Payload 收據、檔案鎖／容量及原操作識別 | 只保存 metadata；送出前失敗不寫 UART，查詢不覆蓋先前已知終態 |
+| `client.shell`／`client.shell_marker` | 已登入 POSIX Shell 的單次命令協調、完成標記與有界 RX | 沿用 SDK／TX 工作流程，人工保存目標脈絡，整段持有 Lease；不依賴 Server、Serial 或 TUI，不做本機命令執行 |
+| `shell_cli` | 人工 shell-ready 與 Agent exec／exec-status 的 JSON 入口 | 固定 TX 來源；解析／協調由 SDK 共用，未知只查原操作，不自動登入／Confirm／重送 |
+| `tui_tx` | TX 目標／輸入／預覽／收據畫面 | 不直接連線或寫 UART，Enter 不直接送出；共用 TX 工作流程 |
 | `cli`、工具介面 | 參數、顯示、使用者或 Agent 操作 | 只經 SDK 進入 Gateway；不複製協定實作 |
 | `tui`／`tui_app` | 可選多窗格、固定按鈕、人工選擇／確認與本次 Launcher 生命週期 | 遠端共通 SDK 設定，本機重用 configured_launcher、不接管其他程序 |
 | `tui_controller` | 各路 SDK 接收、狀態與人工 RX 恢復 | 共用 client.rx／既有管理 API，無 TX 或自動重連 |
@@ -79,7 +84,7 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `local_launcher` | 本機只讀啟動、就緒檢查與自己子程序的生命週期 | 建立既有 `server.app` 子程序，UART 操作只經 SDK；端點名稱正規化重用純函式，不直接存取 Serial |
 | `local_ports` | 本機裝置顯示、互動選擇與選擇後重驗 | 只用 Backend 的只讀枚舉結果，交回既有 Adapter Selector；不開啟 Serial、不新增遠端 API |
 | `local_profile` | 本機通道名稱／裝置條件的驗證、保存及重新解析 | 只讀枚舉、產生既有 TOML 通道欄位；不保存 Token／確認資格、不開啟 Serial |
-| `workbench` | 同步本機只讀工作台與錄製選單 | 只傳結構化 argv 給既有 CLI 路由；不使用 Shell，不存取 Serial／Core；清理失敗向外傳遞 |
+| `workbench` | 同步工作台、錄製選單與明確 TX 入口 | 結構化 argv 路由 SDK／TUI，無 Shell、Serial／Core 操作；清理失敗向外傳遞 |
 | `remote_workbench` | 遠端 RX 清單、監看與授權的單路手動重開 | 經注入的 SDK 連線及監看回呼操作；每次查詢／監看／重開獨立連線，選單輸入在事件迴圈外 |
 | `remote_group` | 遠端兩條 Channel 的同時接收、狀態及人工恢復 | 每路獨立 SDK／watch_client，共用有界 Writer；互動與管理操作不停止另一條接收，不管理 Gateway 程序 |
 | `console_input` | 雙路畫面的非阻塞鍵盤輪詢 | Windows msvcrt／POSIX select；128 字元有界指令，不建立 input 背景執行緒，不接觸 UART |

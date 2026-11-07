@@ -49,6 +49,10 @@ RX 錄製切片已加入 Gateway 端有界 Queue、分段、每 Capture 容量�
 
 ## Phase 2：多設備與互動工具
 
+2026-11-07 使用者授權 Linux Container／Codex 透過 UART Client 執行 IPCAM 指令。已加入 CLI／SDK 的已登入 POSIX Shell 單次操作：人工 shell-ready 保存目標脈絡，exec 整段 Lease、拆分完成標記／exit code、有界 UART 輸出，以及 exec-status 原操作查詢。沒有新增通用 Server Shell RPC／MCP、自動登入、控制字元、重送或韌體更新。此小切片提前提供 Phase 4 的已知 Shell Helper；不代表 Phase 1–4 整體驗收完成。[Shell 文件](shell-exec.md) 區分自動化與 IPCAM／SSH 待測。
+
+2026-11-07 使用者明確授權 TX 操作介面與實機驗收規劃。整合既有 Confirm／Lease／傳送／查詢到工作台，以獨立明確 TX 角色、人工目標核對、完整 bytes 預覽與有界無 Payload 收據簡化日常操作；read／manage 與本機 RX Launcher 不升級。驗收包含零自動重送、舊脈絡／其他 Owner 拒絕、取消／斷線／部分寫入、原 Instance 查詢及另一路 RX；實體先迴路再 IPCAM 明確只讀指令，模擬與實機分開記錄。以下前輪不包含 TX 的文字只代表當時切片，現行 TX 範圍見 [TX 說明](tx-workbench.md)。
+
 2026-11-07 使用者明確授權多窗格 TUI：各 UART 獨立資料／狀態列、固定操作區及簡單選取／按鈕。已實作可選 Textual、沿用 SDK 自動認證、本機 Launcher 一至兩路與遠端最多四路。驗收包含版面不交錯、重播、單路拔除／慢重開隔離、權限、取消、既有程序保護及清理；Linux 模擬／PTY 與 Win11 實機分開記錄。不包含五至六路、TX、自動重連、任意遠端設定或完整終端協定，詳見 [TUI 說明](tui.md)。下方前輪「完整 TUI 不屬本輪」保留當時切片範圍，現行授權以本段為準。
 
 2026-11-07 使用者核准保留認證、取消日常人工 Token 操作：SDK 自動讀固定來源、一次初始化／SSH 安裝、預設讀取與明確管理選擇。本機臨時來源、既有 Protocol／Server／TX 保護保留。驗收包含受保護來源／大小界限、無 Token 日誌或 argv、缺檔／失效不降級、角色錯配關閉、初始化與匯入失敗清理、Gateway 重啟仍可讀取、SDK／CLI／Workbench 同路徑及舊介面相容；Windows ACL 與公司 SSH 實機另測，不建立 Vault、匿名配對或常駐服務。

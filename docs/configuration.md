@@ -38,16 +38,16 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 | `default-connection` | 最多 128 bytes 的預設連線名稱檔；首次成功安裝時設定，auth use 可明確更換 |
 | `connections/<名稱>/client.json` | 最多 16 KiB；名稱 1～64 個 ASCII 英數字／底線／連字號 |
 | 設定 JSON | version 整數 1、deployment_id 為 32 個小寫 hex、host、port、credentials；可含 gateway_config 路徑；拒絕未知欄位 |
-| credentials | 僅 read／manage 的 file: 或 env: 參照；不得保存 Token 值；file: 相對路徑以該連線目錄解析，不以目前目錄解析 |
+| credentials | read／manage／明確 tx 的 file: 或 env: 參照；不得保存 Token 值；file: 相對路徑以連線目錄解析 |
 | 自動來源端點 | host 僅 127.0.0.1／::1，port 為 1～65535；經既有 SSH Tunnel 使用遠端 Gateway，不新增 TLS 或外部 Listener |
 | `--connection` | 明確選定名稱，省略使用 default-connection 或名稱 default |
-| `--access` | read／manage；固定連線省略時為 read，管理須明確選擇 |
+| `--access` | read／manage／tx；省略仍 read，管理與 TX 須明確選擇 |
 | `--host`／`--port` | 只有明確輸入才覆寫固定端點，即使值等於原 CLI 預設也算覆寫 |
 | 秘密檔 | 最多 1024 bytes、UTF-8、去頭尾空白；自動來源須符合既有 43～128 ASCII Base64url 格式 |
 | 權限保護 | POSIX 擁有者須為目前使用者且無 group／other 權限，建立檔案 600／目錄 700；Windows 寫入前配置及讀取時檢查目前使用者 ACL |
 | SDK | Client.connect_auto／resolve_connection／ConnectionSettings.connect，共用來源讀取與角色核對 |
 
-讀取連線只接受 Server 實際授權 read；管理只接受 read＋configure 的範圍，且至少一個通道有 configure。角色與授權不符時關閉連線，不返回 Client，不改用其他秘密；Server 仍是最終授權者。固定角色不接受 tx，原 `Client.connect(host, port, token)` 與明確來源的既有 TX 工作流程保持相容，仍受 Confirm／Lease 等保護。
+讀取只接受 read，管理只接受 read＋configure 且至少一條有 configure；明確 tx 角色接受 read／configure／tx，至少一條有完整三項權限。角色錯配即關閉，不降級或改用其他秘密；Server 最終授權不變。原 Client.connect／明確來源仍相容。
 
 來源優先序：明確 --token-file／--token-env 使用唯一指定來源，與 --connection／--access 不得混用；否則已配置的固定來源優先於任何殘留 UART_GATEWAY_TOKEN。只有完全沒有固定設定且未明確指定連線／角色時，才相容舊 UART_GATEWAY_TOKEN。已存在但損壞、缺檔或認證失敗不觸發降級，也不自動生成另一把遠端 Token。SDK 每次新連線重讀所選秘密；工作區建立後固定端點及來源參照，更換預設設定需重新進入工作區。
 
@@ -55,8 +55,8 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 | 命令 | 行為 |
 | --- | --- |
-| `auth init --gateway-config 檔案 [--name 名稱]` | 來源 UTF-8／BOM TOML 最多 64 KiB；共用原驗證，建立新 read／manage 秘密、兩身分 Gateway 副本與 client.json；原檔不變，不開 Serial／Listener |
-| `auth export [--name 名稱] [--access read或manage] [--output 路徑]` | 預設 read，產生新的受保護 .uart-credential 包；預設放私有 transfers 目錄；不輸出 Token，不覆蓋既有檔 |
+| `auth init --gateway-config 檔案 [--name 名稱] [--enable-tx] [--tx-channels ID ...]` | 來源 UTF-8／BOM TOML 最多 64 KiB；預設建立 read／manage，明確 enable-tx 才另產生 TX 身分；tx-channels 限不重複且存在的 Channel，省略為全部；原檔不變、不開 Serial |
+| `auth export [--name 名稱] [--access read或manage或tx] [--output 路徑]` | 預設 read，僅匯出所選一種角色；私有 .uart-credential 包不輸出 Token、不覆蓋既有檔 |
 | `auth import (--file 檔案或--stdin) [--name 名稱] [--port 本機Port]` | 包最多 16 KiB；檔案需私有權限，stdin 僅管線。部署與 Port 相同可增加另一角色；相異既有秘密拒絕覆寫，相同內容可重複匯入 |
 | `auth use 名稱` | 更換預設連線，仍不提升預設讀取權限 |
 
@@ -85,7 +85,27 @@ SDK 模組匯入不讀檔或連線；檔案 I/O 在工作執行緒，Token 不�
 
 本機拒絕遠端位址／外部認證選項，TCP Port 由設定 network.port 指定；遠端拒絕本機 --config／錄製覆寫，不修改 Gateway。缺依賴或非互動終端時，在建立 Gateway 前拒絕。原 SDK 事件上限、Protocol、Confirm／Lease／TX 與控制線政策不變。
 
+## Container Shell 命令
+
+`shell-ready`／`exec`／`exec-status` 共用固定連線與明確 tx 角色，省略 --access 時由此入口選 tx，不會把 read／manage 升級。人必須在互動終端執行 `shell-ready <Channel> --newline lf|cr|crlf` 並輸入 Y，核對目前接線及已登入 Shell；必要的 Confirm 會建立新 Epoch，同路 RX 需重訂閱。本機 RX Launcher 不因此提供 TX。
+
+| 參數／資源 | 預設與界限 |
+| --- | --- |
+| `exec <Channel> <命令>` | 單行非空 UTF-8；命令含包裝與明確換行最多 min(Hello.max_tx_bytes, 4096) bytes，不拆分 |
+| `exec --timeout` | 預設 10 秒、0.1～300 秒；訂閱就緒後整次傳送／命令等待；連線及前置 SDK 請求各沿用原 5 秒 |
+| `exec --max-output` | 預設 65536、1～1048576 bytes；超過仍接收直到完成，但回報截斷，不保證完整輸出 |
+| `exec-status <ID> --wait` | 預設 0；先最多 5 秒讀原 Cursor 的重播，再可等 0～300 秒即時結果；不取得租約或 TX |
+| `--text` | 預設 JSON；指定後 stdout 為跳脫控制字元的可讀文字，stderr 為摘要 |
+| 目標授權 | SDK 設定根目錄 shell-targets／連線名稱／Channel.json，每檔最多 8192 bytes；綁 Instance／Revision／Epoch／Principal／Adapter／換行 |
+| 執行收據 | 共用 tx-receipts；另存起始 Cursor、輸出上限與完成 metadata，不保存命令／輸出；原大小／容量／檔案鎖上限不變 |
+
+相同本機連線／授權的 pending／unknown Shell 命令阻擋新 exec。這是 Client 保護，不能阻止其他主機或明確 Raw TX 入口；Server Lease 在命令結束／逾時／取消時釋放，不是跨斷線的持久工作鎖。人工確認 Shell 已恢復後才重新 shell-ready；不由 Codex 自動繞過。詳見 [操作與結果](shell-exec.md)。
+
 ## Gateway 與網路
+
+TX 工作台由 `uart tx` 或 `uart --access tx tui` 明確啟用；工作台 X 路由相同 SDK，`--connection`／`--connections-dir` 共用原來源。只連既有 Gateway，不修改本機 RX Launcher。F2／F3、權限與驗收見 [TX 說明](tx-workbench.md)。單次 Payload 上限為 Hello.max_tx_bytes 與 4096 的較小值，含明確選的換行；文字／Hex 表單輸入最多 12288 字元，不自動拆分。單次結果等待預設 5 秒，逾時釋放本次租約與連線，只能人工查詢；不明狀態不自動重送。
+
+TX 收據位於 SDK 設定根目錄 tx-receipts／連線名稱，不含命令、Payload 或秘密。每檔最多 4096 bytes、掃描最多 256 項；每連線新操作前用檔案鎖檢查最多 128 筆，不明／pending 保留，已知終態維持最近約 64 筆。收據保存成功才 write；失敗不傳送。收據只供查詢原 Principal／Instance／TX ID，不能授權寫入。metadata 一般檔案有界讀取、拒絕符號連結，不為每筆 metadata 啟動 PowerShell；寫入沿用原私有檔案機制。`status --instance` 可指定原程序；過期查詢及其他工作台的較舊回覆不抹除已知終態。
 
 歷史重播由 Session Writer 逐筆送出，使用獨立有界快照，不占用整段即時輸出佇列。每 Session 快照共用上限為目前 RX Ring 設定的兩倍（預設 8 MiB，原始 payload＋每事件 512 bytes 預留），期限沿用 idle_timeout_ms（預設 15 秒）；不新增 TOML 參數或修改 Hello 欄位。Writer 額外至多持有一個不超過 max_frame_bytes 的編碼中／傳送中 Frame。即時訂閱佇列及 Connection 輸出上限維持原值，快照配額不足回 QUEUE_FULL，慢接收超限或重播期限到達仍會明示斷線／記錄原因。
 

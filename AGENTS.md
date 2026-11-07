@@ -12,6 +12,10 @@ Phase 0 基線已核准，Phase 1 已實作 Gateway、SDK／CLI、本機只讀�
 
 ## 開始工作前的閱讀順序
 
+Container Shell 執行授權補充（2026-11-07）：使用者明確要求實作 Linux Container／Codex 透過 UART Client 執行 IPCAM 指令。核准 CLI／SDK 的已登入 POSIX sh／BusyBox ash 單次命令包裝、完成標記／exit code、有界 RX 擷取、逾時與原操作查詢；先由人互動核對目標、Shell 狀態與換行並保存目前脈絡，非互動 exec 不自行 Confirm。租約涵蓋整次命令等待，未知不重送、不自動登入／送 Ctrl+C／更新韌體；連續性失效不宣稱命令成功。保留原 SDK 認證／TX／Expected Context 與 Protocol，實體 IPCAM／SSH 未測必須另列。後續使用者已明確授權將本輪與前輪 TX 工作台的程式、測試與文件提交並推送至 origin/work。
+
+TX 工作台授權補充（2026-11-07）：使用者明確要求整合既有 Confirm／Lease／傳送／結果查詢，另規劃 TX 權限與實機驗收，優先簡單操作。核准明確選用的獨立 TX 角色及薄 SDK 工作流程／TUI 表單；預設讀取、管理、本機 RX Launcher 權限不升級。送出前人工核對目標、預覽精確 bytes 與換行，單次操作才取得租約，結果不明只查詢、不自動重送；保留 Instance／Revision／Epoch、租約 fencing 與原 Protocol。模擬／PTY 與實體 COM 驗收分開，沒有實機連線不得聲稱實機通過；不做自動登入、韌體更新或自動執行 UART 指令。
+
 多窗格 TUI 授權補充（2026-11-07）：使用者明確要求各 UART 獨立畫面、固定狀態列及操作區，優先簡單操作。核准薄 Textual 介面及可選依賴，沿用 SDK／認證／原 Launcher；遠端最多 Gateway 現有四路，本機仍一至兩路。資料與操作不可混寫，畫面／解析／事件暫存有界，舊畫面截斷須明示；手動 RX 重開仍需 configure、快照核對與確認，不新增 TX、控制線、自動重連或線上契約。Windows 真終端及實體 UART 驗證必須另列。後續使用者已明確授權將本輪程式、測試與文件提交並推送至 origin/work。
 
 SDK 自動認證授權補充（2026-11-07）：使用者核准保留認證、取消日常人工 Token 操作。新增固定的受保護遠端憑證來源、一次安全初始化及讀取／管理選用；CLI、Workbench 與 Codex 使用同一 SDK 載入流程。原本機臨時憑證及直接 SDK 介面保留，管理不自動取得 tx；真正 TX 仍需原權限、Confirm、Lease 與脈絡核對。不得新增匿名、憑證猜測／失敗降級、自動提權或未經認證的配對端點；Server／Protocol 契約不變。後續使用者已明確授權將本輪程式、測試與文件提交並推送至 origin/work。

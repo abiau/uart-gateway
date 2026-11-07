@@ -10,6 +10,7 @@ import re
 from uart_gateway.protected_files import read_private
 from .credentials import TokenSource, explicit_source
 
+ACCESS_ROLES = ("read", "manage", "tx")
 
 def config_directory() -> Path:
     if os.name == "nt":
@@ -53,7 +54,7 @@ def read_profile(root: Path, name: str) -> dict:
                 value.keys() - required - {"gateway_config"} or type(value["version"]) is not int or value["version"] != 1
                 or not isinstance(value["deployment_id"], str) or not re.fullmatch(r"[a-f0-9]{32}", value["deployment_id"])
                 or not isinstance(value["credentials"], dict) or not value["credentials"]
-                or value["credentials"].keys() - {"read", "manage"}):
+                or value["credentials"].keys() - set(ACCESS_ROLES)):
             raise ValueError("連線設定欄位或版本不合法。")
         endpoint(value["host"], value["port"])
         for reference in value["credentials"].values():
@@ -75,8 +76,8 @@ class ConnectionSettings:
     name: str | None = None
 
     def __post_init__(self):
-        if self.access not in (None, "read", "manage"):
-            raise ValueError("連線模式僅接受 read 或 manage。")
+        if self.access not in (None, *ACCESS_ROLES):
+            raise ValueError("連線模式僅接受 read、manage 或 tx。")
         if self.access is not None:
             endpoint(self.host, self.port)
 
@@ -88,8 +89,11 @@ class ConnectionSettings:
             if self.access is not None:
                 grants = client.auth["grants"]
                 allowed = {"read"} if self.access == "read" else {"read", "configure"}
+                if self.access == "tx":
+                    allowed = {"read", "configure", "tx"}
                 if (not grants or any(set(g["permissions"]) - allowed for g in grants)
-                        or self.access == "manage" and not any("configure" in g["permissions"] for g in grants)):
+                        or self.access == "manage" and not any("configure" in g["permissions"] for g in grants)
+                        or self.access == "tx" and not any(allowed <= set(g["permissions"]) for g in grants)):
                     raise ValueError("憑證的實際權限與所選讀取／管理模式不符，已關閉連線；未提權或傳送 UART 指令。")
             return client
         except BaseException:
@@ -100,8 +104,8 @@ class ConnectionSettings:
 def resolve_connection(*, name: str | None = None, access: str | None = None, directory: Path | None = None,
                        host: str | None = None, port: int | None = None,
                        token_file: str | Path | None = None, token_env: str | None = None) -> ConnectionSettings:
-    if access not in (None, "read", "manage"):
-        raise ValueError("連線模式僅接受 read 或 manage。")
+    if access not in (None, *ACCESS_ROLES):
+        raise ValueError("連線模式僅接受 read、manage 或 tx。")
     if token_file is not None or token_env is not None:
         if name is not None or access is not None:
             raise ValueError("固定連線／模式與明確 Token 來源不能混用。")

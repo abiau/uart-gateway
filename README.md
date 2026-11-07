@@ -6,6 +6,10 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 **多窗格監看**：安裝 `python -m pip install -e ".[server,tui]"` 後雙擊 `run-tui.cmd`，選 UART、核對摘要並開始；每路資料與狀態獨立，底部固定操作按鈕。已有 Gateway 使用 `uart tui`，管理模式使用 `uart --access manage tui`，共用 SDK 自動認證。本機最多兩路、遠端最多四路；操作與驗證界線見 [多窗格 TUI](docs/tui.md)，Win11 新介面尚待實測。
 
+**TX 工作台**：明確初始化 TX 權限後，日常執行 `uart tx`、雙擊 `run-tx.cmd` 或工作台選 X。F2 核對目標、輸入與預覽後送一次；F3 選收據查詢結果，租約在單次傳送期間管理。原 read／manage 與本機 RX Launcher 不升級，結果不明不自動重送。[TX 設定與實機驗收](docs/tx-workbench.md) 提供操作步驟；目前實體 TX 尚待使用者驗證。
+
+**Container／Codex 執行命令**：人先用 `uart shell-ready ch_uart_1 --newline lf` 核對已登入的 Shell，之後 `uart exec ch_uart_1 'uname -a'` 回傳 JSON、輸出及 exit code；`uart exec-status <execution_id>` 只查原操作。共用固定 TX 憑證與 SDK，租約涵蓋命令等待，逾時不重送。[Shell 操作說明](docs/shell-exec.md) 包含設定、結果與實機驗收；實體 IPCAM／公司 SSH 尚待測試。
+
 日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)；本輪簡化流程已有自動化證據，尚待 Win11 實機驗證。
 
 遠端現在可一次初始化後，直接執行 `uart menu --remote`，由 SDK 載入固定受保護憑證；管理使用 `uart --access manage menu --remote`。CLI、Workbench 與 Codex 的 Python 工具共用相同 SDK 來源，不必日常產生或貼上 Token。[自動認證與初始化](docs/authentication.md) 包含 Win11 建立、SSH 安裝到 dxan 及 SDK 範例。既有明確 Token 參照仍相容；新 Windows ACL／公司 SSH 流程尚待實測。
@@ -56,6 +60,7 @@ Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 
 | [開發規範](docs/development.md) | 未來 Python 結構、開發與測試方式 |
 | [啟動器設計審查](docs/local-launcher.md) | CMD／PowerShell／Python 比較、就緒判定與子程序清理 |
 | [Win11 一鍵接收](docs/windows-quickstart.md) | 安裝、雙擊、CLI、疑難排解與實機驗收 |
+| [Container／Codex Shell](docs/shell-exec.md) | 已登入目標核對、單次命令、JSON 結果與不重送查詢 |
 | [Container 合併測試](docs/remote-rx-test.md) | 單一測試包、遠端重播、終端顯示與驗收 |
 | [開發路線圖](docs/roadmap.md) | Phase 0–4 範圍、前置條件與驗收 |
 | [目前狀態及核准清單](docs/status.md) | 實際進度、差異、文件檢查與待決事項 |

@@ -4,6 +4,36 @@
 
 更新日期：2026-11-07（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## 本輪 Container／Codex Shell 交接（2026-11-07）
+
+使用者明確授權實作 Linux Container UART Client 操作 IPCAM。**Implemented**：新增 `uart shell-ready <Channel> --newline lf|cr|crlf`，由人在互動終端核對接線、已登入 Shell 與換行，必要時沿用 Confirm，保存目前 Principal／Instance／Revision／Epoch／Adapter 脈絡；非互動 exec 不自行 Confirm。`uart exec <Channel> '命令'` 回傳結構化 JSON、UART 輸出／Base64、exit code 及原 execution_id；`uart exec-status <ID> [--wait 秒數]` 只查原操作，不取 Lease 或傳送。固定 TX 憑證、SDK／TX 工作流程與有界收據共用，沒有修改 Server、Core 或 Protocol。
+
+SDK ShellRunner 將 Lease 保持到整次命令等待結束；單次 POSIX 包裝使用拆分隨機標記，避免把 TTY echo 當完成，命令在 stdin=/dev/null 的子 Shell 執行。RX 核對世代／位移，輸出預設 64 KiB、最多 1 MiB，截斷仍繼續收完成標記。逾時、取消、Gap、拔除、租約失效時不自動重送、重新取得 Lease、登入或送 Ctrl+C。相同本機核對資格的未結案命令阻擋新 exec；查詢結案，或由人確認 Shell 已恢復後重新核對。收據保存原 Cursor／結果 metadata，不存命令、輸出或秘密；送出後保存故障仍回報已觀察的證據並明示 receipt_saved=false。
+
+**Tested**：Linux／Python 3.12.14／pySerial 3.5／Textual 6.12.0／pyte 0.8.2，442 項全套回歸通過、無略過；最後加入授權格式防護與真 CLI SIGINT 後，32 項相關測試再通過，RuntimeWarning 均視為錯誤。Shell 單元涵蓋引用、控制字元／大小、跨區塊 UTF-8／binary／CRLF、錯誤標記與 echo、有界輸出及固定測試 POSIX 子 Shell。真 TCP／SDK／Fake Shell 涵蓋零 I/O 啟用／拒絕、舊目標／損壞資格、整段 Lease／其他 Owner 拒絕、另一路 RX、逾時／取消／失效／裝置遺失、原 Cursor 歷史＋即時查詢零重送、未結案攔阻、歷史淘汰／舊 Instance 保留證據、送出後磁碟故障；真 CLI／固定憑證／POSIX 互動終端驗 Y／取消／非互動拒絕、JSON／退出碼／文字控制字元跳脫與 SIGINT 130。真 pySerial 虛擬 UART 另一端執行測試專用 POSIX sh，驗輸出、非零 exit code、重播及 UART／DTR／RTS 不變，未操作實體板子。
+
+**Verified／實機**：本輪尚無實體 IPCAM、Win11 COM3／COM4、BusyBox ash／LF／CR／CRLF、Windows 目標授權及收據 ACL／鎖、公司 dxan＋SSH TX／Tunnel 中斷的驗收。舊 RX／錄製驗收不代表本輪 Shell／TX 通過。[Shell 操作與待測步驟](shell-exec.md) 提供首次 TX 配置、日常兩條入口、JSON、原操作查詢及驗收；Windows 仍需先使用獨立 TX 部署，只讀 Launcher 不升級。
+
+限制：只支援已由人核對的 POSIX sh／BusyBox ash，不偵測 Prompt、自動登入或提供互動 Shell／MCP／韌體更新。輸出是標記間 UART bytes，可能混有 Kernel／ps，不能當成純 stdout；標記不是裝置身分的加密證明。指令不保留父 Shell 的 cd／變數，超時不能撤回已執行內容。exec-status 依賴有限 Ring 歷史，查無資料時不能重建輸出；已知完成證據保留，但 output_complete=false。本機未結案攔阻不跨主機或不同連線／Raw TX，並非持久工作鎖。
+
+使用者已明確授權將本輪與前輪 TX 工作台的程式、測試及文件提交並推送至 `origin/work`，交付版本以 Git 紀錄為準；上一個已推送提交為 `ad60746`。保存沿用已通過的 442 項全套回歸與最後 32 項補驗，本次沒有功能變更，未重跑未變更程式的測試。沒有執行實體 UART、公司 SSH 或任何使用者設備指令。
+
+## 本輪 TX 工作台交接（2026-11-07）
+
+使用者授權將 Confirm／Lease／傳送／結果查詢整合工作台，另規劃 TX 權限與實機驗收，優先簡單操作。已實作 `uart tx`、`run-tx.cmd`、工作台 X，沿用多窗格與 SDK；F2 依序人工核對目標、輸入文字／Hex、明確換行、完整 bytes 預覽，再點送出一次。Enter 只進預覽、預覽預設取消，輸入框 q／y 是內容。單次送出才取得／續約／釋放 Lease，F3 依收據查原操作，不需手動貼 ID，不自動重送。
+
+新增明確 tx 角色與 `auth init --enable-tx [--tx-channels ...]`、獨立角色包；read／manage、原本機 RX Launcher、Server／Protocol、UART 與 DTR／RTS 不變。初始化建立不同名稱的新部署，原秘密不覆寫；改連新部署的公司 Client 須安全安裝對應角色包。SDK 核對權限，TX 角色目前需 read＋configure＋tx，沒有獨立 confirm-only 權限。
+
+有界操作收據只存識別、時間、數量與結果，位於使用者設定根目錄 tx-receipts／連線名稱；不含 Token／完整命令或 Payload。送出前無法保存收據就不傳送；不明／pending 保留，跨工作台以檔案鎖避免容量競爭，較舊回覆不倒退已知終態。重啟／快取過期查無資料時保留先前證據，另標示本次查詢，不把未知當作未執行。SDK TxWorkflow／TxJournal 可供 CLI／TUI／未來工具共用，TUI 不直接操作 Serial／Core。
+
+自動化證據：Linux／Python 3.12.14／pySerial 3.5／Textual 6.12.0／pyte 0.8.2，421 項全套測試通過、無略過，RuntimeWarning 視為錯誤。最後收據欄位／來源隔離、工作台 X 與 SDK 角色路由另補驗 24 項通過（含一項新增 X 路由測試）。真 TCP／SDK／Fake Serial 覆蓋零 I/O 準備與取消、Confirm／第二 Writer 拒絕、舊預覽、回覆遺失／部分寫入／pending timeout、原 Instance／Principal 查詢、收據失敗零 TX、取消後釋放與零重送；真 pySerial PTY 驗二進位 bytes、UART／DTR／RTS 及租約；Textual UI＋真 CLI／POSIX 終端驗 F2／空白／Tab／Enter／F3／Q、80×24 按鈕、另一路 RX 與預覽零寫入。合成預覽畫面亦檢查，並非實體 UART。
+
+尚未執行：Win11 實體 TX、USB-UART 自迴路、IPCAM Shell 指令／換行與接收效果、Windows 收據 ACL／檔案鎖、公司 SSH／dxan TX／Tunnel 中斷。使用者尚未指定實機目標與安全指令，建議先迴路再 IPCAM；不沿用先前 RX 驗收宣稱 TX 成功。步驟見 [TX 工作台與實機驗收](tx-workbench.md)。
+
+已知限制：需獨立 Gateway 與一次明確 TX 初始化，TX 入口不接管程序；同 Adapter 換板無法自動識別，仍需人工 Rebind／Confirm。部分寫入／Driver timeout 的 blocked 不自動解除；結果只表示 Driver 接受，不能當作 IPCAM 命令執行成功。收據有大小／數量上限，未結案達上限先人工查詢／封存；租約及結果不能保證強制關視窗或底層卡死 I/O 可撤回。沒有預設 UART 指令、自動登入、韌體更新或命令歷史。
+
+本輪與後續 Container／Codex Shell 一併依使用者授權提交並推送至 `origin/work`，交付版本以 Git 紀錄為準；上一輪多窗格 TUI 已保存為 `ad60746`。
+
 ## 本輪多窗格 TUI 交接（2026-11-07）
 
 使用者明確要求每路 UART 獨立畫面、固定狀態列與操作區，以簡單操作為主。已實作可選 Textual／pyte、`run-tui.cmd`／`uart tui --local`、既有 Gateway 的 `uart tui`，及工作台 T 入口；本機可選一至兩個端點、切換錄製、核對摘要後開始，遠端最多四路。固定按鈕提供選窗格、更新、重新監看、確認後單路 RX 重開、暫停／回最新及退出。沿用 SDK 固定認證、權限、Expected Context 與原 Launcher；沒有改 Server／Protocol、TX 或控制線政策。
@@ -52,6 +82,7 @@
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
+| TX 工作台／獨立角色／操作收據 | Implemented／自動化 Tested | F2 目標／輸入／預覽／單次租約，F3 原操作查詢，不明不重送；421 項全套＋24 項補驗，實體 TX／Win11 新流程尚待測 |
 | 多窗格 TUI | Implemented／自動化 Tested | 固定資料／狀態／操作區、本機一至兩路與遠端最多四路；Win11 新介面尚待實測，393 項全套通過 |
 | SDK 自動認證／一次性初始化 | Implemented／自動化 Tested | 固定受保護來源、預設 read／明確 manage、無 Token 參數日常 CLI／Workbench／SDK；Win11 ACL／公司 SSH 尚待實測 |
 | 日常操作簡化 | Implemented／自動化 Tested | S 統一啟動／偏好、L 本次錄製、Capture 分組、命中編號回看匯出、資料流編號／相對分鐘及自動新檔名；Win11 新流程尚待驗證 |
@@ -65,7 +96,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5／Textual 6.12.0／pyte 0.8.2：393 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播、離線 Epoch 摘要與多窗格 TUI |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5／Textual 6.12.0／pyte 0.8.2：421 項全套通過、無略過，最後另補驗 24 項；包含 TX 角色／收據／工作台、真 TCP／PTY、既有 RX／錄製／回看與多窗格 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -83,7 +114,7 @@
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
-| Commit／Push（提交／推送） | 本輪已授權保存至 origin/work | SDK 自動認證已保存為 `3bf090e`；本輪 TUI 的交付版本以 Git 紀錄為準 |
+| Commit／Push（提交／推送） | 前輪已保存 | 多窗格 TUI 已保存為 `ad60746`；本輪 TX 尚未 commit／push |
 
 狀態語意：`Planned` 為預計開發；`In Progress` 為正在進行；`Implemented` 為已有實作；`Tested` 為已執行具體測試並有結果；`Verified` 為在聲稱的真實條件下實際驗證。不可因 Implemented 就改成 Tested，也不能以模擬測試把 Windows 硬體標為 Verified。文件可標示「已建立／已檢查」，但不讓這些詞代表產品已實作。
 

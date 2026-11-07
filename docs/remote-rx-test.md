@@ -1,5 +1,7 @@
 # Container 重播與終端顯示合併測試
 
+本頁保留既有只讀 RX 驗收。新版 Container／Codex 命令執行另見 [Shell 操作與待測步驟](shell-exec.md)，需明確安裝 TX 角色並人工核對已登入 Shell；舊只讀 Gateway／憑證不自動取得 TX。
+
 ## 前提與本次範圍
 
 使用者已確認 d3s1 的 dxan 容器可接收 IPCAM UART 資料，dxan 使用 host 網路，直接連到 `127.0.0.1:18081`。本次合併歷史重播修正與可選的終端顯示，讓使用者一次測試；不進行 Tunnel 中斷測試、不新增 UART TX。

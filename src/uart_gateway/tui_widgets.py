@@ -144,6 +144,8 @@ class UARTPane(Vertical):
         if pane.terminal.screen.omitted_marks:
             error = "畫面組合符號超限已省略；原始錄製不變。"
         context = f"修訂 {snapshot['binding']['revision']}｜世代 {str(pane.epoch or snapshot.get('stream_epoch') or '無')[:8]}"
+        if snapshot.get("tx_available"):
+            context += "｜TX：" + ("目標已確認" if snapshot["binding"]["status"] == "confirmed" else "目標待確認")
         update_static(self.query_one(".pane-state", Static), line + "\n" + label(error or context))
 
 

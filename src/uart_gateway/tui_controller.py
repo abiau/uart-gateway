@@ -123,7 +123,8 @@ class TUIController:
                             pane.snapshot["recording"] = dict(event["data"])
                         elif event["event"] == "channel_state":
                             channel = event["data"]["channel"]
-                            pane.snapshot = dict(channel, reopen_rx_available=pane.snapshot.get("reopen_rx_available", False))
+                            pane.snapshot = dict(channel, reopen_rx_available=pane.snapshot.get("reopen_rx_available", False),
+                                                 tx_available=pane.snapshot.get("tx_available", False))
                             if channel["state"] != "ready" or (channel["binding"]["revision"], channel["stream_epoch"]) != expected[1:]:
                                 pane.receiving = "資料流已停止"
                                 break

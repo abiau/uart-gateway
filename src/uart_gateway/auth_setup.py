@@ -6,7 +6,7 @@ from pathlib import Path
 import secrets
 import tomllib
 
-from .client.connection import config_directory, connection_name, default_name, endpoint, profile_path, read_profile
+from .client.connection import ACCESS_ROLES, config_directory, connection_name, default_name, endpoint, profile_path, read_profile
 from .client.credentials import TokenSource, validate_token
 from .configured_launcher import config_text
 from .protected_files import private_directory, read_private, write_private
@@ -66,8 +66,9 @@ def maybe_default(root: Path, name: str) -> None:
         write_private(target, (name + "\n").encode())
 
 
-def initialize(source: Path, *, name: str = "default", directory: Path | None = None) -> Path:
-    """建立新 Gateway 副本與兩個固定角色；不啟動服務或讀取原秘密。"""
+def initialize(source: Path, *, name: str = "default", directory: Path | None = None,
+               enable_tx: bool = False, tx_channels: list[str] | None = None) -> Path:
+    """建立新 Gateway 與固定角色；TX 需明確啟用，不讀取原秘密。"""
     from .server.app import assemble
     name = connection_name(name)
     try:
@@ -81,11 +82,16 @@ def initialize(source: Path, *, name: str = "default", directory: Path | None = 
     assemble(config, fake=False, resolve_secret=lambda _: secrets.token_urlsafe(32))
     root = root_directory(directory)
     target = profile_path(root, name)
-    tokens = {role: secrets.token_urlsafe(32) for role in ("read", "manage")}
     channels = [c["id"] for c in config["channels"]]
-    config["auth"] = {"principals": [{"id": "remote_reader" if role == "read" else "remote_manager",
-        "token_secret_ref": "file:" + str(target / (role + ".secret")), "channels": channels,
-        "permissions": ["read"] if role == "read" else ["read", "configure"]} for role in tokens]}
+    selected = channels if tx_channels is None else tx_channels
+    if tx_channels is not None and not enable_tx:
+        raise ValueError("指定 TX 通道時須明確加入 --enable-tx。")
+    if enable_tx and (not selected or len(set(selected)) != len(selected) or set(selected) - set(channels)):
+        raise ValueError("TX 通道須為來源設定中不重複的有效 Channel。")
+    tokens = {role: secrets.token_urlsafe(32) for role in (ACCESS_ROLES if enable_tx else ACCESS_ROLES[:2])}
+    config["auth"] = {"principals": [{"id": {"read": "remote_reader", "manage": "remote_manager", "tx": "remote_tx"}[role],
+        "token_secret_ref": "file:" + str(target / (role + ".secret")), "channels": selected if role == "tx" else channels,
+        "permissions": {"read": ["read"], "manage": ["read", "configure"], "tx": ["read", "configure", "tx"]}[role]} for role in tokens]}
     if config.get("recording", {}).get("enabled"):
         config["recording"]["directory"] = str(Path(config["recording"]["directory"]).expanduser().absolute())
     assemble(config, fake=False, resolve_secret=lambda reference: tokens[Path(reference[5:]).stem])
@@ -102,8 +108,8 @@ def initialize(source: Path, *, name: str = "default", directory: Path | None = 
 
 def export_credential(*, name: str | None = None, access: str = "read", output: Path | None = None,
                       directory: Path | None = None) -> Path:
-    if access not in ("read", "manage"):
-        raise ValueError("匯出角色僅接受 read 或 manage。")
+    if access not in ACCESS_ROLES:
+        raise ValueError("匯出角色僅接受 read、manage 或 tx。")
     root = (directory or config_directory()).expanduser().absolute()
     selected = connection_name(name) if name is not None else default_name(root)
     profile = read_profile(root, selected)
@@ -131,7 +137,7 @@ def import_credential(data: bytes, *, name: str = "default", port: int | None = 
         bundle = json.loads(data)
         if (not isinstance(bundle, dict) or set(bundle) != {"version", "deployment_id", "access", "token", "port"}
                 or type(bundle["version"]) is not int or bundle["version"] != 1
-                or bundle["access"] not in ("read", "manage")):
+                or bundle["access"] not in ACCESS_ROLES):
             raise ValueError
         if not isinstance(bundle["token"], str):
             raise ValueError

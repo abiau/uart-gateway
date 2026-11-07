@@ -1,5 +1,21 @@
 # 開發規範
 
+## Container Shell 測試（2026-11-07）
+
+`tests/unit/test_shell_exec.py` 檢查單行 POSIX 引用、拆分標記、TTY echo 不誤判、跨區塊 UTF-8／二進位／CRLF、非零 exit code、stdin=/dev/null 與有界輸出。測試專用 /bin/sh 只執行固定測試字串，產品從不在本機執行使用者的命令。
+
+`tests/integration/test_shell_exec.py` 使用真 Gateway／TCP／SDK／Fake Shell，涵蓋人工授權零 UART bytes、舊目標拒絕、整段租約／第二 Owner 拒絕、另一路 RX、逾時／取消／租約失效／裝置遺失、原 Cursor 重播及後續即時查詢零重送、未結案攔阻、歷史淘汰、舊 Instance 與已知證據保留、送出後收據磁碟失敗。`test_shell_cli.py` 另驗固定 TX 來源、真 CLI JSON／退出碼、真 PTY 人工 Y／取消、非互動拒絕與文字控制字元跳脫；`test_shell_pty.py` 以真 pySerial PTY＋測試專用 POSIX sh 驗輸出／exit code／重播及 UART／DTR／RTS 不變。
+
+完整測試使用 `.venv/bin/python -W error::RuntimeWarning -m unittest discover -v`。模擬 Shell 與 POSIX PTY 不等於 Win11、IPCAM BusyBox ash 或公司 Tunnel 通過；實機步驟見 [Shell 驗收](shell-exec.md)。
+
+## TX 工作台測試（2026-11-07）
+
+test_tx_workflow 單元測 Payload 的 UTF-8／Hex／明確換行、控制字元與大小拒絕，收據格式／容量／不明保留／已知終態不倒退，以及明確 TX 初始化／通道限制／獨立匯入。整合採真 TCP／SDK／Fake Serial，測零 I/O 準備、人工核對／Confirm、單次租約、第二 Owner 拒絕、過期預覽、遺失回覆查原 ID 零重送、部分寫入 blocked、Confirm／寫入取消、pending timeout、收據寫入失敗零 TX、原 Instance 與 Principal 查詢。
+
+test_tx_auth 驗證固定 SDK 的 TX opt-in、read／manage 不升級、錯配角色關閉；test_tx_pty 以真 pySerial PTY 驗精確 binary、Driver 接受量、UART／DTR／RTS 不變與租約清理。test_tui_tx 以 Textual 無頭真 UI 驗 q／y 內容、Enter 預覽／預設取消、明確送一次、F3 不寫入、80×24 按鈕、過期目標與另一路 RX；test_tx_console 另用真 CLI／POSIX 終端 F2／空白勾選／Tab／Enter／F3／Q，不靠固定 Sleep 當成功。
+
+這些均非 Win11 實體 TX 驗收；Windows ACL／收據檔案鎖、USB-UART 自迴路、IPCAM Shell 指令與換行、公司 Tunnel 中斷實測仍需使用者依 [TX 驗收](tx-workbench.md) 執行。沒有預設登入、命令或重新傳送。
+
 ## 多窗格 TUI 測試（2026-11-07）
 
 TUI 為可選依賴，完整測試先安裝 `python -m pip install -e '.[server,tui]'`；只裝 SDK 的環境會明確略過需要 TUI 的測試，不能以略過視為通過。一般 CLI／SDK 匯入不載入 Textual／pyte。

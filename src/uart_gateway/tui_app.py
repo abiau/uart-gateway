@@ -12,6 +12,8 @@ from .local_launcher import LauncherCleanupError
 from .remote_workbench import label
 from .tui_controller import ERRORS, TUIController, explain_error
 from .tui_widgets import ChannelPicker, ConfirmDialog, DevicePicker, SerialView, UARTPane, update_static
+from .client.tx_workflow import TxWorkflow, target_key
+from .tui_tx import ComposeDialog, PreviewDialog, ResultsDialog, TargetDialog
 
 
 class UARTApp(App[int]):
@@ -44,15 +46,17 @@ class UARTApp(App[int]):
     SelectionList { height: 1fr; }
     #selection-error { height: 1; color: #f87171; }
     """
-    BINDINGS = [Binding("q", "quit", "離開", priority=True), Binding("ctrl+c", "quit", "離開", priority=True),
+    BINDINGS = [Binding("q", "quit_key", "離開", priority=True), Binding("ctrl+c", "quit", "離開", priority=True),
         ("r", "refresh_channels", "更新"), ("s", "resume", "重新監看"), ("o", "reopen", "重開 RX"),
         ("p", "pause_view", "暫停畫面"), Binding("end", "latest", "追蹤最新", priority=True), ("c", "choose", "選通道"),
-        ("1", "pane(0)", "窗格 1"), ("2", "pane(1)", "窗格 2"), ("3", "pane(2)", "窗格 3"), ("4", "pane(3)", "窗格 4")]
+        ("1", "pane(0)", "窗格 1"), ("2", "pane(1)", "窗格 2"), ("3", "pane(2)", "窗格 3"), ("4", "pane(3)", "窗格 4"),
+        ("f2", "send_tx", "傳送"), ("f3", "tx_results", "TX 結果")]
 
     def __init__(self, connect=None, *, local_launch=None, local_preview=None, local_devices=None,
-                 local_select=None, local_record=None, description="遠端讀取", channels=None):
+                 local_select=None, local_record=None, description="遠端讀取", channels=None, tx_journal=None):
         super().__init__()
         self.controller = TUIController(connect, self.note)
+        self.tx = TxWorkflow(connect, tx_journal) if tx_journal is not None else None
         self.local_launch, self.local_preview, self.description = local_launch, local_preview, description
         self.local_devices, self.local_select, self.local_record = local_devices, local_select, local_record
         self.requested_channels = channels
@@ -77,12 +81,23 @@ class UARTApp(App[int]):
             yield Static("畫面僅保留最近 300 行歷史；暫停只凍結畫面，仍持續接收。", id="retention", markup=False)
             yield Static("", id="notice", markup=False)
             with Horizontal(id="actions"):
+                if self.tx:
+                    yield Button("傳送 F2", id="tx-send")
+                    yield Button("結果 F3", id="tx-results")
                 for name, text in (("refresh", "更新 R"), ("resume", "監看 S"), ("reopen", "重開 O"), ("pause", "暫停 P"),
                                    ("latest", "最新 End"), ("choose", "選通道 C"), ("quit", "離開 Q")):
                     yield Button(text, id=name)
 
     def note(self, message: str):
         self._uart_notice = label(message)
+
+    def check_action(self, action, parameters):
+        # 輸入 q 是命令文字；End 在表單移動游標，不攔截到主畫面。
+        if action == "quit_key" and isinstance(self.screen, ComposeDialog):
+            return False
+        if action == "latest" and len(self.screen_stack) > 1:
+            return False
+        return True
 
     def gateway_report(self, message: str):
         try:
@@ -138,6 +153,10 @@ class UARTApp(App[int]):
             widget.sync(index == self.selected)
         update_static(self.query_one("#notice", Static), self._uart_notice, wrap=True)
         pane = self.current()
+        if self.tx:
+            self.query_one("#tx-send", Button).disabled = (self._uart_busy or pane is None or not self.controller.valid or
+                not pane.snapshot.get("tx_available") or pane.snapshot["state"] != "ready" or pane.snapshot["tx"]["state"] in ("blocked", "quiescing"))
+            self.query_one("#tx-results", Button).disabled = self._uart_busy
         self.query_one("#reopen", Button).disabled = (self._uart_busy or pane is None or not self.controller.valid or
             not pane.snapshot.get("reopen_rx_available") or pane.snapshot["state"] not in ("lost", "faulted", "closed"))
         self.query_one("#resume", Button).disabled = (self._uart_busy or pane is None or not self.controller.valid or
@@ -172,6 +191,8 @@ class UARTApp(App[int]):
         self._uart_rebuilding = True
         try:
             await self.controller.select(channels, instance, replay=True)
+            if self.tx:
+                self.tx.acknowledged.clear()
             grid = self.query_one("#panes", Grid)
             await grid.remove_children()
             await grid.mount(*(UARTPane(cid, state, i) for i, (cid, state) in enumerate(self.controller.panes.items(), 1)))
@@ -260,9 +281,66 @@ class UARTApp(App[int]):
 
     def on_button_pressed(self, event: Button.Pressed):
         actions = {"refresh": self.action_refresh_channels, "resume": self.action_resume, "reopen": self.action_reopen,
-                   "pause": self.action_pause_view, "latest": self.action_latest, "choose": self.action_choose, "quit": self.action_quit}
+                   "pause": self.action_pause_view, "latest": self.action_latest, "choose": self.action_choose, "quit": self.action_quit,
+                   "tx-send": self.action_send_tx, "tx-results": self.action_tx_results}
         if event.button.id in actions:
             actions[event.button.id]()
+
+    def action_send_tx(self):
+        if len(self.screen_stack) != 1 or self.tx is None or self.current() is None:
+            return
+        cid = self.current().snapshot["channel_id"]
+        async def prepare():
+            if await self.controller.refresh():
+                return
+            target = await self.tx.prepare(self.controller.panes[cid].snapshot, self.controller.instance)
+            if self.tx.is_acknowledged(target):
+                self.compose_tx(target)
+                return
+            async def acknowledge():
+                confirmed = await self.tx.acknowledge(target)
+                pane = self.controller.panes[cid]
+                if target_key(target.instance, confirmed.channel) != target_key(target.instance, target.channel):
+                    await self.controller.stop(cid)
+                    pane.snapshot = dict(confirmed.channel, tx_available=True, reopen_rx_available=True)
+                    self.controller.start(cid, replay=True)
+                self.compose_tx(confirmed)
+            def chosen(yes):
+                if yes:
+                    self.operation(acknowledge)
+                else:
+                    self.note("已取消目標核對；未 Confirm、未取得租約、未傳送。")
+            self.push_screen(TargetDialog(target), chosen)
+        self.operation(prepare)
+
+    def compose_tx(self, target):
+        def preview(payload):
+            if payload is None:
+                self.note("已取消輸入，未傳送。")
+                return
+            async def send():
+                self.note("正在核對目標、取得單次租約並等待結果；其他 UART 繼續接收。")
+                receipt = await self.tx.send(target, payload)
+                await self.show_tx_results(receipt.tx_id)
+            self.push_screen(PreviewDialog(target, payload), lambda yes: self.operation(send) if yes else self.note("已取消預覽，未取得租約或傳送。"))
+        self.push_screen(ComposeDialog(target), preview)
+
+    async def show_tx_results(self, selected=None):
+        receipts = await asyncio.to_thread(self.tx.journal.list)
+        if not receipts:
+            self.note("目前沒有 TX 操作收據；未傳送任何資料。")
+            return
+        def chosen(receipt):
+            async def query():
+                await self.tx.query(receipt)
+                await self.show_tx_results(receipt.tx_id)
+            if receipt is not None:
+                self.operation(query)
+        self.push_screen(ResultsDialog(receipts, selected, self.tx.notice), chosen)
+
+    def action_tx_results(self):
+        if len(self.screen_stack) == 1 and self.tx is not None:
+            self.operation(self.show_tx_results)
 
     async def prepare_local(self):
         try:
@@ -350,6 +428,9 @@ class UARTApp(App[int]):
             await self.cleanup()
             self.exit(1 if self.failure else 0)
         self._uart_quit_task = asyncio.create_task(quit_app())
+
+    def action_quit_key(self):
+        self.action_quit()
 
     async def on_unmount(self):
         self._uart_closing = True

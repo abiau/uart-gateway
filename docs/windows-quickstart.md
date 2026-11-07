@@ -1,6 +1,10 @@
 # Win11 COM3 一鍵只讀接收
 
+需要 Linux Container／Codex 送指令時，先依 [TX 工作台](tx-workbench.md) 建立獨立 TX 部署及安裝角色，再依 [Shell 操作](shell-exec.md) 人工核對、執行與查詢。Windows Gateway 沿用既有 Server；本頁只讀 Launcher 不升級為 TX。實體 IPCAM Shell 與公司 SSH 的新 TX 流程仍待驗證。
+
 ## 目前已知與驗證範圍
+
+新增 TX 工作台：一次明確建立 TX 部署後，可直接 `uart.exe tx`／雙擊 `run-tx.cmd`，F2 依序核對目標、輸入與預覽，F3 查詢收據。原 read／manage 不因此可傳送。完整 [TX 初始化、操作與實機驗收](tx-workbench.md) 建議先 USB-UART 自迴路，再使用者明確指定 IPCAM 指令／換行；目前實體 TX 尚未驗證，不能以 RX 或虛擬 Serial 成功代替。
 
 使用者已確認 COM3 接著 IPCAM；只有 TX／RX／GND，DTR／RTS 未接，使用 115200／8N1／無流控。2026-11-05 使用者以原手動流程啟動 Gateway，並用 `uart.exe watch` 收到 IPCAM 開機訊息；這是既有 Win11 本機 RX 的實機證據。
 

@@ -2,6 +2,10 @@
 
 ## 日常使用
 
+TX 入口為 `uart tx`／工作台 X，需明確建立 tx 角色；原 read／manage 不變。[TX 工作台](tx-workbench.md) 包含新部署、通道範圍與實機驗收。以下未加 --enable-tx 的初始化仍只產生兩個角色。
+
+Container／Codex 的 `shell-ready`／`exec`／`exec-status` 同樣由 SDK 載入固定 tx 憑證，不需每天管理 Token；先安全匯入該角色並由人核對已登入的 Shell。它不自動提升原 read／manage 權限，步驟見 [Shell 操作](shell-exec.md)。
+
 本機 `local`／工作台 S 沿用每次啟動的臨時 Token，不需設定。遠端使用固定受保護憑證：初始化及安裝一次後，CLI、遠端 Workbench、Python／Codex 工具都由 SDK 自動載入。這是已實作的新流程；自動化採 Linux／真 TCP／Fake Serial／PTY，Win11 ACL、實體 UART 與公司 SSH 路徑仍待實測。
 
 初始化後，Win11 可使用：
@@ -100,7 +104,7 @@ SDK 匯入不讀取憑證、不連線。檔案存取放在工作執行緒；連�
 | --- | --- | --- |
 | 預設讀取 | read | 列出／監看通道、歷史重播；不管理裝置 |
 | 明確管理 | read＋configure | 原人工 RX 重開與 Binding 管理；不是 TX 授權 |
-| 原有明確 TX 流程 | 另需 tx | 仍須 Confirm、Lease、Expected Context；本輪初始化不產生 tx 憑證 |
+| 明確 TX 工作台 | read＋configure＋tx | auth init --enable-tx 才建立；--tx-channels 限制通道，仍須人工核對、Confirm、Lease 與 Expected Context |
 
 同一 OS 帳號若能讀取管理秘密檔，便能明確選管理模式；SDK 預設讀取不是 OS 隔離。要讓 Codex 僅有讀取能力，應只在其帳號／Container 安裝讀取包。共用一份讀取憑證也不提供不同工具的個別稽核身分。
 

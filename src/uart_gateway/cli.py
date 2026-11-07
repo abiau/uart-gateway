@@ -388,8 +388,15 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
-    if args.command == "tui":
+    if args.command in ("exec", "exec-status"):
+        from .shell_cli import run_shell
+        return await run_shell(args)
+    if args.command in ("tui", "tx"):
         from .tui import run_tui
+        if args.command == "tx":
+            if args.access not in (None, "tx"):
+                raise ValueError("TX 工作台須使用獨立 tx 憑證；不會以讀取／管理身分送出。")
+            args.access = "tx"
         if args.local:
             _check_local_args(args)
             if args.port != 18081:
@@ -411,8 +418,10 @@ async def run(args: argparse.Namespace) -> int:
             raise ValueError("初始化請使用 auth 子命令的參數，不混用連線／Token 覆寫。")
         root = args.connections_dir
         if args.auth_command == "init":
-            print("正在建立受保護的讀取／管理憑證與 Gateway 設定副本……", flush=True)
-            result = await asyncio.to_thread(auth_setup.initialize, args.gateway_config, name=args.name, directory=root)
+            roles = "讀取／管理／TX" if args.enable_tx else "讀取／管理"
+            print(f"正在建立受保護的{roles}憑證與 Gateway 設定副本……", flush=True)
+            result = await asyncio.to_thread(auth_setup.initialize, args.gateway_config, name=args.name, directory=root,
+                                            enable_tx=args.enable_tx, tx_channels=args.tx_channels)
             print("已初始化；未啟動 Gateway，原設定檔未改寫。", flush=True)
             print("Gateway 設定副本：" + label(result), flush=True)
         elif args.auth_command == "export":
@@ -429,7 +438,7 @@ async def run(args: argparse.Namespace) -> int:
                 data = await asyncio.to_thread(read_private, args.file, 16384)
             role = await asyncio.to_thread(auth_setup.import_credential, data, name=args.name,
                                           port=args.import_port, directory=root)
-            print(f"已安裝連線 {label(args.name)} 的{'讀取' if role == 'read' else '管理'}憑證；未連線或操作 UART。", flush=True)
+            print(f"已安裝連線 {label(args.name)} 的{ {'read': '讀取', 'manage': '管理', 'tx': 'TX 操作'}[role]}憑證；未連線或操作 UART。", flush=True)
         elif args.auth_command == "use":
             await asyncio.to_thread(auth_setup.select_default, args.name, directory=root)
             print("已選擇預設連線：" + label(args.name) + "；日常仍預設讀取模式。", flush=True)
@@ -578,7 +587,7 @@ async def run(args: argparse.Namespace) -> int:
             return await watch_client(client, args.channel, duration=args.duration,
                                       text_mode=args.text, replay=args.replay, terminal_mode=args.terminal)
         elif args.command == "status":
-            await output(await client.tx_status(args.channel, args.tx_id))
+            await output(await client.tx_status(args.channel, args.tx_id, instance=getattr(args, "instance", None)))
         else:
             channel = await client.get_channel(args.channel)
             if args.command == "confirm":
@@ -609,7 +618,7 @@ def main() -> None:
     secrets.add_argument("--token-file", help="受保護的 Token 檔案")
     secrets.add_argument("--token-env", help="明確選用舊環境變數來源；不自動改用其他憑證")
     parser.add_argument("--connection", help="遠端連線名稱，省略使用已初始化的預設連線")
-    parser.add_argument("--access", choices=("read", "manage"), help="明確選用讀取或管理模式；固定連線預設 read")
+    parser.add_argument("--access", choices=("read", "manage", "tx"), help="讀取／管理／TX 模式；固定連線預設 read")
     parser.add_argument("--connections-dir", type=Path, help="受保護連線設定根目錄，預設使用者資料目錄")
     commands = parser.add_subparsers(dest="command", required=True)
     auth = commands.add_parser("auth", help="一次性初始化、傳輸與安裝遠端憑證；不顯示 Token")
@@ -617,9 +626,11 @@ def main() -> None:
     initialize = setup.add_parser("init", help="依既有實體 Gateway 設定建立固定讀取／管理憑證")
     initialize.add_argument("--gateway-config", type=Path, required=True, help="來源完整 Gateway TOML；原檔不改")
     initialize.add_argument("--name", default="default", help="連線名稱，預設 default")
+    initialize.add_argument("--enable-tx", action="store_true", help="明確建立獨立 TX 憑證；原讀取／管理不升級")
+    initialize.add_argument("--tx-channels", nargs="+", help="授予 TX 的 Channel ID；省略為來源全部通道，需 --enable-tx")
     export_auth = setup.add_parser("export", help="產生受保護憑證傳輸包，透過既有 SSH 安裝")
     export_auth.add_argument("--name", help="來源連線，省略為預設")
-    export_auth.add_argument("--access", dest="export_access", choices=("read", "manage"), default="read", help="匯出角色，預設 read")
+    export_auth.add_argument("--access", dest="export_access", choices=("read", "manage", "tx"), default="read", help="匯出角色，預設 read")
     export_auth.add_argument("--output", type=Path, help="新 .uart-credential 檔案，預設使用者私有 transfers 目錄")
     import_auth = setup.add_parser("import", help="安裝憑證傳輸包，不連線 Gateway")
     source_auth = import_auth.add_mutually_exclusive_group(required=True)
@@ -629,6 +640,23 @@ def main() -> None:
     import_auth.add_argument("--port", dest="import_port", type=int, help="本機 SSH Tunnel Port，省略沿用來源")
     use_auth = setup.add_parser("use", help="選擇預設遠端連線，日常仍預設讀取")
     use_auth.add_argument("name", help="已初始化的連線名稱")
+    tx = commands.add_parser("tx", help="開啟 TX 工作台：核對目標、預覽傳送與查詢結果")
+    tx.set_defaults(local=False, config=None, record_dir=None, no_record=False)
+    tx.add_argument("--channels", nargs="+", help="直接選通道；省略以畫面選擇")
+    tx.add_argument("--pause-on-error", action="store_true", help="雙擊入口失敗時保留視窗")
+    shell_ready = commands.add_parser("shell-ready", help="由人核對已登入 Shell 與目標，供後續 exec 使用")
+    shell_ready.add_argument("channel")
+    shell_ready.add_argument("--newline", choices=("lf", "cr", "crlf"), required=True, help="已確認可用的命令換行，不自動猜測")
+    execute = commands.add_parser("exec", help="執行一條已授權 Shell 命令，輸出 JSON 結果，不重送")
+    execute.add_argument("channel")
+    execute.add_argument("shell_command", help="單行 POSIX Shell 命令；由遠端 sh 執行")
+    execute.add_argument("--timeout", type=float, default=10, help="等待完成標記秒數，預設 10，範圍 0.1～300")
+    execute.add_argument("--max-output", type=int, default=65536, help="回傳的 UART 輸出 bytes 上限，預設 65536，最多 1048576")
+    execute.add_argument("--text", action="store_true", help="人讀文字；預設為 JSON，控制字元不直接執行")
+    query_exec = commands.add_parser("exec-status", help="依原收據重播查詢 Shell 結果，不傳送或取得租約")
+    query_exec.add_argument("execution_id")
+    query_exec.add_argument("--wait", type=float, default=0, help="重播後可等待新完成標記，預設不跟隨即時資料")
+    query_exec.add_argument("--text", action="store_true", help="人讀文字；預設為 JSON")
     tui = commands.add_parser("tui", help="多窗格 UART：資料、狀態與操作區固定分開")
     tui.add_argument("--local", action="store_true", help="沿用上次本機設定，啟動並管理自己的 Gateway")
     tui.add_argument("--config", type=Path, help="本機完整 Gateway TOML，需搭配 --local")
@@ -706,6 +734,7 @@ def main() -> None:
             command.add_argument("--newline", choices=("none", "lf", "cr", "crlf"), default="none")
         elif name == "status":
             command.add_argument("tx_id")
+            command.add_argument("--instance", help="收據的原 Gateway Instance；省略為目前程序")
     args = parser.parse_args()
     if args.command in ("watch", "local") and args.duration is not None and (
             not math.isfinite(args.duration) or not args.duration > 0):
@@ -713,6 +742,9 @@ def main() -> None:
     if args.command == "local" and not args.select and (args.count != 1 or args.save_profile is not None):
         parser.error("--count 與 --save-profile 僅能搭配 --select 使用")
     try:
+        if args.command == "shell-ready":
+            from .shell_cli import prepare_shell
+            raise SystemExit(prepare_shell(args))
         if args.command == "menu":
             if args.remote:
                 from .remote_workbench import run_remote_workbench
@@ -720,7 +752,8 @@ def main() -> None:
                 settings = client_connection(args)
                 connect = settings.connect
                 if settings.access:
-                    print(f"使用遠端連線：{settings.name}；模式：{'讀取' if settings.access == 'read' else '管理（不含 TX）'}。", file=sys.stderr, flush=True)
+                    mode = {"read": "讀取", "manage": "管理（不含 TX）", "tx": "TX 憑證（此文字選單僅 RX；傳送用 uart tx）"}[settings.access]
+                    print(f"使用遠端連線：{settings.name}；模式：{mode}。", file=sys.stderr, flush=True)
 
                 async def monitor(client: Client, channel_id: str, replay: bool, expected: tuple) -> int:
                     return await watch_client(client, channel_id, duration=None, text_mode=True,
@@ -740,8 +773,9 @@ def main() -> None:
 
             def dispatch(argv: list[str]) -> int:
                 child = parser.parse_args(["--port", str(args.port), *argv])
-                if child.command == "tui" and not child.local:
+                if child.command in ("tui", "tx") and not child.local:
                     child.port_explicit = args.port_explicit
+                    child.connections_dir = args.connections_dir
                 child.capture_ready = session.capture_ready
                 child.search_ready = session.search_ready
                 if child.command == "local" and child.select:
@@ -755,7 +789,7 @@ def main() -> None:
         raise SystemExit(asyncio.run(run(args)))
     except (RemoteError, ProtocolError, OSError, ValueError, TimeoutError) as exc:
         _report_failure(exc)
-        if args.command in ("local", "menu", "tui") and args.pause_on_error and sys.stdin.isatty():
+        if args.command in ("local", "menu", "tui", "tx") and args.pause_on_error and sys.stdin.isatty():
             try:
                 input("按 Enter 關閉此視窗。")
             except (EOFError, KeyboardInterrupt):
