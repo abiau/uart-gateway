@@ -14,7 +14,7 @@ Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開�
 
 開啟失敗保留 Channel 錯誤與 TCP 管理介面，其他通道繼續；read 空逾時不算拔除，read 錯誤使租約與舊訂閱失效。生命週期等待逾時後維持 faulted、不讓晚到結果確認目標，未收斂 Handle 不得交接。這是邏輯等待上限，不能安全強殺卡死的 Driver 執行緒；極端狀況仍需人工處理程序。
 
-`token_secret_ref` 現支援 `env:變數名稱` 或 `file:檔案路徑`，不接受文件內的真實 Token。`file:` 必須指向受保護、以 UTF-8 儲存 Token 的檔案；權限由部署者管理。CLI 對應使用 `--token-env`（預設 `UART_GATEWAY_TOKEN`）或 `--token-file`，沒有直接傳入 Token 的命令列選項。
+`token_secret_ref` 現支援 `env:變數名稱` 或 `file:檔案路徑`，不接受文件內的真實 Token。`file:` 必須指向受保護、以 UTF-8 儲存 Token 的檔案；權限由部署者管理。CLI／SDK 預設使用下節固定連線；`--token-env` 或 `--token-file` 保留明確來源相容。完全沒有固定設定時才沿用原 `UART_GATEWAY_TOKEN`，沒有直接傳入 Token 值的命令列選項。
 
 「確認」只表示使用者已明示；「建議」不代表已核准。`必填` 不提供猜測值；`可省略` 採表中候選預設；`條件必要` 依說明判斷。所有容量均有上限，不允許 `0` 表示無限。秘密只透過參照載入，不在文件或版本庫放真值。
 
@@ -26,6 +26,44 @@ Serial Backend 在 `port=None` 時先套用設定與 DTR／RTS 意圖，再開�
 
 Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到 stderr，lost／faulted 用 WARNING，無 Client、未錄製時同樣輸出。日誌不含 RX 原文、Token 或秘密內容，不新增持久檔案與日誌保留設定；這不是尚未完成的完整 Audit 儲存。
 
+## SDK 遠端自動認證
+
+本機 `local`／`start` 沿用原本的臨時或明確設定來源。本節是遠端固定連線：Server 的 auth.authenticate、權限欄位、Confirm／Lease／TX 及線上版本不變。完整操作見 [認證初始化](authentication.md)。
+
+| 來源／參數 | 現行行為與上限 |
+| --- | --- |
+| Windows 預設根目錄 | `%LOCALAPPDATA%/uart-gateway`；缺 LOCALAPPDATA 時使用目前使用者 AppData/Local |
+| Linux 預設根目錄 | `$XDG_CONFIG_HOME/uart-gateway`，未指定則 `~/.config/uart-gateway` |
+| CLI `--connections-dir`／SDK `directory` | 明確的根目錄覆寫；初始化與匯出不將秘密寫入本專案版本庫 |
+| `default-connection` | 最多 128 bytes 的預設連線名稱檔；首次成功安裝時設定，auth use 可明確更換 |
+| `connections/<名稱>/client.json` | 最多 16 KiB；名稱 1～64 個 ASCII 英數字／底線／連字號 |
+| 設定 JSON | version 整數 1、deployment_id 為 32 個小寫 hex、host、port、credentials；可含 gateway_config 路徑；拒絕未知欄位 |
+| credentials | 僅 read／manage 的 file: 或 env: 參照；不得保存 Token 值；file: 相對路徑以該連線目錄解析，不以目前目錄解析 |
+| 自動來源端點 | host 僅 127.0.0.1／::1，port 為 1～65535；經既有 SSH Tunnel 使用遠端 Gateway，不新增 TLS 或外部 Listener |
+| `--connection` | 明確選定名稱，省略使用 default-connection 或名稱 default |
+| `--access` | read／manage；固定連線省略時為 read，管理須明確選擇 |
+| `--host`／`--port` | 只有明確輸入才覆寫固定端點，即使值等於原 CLI 預設也算覆寫 |
+| 秘密檔 | 最多 1024 bytes、UTF-8、去頭尾空白；自動來源須符合既有 43～128 ASCII Base64url 格式 |
+| 權限保護 | POSIX 擁有者須為目前使用者且無 group／other 權限，建立檔案 600／目錄 700；Windows 寫入前配置及讀取時檢查目前使用者 ACL |
+| SDK | Client.connect_auto／resolve_connection／ConnectionSettings.connect，共用來源讀取與角色核對 |
+
+讀取連線只接受 Server 實際授權 read；管理只接受 read＋configure 的範圍，且至少一個通道有 configure。角色與授權不符時關閉連線，不返回 Client，不改用其他秘密；Server 仍是最終授權者。固定角色不接受 tx，原 `Client.connect(host, port, token)` 與明確來源的既有 TX 工作流程保持相容，仍受 Confirm／Lease 等保護。
+
+來源優先序：明確 --token-file／--token-env 使用唯一指定來源，與 --connection／--access 不得混用；否則已配置的固定來源優先於任何殘留 UART_GATEWAY_TOKEN。只有完全沒有固定設定且未明確指定連線／角色時，才相容舊 UART_GATEWAY_TOKEN。已存在但損壞、缺檔或認證失敗不觸發降級，也不自動生成另一把遠端 Token。SDK 每次新連線重讀所選秘密；工作區建立後固定端點及來源參照，更換預設設定需重新進入工作區。
+
+### 一次性初始化與傳輸
+
+| 命令 | 行為 |
+| --- | --- |
+| `auth init --gateway-config 檔案 [--name 名稱]` | 來源 UTF-8／BOM TOML 最多 64 KiB；共用原驗證，建立新 read／manage 秘密、兩身分 Gateway 副本與 client.json；原檔不變，不開 Serial／Listener |
+| `auth export [--name 名稱] [--access read或manage] [--output 路徑]` | 預設 read，產生新的受保護 .uart-credential 包；預設放私有 transfers 目錄；不輸出 Token，不覆蓋既有檔 |
+| `auth import (--file 檔案或--stdin) [--name 名稱] [--port 本機Port]` | 包最多 16 KiB；檔案需私有權限，stdin 僅管線。部署與 Port 相同可增加另一角色；相異既有秘密拒絕覆寫，相同內容可重複匯入 |
+| `auth use 名稱` | 更換預設連線，仍不提升預設讀取權限 |
+
+包是一次性秘密傳輸資料，不是普通設定檔；欄位僅 version=1、deployment_id、access、token、port，驗證格式後才寫入。部署 ID 只用於拒絕混合不同部署，不是 Server 身分驗證或 wire 欄位。傳輸沿用 SSH，無匿名配對端點；Server 啟動時載入 file: 秘密，輪替需協調更新與重啟，本輪不提供自動輪替／reload。
+
+SDK 模組匯入不讀檔或連線；檔案 I/O 在工作執行緒，Token 不保存於連線設定物件 repr、命令列、一般設定或 Log。CLI read_client_token 僅保留相容薄轉接，來源處理由 SDK 提供。Windows ACL 的實際環境相容性仍待實機驗證；Linux SDK 不需要 Windows PowerShell。
+
 ## Gateway 與網路
 
 歷史重播由 Session Writer 逐筆送出，使用獨立有界快照，不占用整段即時輸出佇列。每 Session 快照共用上限為目前 RX Ring 設定的兩倍（預設 8 MiB，原始 payload＋每事件 512 bytes 預留），期限沿用 idle_timeout_ms（預設 15 秒）；不新增 TOML 參數或修改 Hello 欄位。Writer 額外至多持有一個不超過 max_frame_bytes 的編碼中／傳送中 Frame。即時訂閱佇列及 Connection 輸出上限維持原值，快照配額不足回 QUEUE_FULL，慢接收超限或重播期限到達仍會明示斷線／記錄原因。
@@ -36,7 +74,7 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 互動工作台 `uart menu --recordings-dir 路徑` 的根目錄預設為目前工作目錄下的 `recordings`，用於本次錄製及離線瀏覽，不寫入下列端點 Profile 或 Server 的持久設定。`uart --port 18082 menu` 可指定本機 Gateway 的 TCP Port；工作台為本機／離線入口，不接受外部 Token 或遠端 host 選項。操作與掃描上限見 [工作台說明](workbench.md)。
 
-遠端工作台以 `menu --remote` 明確啟用，與 --recordings-dir 互斥。連線參數沿用全域 --host／--port／--token-file 或 --token-env，未指定時為 127.0.0.1:18081 及 UART_GATEWAY_TOKEN；Client Port 可為 1～65535（例如 SSH 本地轉送的端點），不套用 Server 綁定 Port 的限制。每次連線重讀 Token 參照，不新增持久連線設定；只列出有 read 權限的 Channel。有權限與擴充能力時提供單路手動 RX 重開，不提供 TX、遠端設定修改或完整 reload。
+遠端工作台以 `menu --remote` 明確啟用，與 --recordings-dir 互斥。連線參數由 SDK 固定設定載入，可用全域 --connection／--access 選擇；明確 --host／--port 可覆寫端點，--token-file 或 --token-env 則為互斥的舊來源模式；Client Port 可為 1～65535（例如 SSH 本地轉送的端點），不套用 Server 綁定 Port 的限制。每次連線重讀所選憑證；固定設定保存於使用者私有目錄，不寫入本機工作台偏好；只列出有 read 權限的 Channel。有權限與擴充能力時提供單路手動 RX 重開，不提供 TX、遠端設定修改或完整 reload。
 
 `uart local --select --count 2 --save-profile bench.local.toml` 保存的是本機選擇配置，與 `uart-gatewayd --config` 的伺服器配置分開。前者沒有 network、auth、UART 修改或控制線選項；啟動器驗證後才轉為既有伺服器 TOML，Serial 固定 115200／8N1／無流控、DTR／RTS false。直接交給伺服器的完整設定格式不變。
 

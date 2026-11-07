@@ -23,6 +23,16 @@ class Client:
         self.instance = hello["gateway_instance_id"]
 
     @classmethod
+    async def connect_auto(cls, name: str | None = None, *, access: str | None = None,
+                           directory=None, host: str | None = None, port: int | None = None,
+                           token_file=None, token_env: str | None = None, timeout: float = 5) -> "Client":
+        """共用固定來源認證；預設讀取，管理須明確選用，不重試其他身分。"""
+        from .connection import resolve_connection
+        settings = await asyncio.to_thread(resolve_connection, name=name, access=access, directory=directory,
+            host=host, port=port, token_file=token_file, token_env=token_env)
+        return await settings.connect(timeout=timeout)
+
+    @classmethod
     async def connect(cls, host: str, port: int, token: str, *, timeout: float = 5) -> "Client":
         reader, writer = await asyncio.wait_for(asyncio.open_connection(host, port, limit=65535), timeout)
         transport = Transport(reader, writer, timeout=timeout)

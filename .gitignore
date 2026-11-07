@@ -13,3 +13,4 @@ recordings-reopen-test/
 *.secret
 *.local.jsonl
 .uart-workbench.local.json
+*.uart-credential

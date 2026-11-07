@@ -64,7 +64,7 @@ class RemoteGroup:
         except ERRORS as exc:
             self.states[cid] = "監看失敗"
             code = getattr(exc, "code", type(exc).__name__)
-            detail = "請核對 Token 來源。" if code == "AUTH_FAILED" else label(exc)
+            detail = "請確認此連線與 Gateway 使用相同部署憑證。" if code == "AUTH_FAILED" else label(exc)
             other = "，另一路繼續" if len(self.channels) > 1 else ""
             self.report(f"{label(cid)}：監看失敗（{label(code)}）：{detail}；未自動重連{other}。")
 
@@ -163,7 +163,7 @@ async def run_remote_group(connect: Callable[[], Awaitable[Client]], channels: l
                 try:
                     await group.reopen(number, selected)
                 except ERRORS as exc:
-                    detail = "認證失敗（AUTH_FAILED），請核對 Token 來源。" if getattr(exc, "code", None) == "AUTH_FAILED" else label(exc)
+                    detail = "認證失敗（AUTH_FAILED），請確認此連線與 Gateway 使用相同部署憑證。" if getattr(exc, "code", None) == "AUTH_FAILED" else label(exc)
                     group.report(f"重開未完成或結果未確認：{detail}；未自動重試，先 R 查詢。占用時請關閉 MobaXterm 的 COM 連線。")
                 continue
             try:
@@ -188,7 +188,7 @@ async def run_remote_group(connect: Callable[[], Awaitable[Client]], channels: l
                 else:
                     group.report("指令無效；請輸入 R、O 1、O 2、S 1、S 2 或 Q，再按 Enter。")
             except ERRORS as exc:
-                detail = "認證失敗（AUTH_FAILED），請核對 Token 來源。" if getattr(exc, "code", None) == "AUTH_FAILED" else label(exc)
+                detail = "認證失敗（AUTH_FAILED），請確認此連線與 Gateway 使用相同部署憑證。" if getattr(exc, "code", None) == "AUTH_FAILED" else label(exc)
                 group.report(f"操作失敗：{detail}；未自動重試，既有監看繼續。")
     finally:
         await group.close()

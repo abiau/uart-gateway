@@ -1,5 +1,11 @@
 # 開發規範
 
+## 自動認證測試（2026-11-07）
+
+test_credentials 覆蓋受保護檔案、初始化兩角色、來源不變、匯出／匯入、部署衝突／重複、未知格式與界限、路徑 traversal、固定來源優先於舊環境、失效不降級、權限不符與 FIFO／symlink 拒絕、每次重讀、秘密不出現在 CLI，以及初始化／管理匯入寫入失敗清理。Windows 使用 ACL 呼叫替身，確認內容寫入前配置 ACL、錯誤拒絕及固定 PowerShell 腳本，不代表 Windows ACL 實際執行通過。
+
+test_auto_auth 以真 TCP Gateway／SDK、Fake Serial、CLI 與 POSIX PTY 驗證自動來源 RX、預設讀取拒絕管理／Confirm／Lease、管理重開但無 TX、錯配角色關閉、不因 AUTH_FAILED 換來源、Gateway 重啟與秘密重讀、無 Token 參數 CLI 及遠端 Workbench。既有 Confirm／Lease／Expected Context 與 TX 測試維持覆蓋；沒有實體 UART TX、Windows 權限或公司 SSH 實機證據。
+
 ## 離線 Epoch 摘要驗證
 
 `test_recording_summary.py` 使用有實際雜湊的合成分段，驗證重開前後數量與原總計核對、二進位 bytes／跨分段不重複、位移缺口不當作 payload、缺 Footer／錯誤雜湊不被摘要掩蓋、無資料與有 Epoch 無 RX、摘要數量／識別長度上限與未列資料核對。真 CLI 在沒有 Token 時驗證中文輸出、控制字元跳脫、原 0／1／2 退出碼及超限告知。既有真 Gateway 錄製／重開整合測試亦讀取新摘要並執行離線 CLI，核對新舊 Epoch、兩段原始資料及全檔 unknown。來源檔案不變；匯出／回看仍使用原 inspect_capture 回呼，不承擔新摘要記憶體。這不是 Win11 新顯示的實機證據。

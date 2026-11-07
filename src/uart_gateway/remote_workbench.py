@@ -59,7 +59,7 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
     def failed(exc: Exception) -> None:
         code = getattr(exc, "code", type(exc).__name__)
         if code == "AUTH_FAILED":
-            report("認證失敗（AUTH_FAILED），請核對 Token 來源與 Gateway；按 R 才重新讀取憑證並連線。")
+            report("認證失敗（AUTH_FAILED），請確認已初始化相同部署憑證，且 Gateway 已載入目前版本；按 R 才重新讀取憑證並連線。")
         else:
             report(f"遠端操作失敗：{label(code)}：{label(exc)}")
 

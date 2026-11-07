@@ -45,6 +45,8 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 
 ## 軟體模組與依賴
 
+2026-11-07 自動認證沿用原 hello／auth.authenticate：client.credentials 統一讀取來源，client.connection 載入使用者私有連線／角色並核對實際 grants，SDK Client.connect_auto 與 CLI／遠端 Workbench 都經相同路徑。protected_files 負責 OS 檔案保護；只在明確呼叫時使用，SDK 不反向依賴 Server 或 Serial。auth_setup 是獨立的一次部署工具，僅以原 Server 純組裝驗證產生 Gateway 副本與角色秘密，不開裝置或 Listener。Profile、部署 ID、匯出包均不是線上欄位，Server／Core／Protocol 不改。
+
 操作簡化延續原邊界：workbench_state 只保存無秘密的本機啟動偏好與記憶體中的 Capture／搜尋結果。local_launcher 在真實就緒後回報本次錄製位置，不讓 UI 推測最新檔案；原生命週期、SDK 與清理失敗政策不變。recording_workbench 僅組合原 CLI，recording_navigation 經原離線檢查器建立有界資料流／時間摘要，再轉為原 RXSelection。跨區塊命中僅保存有界時間跨度，以涵蓋完整關鍵字，不新增線上 API 或 Serial 操作。
 
 2026-11-07 工作台整合沿用既有邊界：configured_launcher 只讀完整 TOML，以 server.app.assemble 共用純組裝／驗證，不在驗證時開 Serial 或 Listener；暫存安全設定交回原 Gateway 子程序，生命週期仍由 local_launcher 管理。接收與人工重開沿用 SDK／remote_group，owned 模式只改退出時清理自己的 Gateway。recording_catalog 提供有界、未驗證預覽；recording_selection／recording_search 及原回看／匯出共用離線 inspect_capture，不接 Core 或建立網路連線。所有篩選仍檢查整份錄製，線上契約與檔案格式不變。

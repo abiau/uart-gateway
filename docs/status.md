@@ -4,6 +4,16 @@
 
 更新日期：2026-11-07（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## 本輪 SDK 自動認證交接（2026-11-07）
+
+使用者核准保留認證、取消日常人工 Token 操作。本輪已實作 SDK 固定來源與 Client.connect_auto／resolve_connection，CLI 與遠端 Workbench 共用；本機臨時認證不變。新增 auth init／export／import／use，一次安全初始化、獨立讀取／管理憑證、受保護來源及 SSH 標準輸入安裝。命令、一般設定及 Log 不保存 Token 值；管理不產生 tx，原 Server／Protocol／Confirm／Lease／Expected Context 不改。
+
+證據：Linux／Python 3.12.14／pySerial 3.5，368 項全套測試通過、無略過，RuntimeWarning 視為錯誤；最後 SDK 連線物件角色與路徑防護另補驗 22 項通過。新增實際 POSIX 權限、初始化／角色包／來源與既有檔案保護、寫入失敗清理、來源優先序、失效不降級、每次重讀、無 Token 輸出，以及真 Gateway／TCP／Fake Serial／CLI／PTY。讀取拒絕管理／Confirm／Lease，管理可重開 RX 但不能取得 TX Lease；錯配角色關閉連線，Gateway 重啟仍可用固定來源。
+
+尚未執行：Windows ACL／PowerShell 的實際使用者環境、Win11 COM3／COM4 新初始化流程、公司 SSH／dxan 的憑證傳輸與新工作區實測。Windows ACL 僅有呼叫替身測試，不稱為實機通過；Codex 可使用相同 SDK／CLI，未新增或部署 MCP Server。操作見 [自動認證與一次性初始化](authentication.md)。使用者已明確授權將本輪程式、測試與文件提交並推送至 origin/work，交付版本以 Git 紀錄為準。
+
+已知限制：固定來源需要一次安全安裝，Windows 需系統 PowerShell 配置／檢查 ACL；Linux 需目前使用者與私有權限。角色包是秘密資料，走既有 SSH，沒有匿名配對端點。預設讀取不是 OS 隔離，同一帳號能讀管理檔仍能明確選管理；Codex 限讀環境只安裝 reader。產生的多身分 Gateway 副本走獨立 daemon，不交給單身分本機 Launcher；Gateway／Tunnel 仍需原程序啟動。輪替需協調更新並重啟 Server，本輪不提供自動輪替／reload／常駐服務。完全沒有固定設定時才相容舊環境變數；固定來源失效不回退。
+
 ## 本輪操作簡化交接（2026-11-07）
 
 使用者核准依前次建議改善候選 1／3／4 的操作負擔，本輪已完成 S 統一啟動與上次設定、D 人工選端點自動保存無秘密 Profile、R 錄製切換、L 使用 Launcher 回報本次 Capture、按 Capture 分組選檔、搜尋命中編號回看／匯出前後片段、F 資料流編號／相對分鐘，以及 T 自動新檔名。原 CLI 與 A 進階工具保留，不新增線上 API 或 TX。
@@ -28,6 +38,7 @@
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
+| SDK 自動認證／一次性初始化 | Implemented／自動化 Tested | 固定受保護來源、預設 read／明確 manage、無 Token 參數日常 CLI／Workbench／SDK；Win11 ACL／公司 SSH 尚待實測 |
 | 日常操作簡化 | Implemented／自動化 Tested | S 統一啟動／偏好、L 本次錄製、Capture 分組、命中編號回看匯出、資料流編號／相對分鐘及自動新檔名；Win11 新流程尚待驗證 |
 | 配置一鍵啟動整合（候選 1） | Implemented／自動化 Tested | 工作台選 6／uart start --config；完整 Gateway TOML、錄製覆寫、全部 Ready、原端點鎖與只清理本次程序；一至兩路 RX，configure 可人工重開，拒絕 tx。Win11 新入口待驗證 |
 | 錄製清單與明確選檔（候選 3） | Implemented／自動化 Tested | 時間／來源／收尾標記／Epoch 有界預覽，A／C／U 篩選、未收尾提示；預覽不代表 SHA-256 驗證。Win11 新清單操作待驗證 |
@@ -39,7 +50,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：346 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播與離線 Epoch 摘要 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：368 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播與離線 Epoch 摘要 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |

@@ -5,7 +5,6 @@ import asyncio
 import codecs
 import json
 import math
-import os
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING
@@ -44,14 +43,23 @@ class StreamSelectionChanged(ValueError):
 
 
 def read_client_token(args: argparse.Namespace) -> str:
-    try:
-        token = (Path(args.token_file).read_text(encoding="utf-8").strip() if args.token_file
-                 else os.environ.get(args.token_env, ""))
-    except (OSError, UnicodeError) as exc:
-        raise ValueError("無法讀取 Token 檔案，請確認路徑、權限與 UTF-8 編碼。") from exc
-    if not token:
-        raise ValueError("請透過環境變數或受保護的檔案提供 Token")
-    return token
+    """相容舊呼叫端；實際來源載入由 SDK 提供。"""
+    from .client.credentials import explicit_source
+    return explicit_source(token_file=args.token_file, token_env=args.token_env if not args.token_file else None).read()
+
+
+def client_connection(args: argparse.Namespace):
+    from .client import resolve_connection
+    return resolve_connection(name=getattr(args, "connection", None), access=getattr(args, "access", None),
+        directory=getattr(args, "connections_dir", None), token_file=args.token_file, token_env=args.token_env,
+        host=args.host if getattr(args, "host_explicit", False) or args.host != "127.0.0.1" else None,
+        port=args.port if getattr(args, "port_explicit", False) or args.port != 18081 else None)
+
+
+class EndpointOption(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
+        setattr(namespace, self.dest + "_explicit", True)
 
 
 async def output(value: object) -> None:
@@ -347,7 +355,8 @@ async def watch_channels(clients: tuple[Client, ...], channels: tuple["LocalChan
 
 
 def _check_local_args(args: argparse.Namespace) -> None:
-    if args.host != "127.0.0.1" or args.token_file or args.token_env != "UART_GATEWAY_TOKEN":
+    if (args.host != "127.0.0.1" or args.token_file or args.token_env not in (None, "UART_GATEWAY_TOKEN")
+            or getattr(args, "connection", None) or getattr(args, "access", None)):
         raise ValueError("本機列出／啟動只使用此電腦，不接受遠端位址或外部認證選項。")
 
 
@@ -402,6 +411,38 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "auth":
+        from . import auth_setup
+        from .protected_files import read_private
+        from .remote_workbench import label
+        if (args.connection or args.access or args.token_file or args.token_env is not None
+                or args.host_explicit or args.port_explicit):
+            raise ValueError("初始化請使用 auth 子命令的參數，不混用連線／Token 覆寫。")
+        root = args.connections_dir
+        if args.auth_command == "init":
+            print("正在建立受保護的讀取／管理憑證與 Gateway 設定副本……", flush=True)
+            result = await asyncio.to_thread(auth_setup.initialize, args.gateway_config, name=args.name, directory=root)
+            print("已初始化；未啟動 Gateway，原設定檔未改寫。", flush=True)
+            print("Gateway 設定副本：" + label(result), flush=True)
+        elif args.auth_command == "export":
+            result = await asyncio.to_thread(auth_setup.export_credential, name=args.name, access=args.export_access,
+                                            output=args.output, directory=root)
+            print("已建立受保護憑證傳輸包：" + label(result), flush=True)
+            print("請透過既有 SSH 傳輸並匯入；日常操作不需重新產生或貼上憑證。", flush=True)
+        elif args.auth_command == "import":
+            if args.from_stdin:
+                if sys.stdin.isatty():
+                    raise ValueError("憑證匯入請使用檔案管線或 SSH 標準輸入，不需在終端貼上 Token。")
+                data = await asyncio.to_thread(sys.stdin.buffer.read, 16385)
+            else:
+                data = await asyncio.to_thread(read_private, args.file, 16384)
+            role = await asyncio.to_thread(auth_setup.import_credential, data, name=args.name,
+                                          port=args.import_port, directory=root)
+            print(f"已安裝連線 {label(args.name)} 的{'讀取' if role == 'read' else '管理'}憑證；未連線或操作 UART。", flush=True)
+        elif args.auth_command == "use":
+            await asyncio.to_thread(auth_setup.select_default, args.name, directory=root)
+            print("已選擇預設連線：" + label(args.name) + "；日常仍預設讀取模式。", flush=True)
+        return 0
     if args.command == "start":
         from .configured_launcher import launch_config
         from .remote_group import run_remote_group
@@ -538,8 +579,8 @@ async def run(args: argparse.Namespace) -> int:
                                   startup_timeout=args.startup_timeout, selector=selector,
                                   record_directory=args.record_dir,
                                   **({"capture_ready": args.capture_ready} if getattr(args, "capture_ready", None) else {}))
-    token = read_client_token(args)
-    async with await Client.connect(args.host, args.port, token) as client:
+    settings = await asyncio.to_thread(client_connection, args)
+    async with await settings.connect() as client:
         if args.command == "channels":
             await output(await client.list_channels())
         elif args.command == "watch":
@@ -570,12 +611,33 @@ async def run(args: argparse.Namespace) -> int:
 
 def main() -> None:
     parser = ChineseArgumentParser(description="UART Gateway 命令列；支援 SDK 操作與本機只讀啟動")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=18081)
+    parser.set_defaults(host_explicit=False, port_explicit=False)
+    parser.add_argument("--host", default="127.0.0.1", action=EndpointOption)
+    parser.add_argument("--port", type=int, default=18081, action=EndpointOption)
     secrets = parser.add_mutually_exclusive_group()
     secrets.add_argument("--token-file", help="受保護的 Token 檔案")
-    secrets.add_argument("--token-env", default="UART_GATEWAY_TOKEN", help="Token 所在的環境變數名稱")
+    secrets.add_argument("--token-env", help="明確選用舊環境變數來源；不自動改用其他憑證")
+    parser.add_argument("--connection", help="遠端連線名稱，省略使用已初始化的預設連線")
+    parser.add_argument("--access", choices=("read", "manage"), help="明確選用讀取或管理模式；固定連線預設 read")
+    parser.add_argument("--connections-dir", type=Path, help="受保護連線設定根目錄，預設使用者資料目錄")
     commands = parser.add_subparsers(dest="command", required=True)
+    auth = commands.add_parser("auth", help="一次性初始化、傳輸與安裝遠端憑證；不顯示 Token")
+    setup = auth.add_subparsers(dest="auth_command", required=True)
+    initialize = setup.add_parser("init", help="依既有實體 Gateway 設定建立固定讀取／管理憑證")
+    initialize.add_argument("--gateway-config", type=Path, required=True, help="來源完整 Gateway TOML；原檔不改")
+    initialize.add_argument("--name", default="default", help="連線名稱，預設 default")
+    export_auth = setup.add_parser("export", help="產生受保護憑證傳輸包，透過既有 SSH 安裝")
+    export_auth.add_argument("--name", help="來源連線，省略為預設")
+    export_auth.add_argument("--access", dest="export_access", choices=("read", "manage"), default="read", help="匯出角色，預設 read")
+    export_auth.add_argument("--output", type=Path, help="新 .uart-credential 檔案，預設使用者私有 transfers 目錄")
+    import_auth = setup.add_parser("import", help="安裝憑證傳輸包，不連線 Gateway")
+    source_auth = import_auth.add_mutually_exclusive_group(required=True)
+    source_auth.add_argument("--file", type=Path, help="受保護的 .uart-credential 傳輸包")
+    source_auth.add_argument("--stdin", dest="from_stdin", action="store_true", help="由 SSH 或檔案管線接收，不顯示內容")
+    import_auth.add_argument("--name", default="default", help="本機連線名稱，預設 default")
+    import_auth.add_argument("--port", dest="import_port", type=int, help="本機 SSH Tunnel Port，省略沿用來源")
+    use_auth = setup.add_parser("use", help="選擇預設遠端連線，日常仍預設讀取")
+    use_auth.add_argument("name", help="已初始化的連線名稱")
     commands.add_parser("channels", help="列出通道")
     commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
     menu = commands.add_parser("menu", help="開啟只讀工作台：本機操作或連線既有 Gateway")
@@ -653,9 +715,10 @@ def main() -> None:
             if args.remote:
                 from .remote_workbench import run_remote_workbench
 
-                async def connect() -> Client:
-                    token = await asyncio.to_thread(read_client_token, args)
-                    return await Client.connect(args.host, args.port, token)
+                settings = client_connection(args)
+                connect = settings.connect
+                if settings.access:
+                    print(f"使用遠端連線：{settings.name}；模式：{'讀取' if settings.access == 'read' else '管理（不含 TX）'}。", file=sys.stderr, flush=True)
 
                 async def monitor(client: Client, channel_id: str, replay: bool, expected: tuple) -> int:
                     return await watch_client(client, channel_id, duration=None, text_mode=True,
@@ -666,7 +729,7 @@ def main() -> None:
                     return await run_remote_group(connect, channels, instance, replay, watch=watch_client,
                         sink_factory=lambda: _WatchOutput(terminal=True))
 
-                raise SystemExit(run_remote_workbench(connect, monitor, host=args.host, port=args.port,
+                raise SystemExit(run_remote_workbench(connect, monitor, host=settings.host, port=settings.port,
                                                      monitor_group=monitor_group))
             from .workbench import run_workbench
             from .workbench_state import WorkbenchSession

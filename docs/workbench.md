@@ -88,6 +88,10 @@ T 提供根目錄 exports 下的新建議檔名，按 Enter 即匯出；M 可自
 
 測試順序為：用既有錄製檔檢查／回看／匯出，再用單 UART 錄製新資料，Ctrl+C 返回工作台，確認可重新啟動。最後於兩組設備齊備時另測雙 UART。自動化／PTY 不能代替 Win11 雙擊、主控台 Ctrl+C 與實體 USB 驅動驗證。
 
+## 遠端自動認證補充（2026-11-07）
+
+首次依 [認證初始化](authentication.md) 安裝固定來源後，`uart menu --remote` 自動使用 SDK 的預設讀取連線；`uart --access manage menu --remote` 明確選管理，`--connection` 選具名部署。Workbench 不另外讀取或保存 Token，R 觸發 SDK 重讀相同來源，失效不降級或提權。CLI 舊明確來源仍相容，以下原示範作為進階遷移方式。新 Windows ACL／SSH 工作台流程尚待實機驗證。
+
 ## 遠端模式（2026-11-06）
 
 ```sh

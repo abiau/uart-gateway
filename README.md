@@ -6,7 +6,7 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)；本輪簡化流程已有自動化證據，尚待 Win11 實機驗證。
 
-遠端選單使用 `uart --token-file <受保護的Token檔案> menu --remote`，連線既有 Gateway 後以編號選 Channel，再選即時或重播；Ctrl+C 返回清單，Gateway 繼續執行。居家同機與公司 dxan 的具體步驟見 [Windows Quickstart](docs/windows-quickstart.md)。
+遠端現在可一次初始化後，直接執行 `uart menu --remote`，由 SDK 載入固定受保護憑證；管理使用 `uart --access manage menu --remote`。CLI、Workbench 與 Codex 的 Python 工具共用相同 SDK 來源，不必日常產生或貼上 Token。[自動認證與初始化](docs/authentication.md) 包含 Win11 建立、SSH 安裝到 dxan 及 SDK 範例。既有明確 Token 參照仍相容；新 Windows ACL／公司 SSH 流程尚待實測。
 
 新版遠端選單可輸入 `1,2` 同時監看兩條 Channel，在同一畫面以 R 查詢、O 1／O 2 加 Y 手動重開故障通道；另一路持續接收。每行標明來源、顏色各自保存，CR／退格跳脫顯示；Q／Ctrl+C 清理 Client 後返回清單。重開需原 configure 權限，監看仍只讀，不新增 API 或 TX。此新入口已有自動化證據，Win11 雙路一般操作及重播修正已由使用者回報正常，公司 dxan 新操作仍待測，詳見 [工作台說明](docs/workbench.md)。
 

@@ -60,6 +60,16 @@ $UartEpoch = Read-Host '貼上 recording-info 列出的 Epoch'
 
 範例時間請換成實際錄製時間，可用 `2026-11-07T03:05:00+08:00` 表示台灣時間。篩選按 RX 區塊取整塊，包含兩端；文字輸出不得覆蓋既有檔案。新功能目前只有 Linux／虛擬 Serial 自動化證據，請回報 Win11 的上述結果；公司 dxan 新工作區測試仍待回公司另測。
 
+## 遠端免手動 Token 的新入口（待 Win11 驗證）
+
+本機 S／local 仍可直接使用。若要獨立 Gateway 提供其他視窗或公司 Container 連線，可依 [SDK 自動認證教學](authentication.md) 執行一次 auth init，再使用產生的 gateway.toml 啟動獨立 Gateway。完成後，日常直接執行 `uart.exe menu --remote`；需要人工 RX 管理時使用 `uart.exe --access manage menu --remote`。
+
+此入口不需每天生成 Token、設定環境變數或指定 Token 檔案。公司首次透過原 SSH 路徑匯入讀取包；管理包須另行明確安裝。Gateway／Tunnel 仍須啟動，Server 使用固定來源，Client 不會重用本機臨時 Gateway 的私有 Token。
+
+新驗收順序：初始化後同機讀取；Gateway 正常關閉再重啟後仍可連線；讀取執行 reopen 應被拒絕；管理模式另測既有人工 RX 重開；最後到公司驗證 SSH 安裝與 Container 無 Token 參數連線。僅檢查 ACL／來源路徑，不貼上秘密內容；新流程自動化使用 Linux／Fake Serial／PTY，尚未由 Codex 操作 Win11 實體 COM。
+
+下節保留原明確 Token 參照流程，適合舊部署及逐步遷移；已初始化固定連線時，其優先序及失效處理以認證教學為準。
+
 ## 遠端工作台：家裡同機與公司 dxan
 
 `menu --remote` 連線既有 Gateway，不需手動輸入 Channel ID；公司仍須先維持共用 Token 與 SSH Tunnel。家裡可用同一台 Win11 的單 UART 測試，不必連 d3s1。
