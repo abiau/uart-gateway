@@ -294,7 +294,7 @@ def run_workbench(dispatch: Callable[[list[str]], int], *, recordings: Path,
 
     try:
         while True:
-            report("\nUART 本機只讀工作台\nS. 開始監看（記住上次設定）\nL. 查看本次錄製\n5. 瀏覽錄製\nA. 進階工具\nQ. 離開")
+            report("\nUART 本機只讀工作台\nS. 開始監看（記住上次設定）\nL. 查看本次錄製\nT. 多窗格監看\n5. 瀏覽錄製\nA. 進階工具\nQ. 離開")
             choice = ask("輸入功能編號或字母；Q 或 Enter 離開：").casefold()
             if choice == "a":
                 report("進階工具：1 列出裝置；2 手動選擇監看；3 手動選擇錄製；4 端點配置；6 Gateway 設定；Q 返回")
@@ -307,6 +307,12 @@ def run_workbench(dispatch: Callable[[list[str]], int], *, recordings: Path,
             try:
                 if choice == "s":
                     start_menu()
+                elif choice == "t":
+                    target = ask("多窗格：1 或 Enter 本機；2 遠端讀取；3 遠端管理；Q 取消：").casefold()
+                    if target in ("", "1"):
+                        invoke(["tui", "--local", "--preferences-file", str(preferences_file), "--recordings-dir", str(recordings)])
+                    elif target in ("2", "3"):
+                        invoke((["--access", "manage"] if target == "3" else []) + ["tui"])
                 elif choice == "l":
                     if not session.capture_channels:
                         report("本工作台尚未收到本次錄製位置；可用 5 瀏覽既有錄製，不會猜測最新檔案。")

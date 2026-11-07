@@ -64,6 +64,27 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 SDK 模組匯入不讀檔或連線；檔案 I/O 在工作執行緒，Token 不保存於連線設定物件 repr、命令列、一般設定或 Log。CLI read_client_token 僅保留相容薄轉接，來源處理由 SDK 提供。Windows ACL 的實際環境相容性仍待實機驗證；Linux SDK 不需要 Windows PowerShell。
 
+## 多窗格 TUI（2026-11-07）
+
+不新增 Server 設定。可選 `[tui]` 使用 Textual 6.x、pyte 0.8.x，本機另需 `[server]`；操作見 [TUI 說明](tui.md)。
+
+| 參數／限制 | 行為 |
+| --- | --- |
+| `uart tui` | 共通 SDK 連線參數與固定認證；全域 `--access manage` 放在 tui 前 |
+| `--channels ID [ID ...]` | 遠端明確指定一至四路；省略以畫面選擇，不接受於 --local |
+| `--local` | 上次本機設定或預設 COM3，開始前確認，管理自己的 Gateway；沿用一至兩路、安全 UART 基線與單身分限制 |
+| `--config 路徑` | 本機完整 Gateway TOML；省略沿用偏好，啟動畫面也可枚舉／選裝置 |
+| `--preferences-file` | 預設 `.uart-workbench.local.json`，共用無秘密偏好；選裝置的新 TOML 為同目錄 `.uart-tui-*.local.toml` |
+| `--recordings-dir` | 預設 recordings，本機畫面開啟錄製時使用 |
+| `--record-dir`／`--no-record` | 互斥且僅用於本機，設定初始選擇；畫面仍可切換，開始時保存偏好 |
+| `--startup-timeout` | 預設 20 秒，本機全部 Ready 等待；沿用原大於零、不超過 300 秒檢查 |
+| `--pause-on-error` | 雙擊入口失敗時，恢復終端後保留錯誤供查看 |
+| 連線 | 遠端最多四個獨立訂閱 Session＋短期管理，不改 Gateway 四路／八 Client 上限；本機最多兩路 |
+| 畫面 | 每路 300 行歷史＋最多 240 欄×80 行；每格最多 16 個碼位、樣式快取 512 項，每秒最多重畫十次 |
+| 程序診斷 | 最多 100 則、每則 512 字待顯示訊息；超限明示合併省略，不拿此處代替錄製 |
+
+本機拒絕遠端位址／外部認證選項，TCP Port 由設定 network.port 指定；遠端拒絕本機 --config／錄製覆寫，不修改 Gateway。缺依賴或非互動終端時，在建立 Gateway 前拒絕。原 SDK 事件上限、Protocol、Confirm／Lease／TX 與控制線政策不變。
+
 ## Gateway 與網路
 
 歷史重播由 Session Writer 逐筆送出，使用獨立有界快照，不占用整段即時輸出佇列。每 Session 快照共用上限為目前 RX Ring 設定的兩倍（預設 8 MiB，原始 payload＋每事件 512 bytes 預留），期限沿用 idle_timeout_ms（預設 15 秒）；不新增 TOML 參數或修改 Hello 欄位。Writer 額外至多持有一個不超過 max_frame_bytes 的編碼中／傳送中 Frame。即時訂閱佇列及 Connection 輸出上限維持原值，快照配額不足回 QUEUE_FULL，慢接收超限或重播期限到達仍會明示斷線／記錄原因。

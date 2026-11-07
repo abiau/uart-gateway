@@ -10,6 +10,27 @@
 
 ## 日常入口：開始監看、查看本次錄製與搜尋片段
 
+需要各 UART 獨立畫面時，建議改用以下新多窗格入口；本節原文字選單仍可使用。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e ".[server,tui]"
+.\.venv\Scripts\uart.exe tui --local
+```
+
+也可雙擊 `run-tui.cmd`。啟動摘要中點 **選擇 UART**，空白鍵勾選 COM3／COM4（最多兩路），點 **使用所選裝置**；需要錄製時點 **切換錄製**，核對後 Enter 開始。只有列裝置不會開 COM；預設沿用上次本機設定，未保存時為 COM3。既有 Gateway 已占用相同端點／Port 時，不要再啟動本機模式。
+
+已有獨立 Gateway 且已依 [自動認證](authentication.md) 初始化時，直接 `uart.exe tui`；管理使用 `uart.exe --access manage tui`。此模式只連線，最多四路，不停止 Gateway。從原 `uart.exe menu` 也可按 **T** 選本機／遠端，結束後仍可用 **L** 檢查該次本機錄製。
+
+**新 TUI 待 Win11 驗收**：
+
+1. 啟動單路／雙路，確認每路資料、狀態列與底部按鈕互不覆蓋；顏色、換行、退格正確，放大／縮小視窗後仍可操作。
+2. 按 1／2 選窗格，P 暫停其中一路；另一路持續，按 End 回最新；PageUp 可回看有限歷史。按鈕狀態應對應所選通道，監看中不需要再 S。
+3. 先用管理設定啟動，拔除 COM3，確認 COM4 持續；插回後選 COM3、O、確認，該路新世代自動開始，不用再 S；以讀取憑證連線時重開不可用。
+4. 本機 Q／Ctrl+C 應釋放 COM、正常收尾錄製，可再次啟動；啟動前取消不建立 Gateway。再開相同 COM／TCP Port 的入口應拒絕，原視窗持續。
+5. 遠端 Q 只關 Client，Gateway／錄製繼續。Gateway 重啟後 R 應提示重新選擇，C 再選後才恢復。SSH／dxan 另外實測，不用同機成功代替公司驗收。
+
+完整快捷鍵、限制與錄製檢查見 [多窗格 TUI](tui.md)。目前只有 Linux／Fake Serial／TCP／PTY 自動化證據，沒有 Codex 操作實體 COM3／COM4 的結果。
+
 更新並完成安裝後，在專案根目錄雙擊 `run-workbench.cmd`，或執行：
 
 ```powershell

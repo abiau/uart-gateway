@@ -2,7 +2,9 @@
 
 > 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
-UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 獨占 USB-UART 對應的 COM Port，Linux d3s1 上的 Podman Container（容器）透過 SSH Tunnel 使用共同 Client SDK（用戶端開發套件），供 CLI（命令列介面）、未來 TUI（文字使用者介面）及 Agent（代理工具）操作。
+UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 獨占 USB-UART 對應的 COM Port，Linux d3s1 上的 Podman Container（容器）透過 SSH Tunnel 使用共同 Client SDK（用戶端開發套件），供 CLI（命令列介面）、TUI（文字使用者介面）及未來 Agent（代理工具）操作。
+
+**多窗格監看**：安裝 `python -m pip install -e ".[server,tui]"` 後雙擊 `run-tui.cmd`，選 UART、核對摘要並開始；每路資料與狀態獨立，底部固定操作按鈕。已有 Gateway 使用 `uart tui`，管理模式使用 `uart --access manage tui`，共用 SDK 自動認證。本機最多兩路、遠端最多四路；操作與驗證界線見 [多窗格 TUI](docs/tui.md)，Win11 新介面尚待實測。
 
 日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)；本輪簡化流程已有自動化證據，尚待 Win11 實機驗證。
 
@@ -42,6 +44,8 @@ Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 
 七份 ADR（架構決策紀錄）均為 `Accepted`（已正式接受）。數值預設、具體協定契約及建議操作政策已接受為初始基線；尚未取得的現場資訊不視為已驗證。最新證據與待回答事項以 [目前狀態](docs/status.md) 為準。
 
 ## 文件索引
+
+[多窗格 TUI 操作與設計](docs/tui.md) 提供一鍵啟動、快捷鍵、本機／遠端差異及畫面容量說明。
 
 | 文件 | 用途 |
 | --- | --- |

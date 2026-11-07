@@ -4,6 +4,20 @@
 
 更新日期：2026-11-07（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## 本輪多窗格 TUI 交接（2026-11-07）
+
+使用者明確要求每路 UART 獨立畫面、固定狀態列與操作區，以簡單操作為主。已實作可選 Textual／pyte、`run-tui.cmd`／`uart tui --local`、既有 Gateway 的 `uart tui`，及工作台 T 入口；本機可選一至兩個端點、切換錄製、核對摘要後開始，遠端最多四路。固定按鈕提供選窗格、更新、重新監看、確認後單路 RX 重開、暫停／回最新及退出。沿用 SDK 固定認證、權限、Expected Context 與原 Launcher；沒有改 Server／Protocol、TX 或控制線政策。
+
+驗證使用 Linux／Python 3.12.14／pySerial 3.5／Textual 6.12.0／pyte 0.8.2，393 項全套測試通過、無略過，RuntimeWarning 視為錯誤。新增真 TCP／SDK／Fake Serial、Textual 無頭 UI、真 CLI／POSIX 終端／pySerial PTY；涵蓋資料實際呈現與來源隔離、固定區域不重疊、縮放、暫停仍接收、四路、雙路各 704000 bytes 重播後即時、單路遺失／慢重開時另一路持續、權限與無 TX、Instance 改變須重選、端點／錄製偏好、啟動中取消、Q／Ctrl+C／SIGINT 程序與錄製清理、既有 Listener 保護。合成畫面另檢查固定版面，非實體 UART 畫面。
+
+本輪回歸發現並修正長錯誤訊息裁切、同側 dock 元件重疊、窗格重建時定時更新讀到未完成的元件，以及 End 被資料區預設快捷鍵攔截；這些修正依相同案例重新驗證。
+
+尚未執行：Win11 實體 COM3／COM4、雙擊新入口、Windows Terminal 鍵盤／滑鼠／顏色／縮放、USB 拔插／人工重開及長時間接收；公司 SSH／dxan 的新 TUI。舊版文字工作台的實機結果不等於新介面通過。新步驟見 [Windows Quickstart](windows-quickstart.md)，操作與限制見 [TUI 說明](tui.md)。
+
+已知限制：互動終端與可選依賴；本機仍單身分、一至兩路及安全 UART 基線，遠端最多四路／原八 Client。畫面歷史每路 300 行、目前最多 80×240、單格最多 16 碼位，暫停只保存有限畫面、接收繼續；縮放不重排既有歷史、縮窄可裁切，需原始資料時開錄製。Gap／SDK 超限仍明示停止，沒有自動重連或完整終端／Shell。來源偏好／生成的本機配置無秘密且已忽略。底層卡死 I/O 仍沿用原清理界線。
+
+使用者已明確授權將本輪程式、測試與文件提交並推送至 `origin/work`，交付版本以 Git 紀錄為準；上一輪 SDK 自動認證已保存為 `3bf090e`。本次保存沿用已通過的 393 項全套及最後一項窄視窗補驗，不重跑未變更程式的測試。
+
 ## 本輪 SDK 自動認證交接（2026-11-07）
 
 使用者核准保留認證、取消日常人工 Token 操作。本輪已實作 SDK 固定來源與 Client.connect_auto／resolve_connection，CLI 與遠端 Workbench 共用；本機臨時認證不變。新增 auth init／export／import／use，一次安全初始化、獨立讀取／管理憑證、受保護來源及 SSH 標準輸入安裝。命令、一般設定及 Log 不保存 Token 值；管理不產生 tx，原 Server／Protocol／Confirm／Lease／Expected Context 不改。
@@ -38,6 +52,7 @@
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
+| 多窗格 TUI | Implemented／自動化 Tested | 固定資料／狀態／操作區、本機一至兩路與遠端最多四路；Win11 新介面尚待實測，393 項全套通過 |
 | SDK 自動認證／一次性初始化 | Implemented／自動化 Tested | 固定受保護來源、預設 read／明確 manage、無 Token 參數日常 CLI／Workbench／SDK；Win11 ACL／公司 SSH 尚待實測 |
 | 日常操作簡化 | Implemented／自動化 Tested | S 統一啟動／偏好、L 本次錄製、Capture 分組、命中編號回看匯出、資料流編號／相對分鐘及自動新檔名；Win11 新流程尚待驗證 |
 | 配置一鍵啟動整合（候選 1） | Implemented／自動化 Tested | 工作台選 6／uart start --config；完整 Gateway TOML、錄製覆寫、全部 Ready、原端點鎖與只清理本次程序；一至兩路 RX，configure 可人工重開，拒絕 tx。Win11 新入口待驗證 |
@@ -50,7 +65,7 @@
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5：368 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播與離線 Epoch 摘要 |
+| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5／Textual 6.12.0／pyte 0.8.2：393 項通過、無略過，包含真 TCP、Fake Serial、真 pySerial PTY、錄製／回看、單雙路工作台、長歷史重播、離線 Epoch 摘要與多窗格 TUI |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
 | 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
@@ -68,7 +83,7 @@
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
-| Commit／Push（提交／推送） | 前次交接已保存 | `496ab13` 已保存前次 Phase 1 交接；本次啟動器依使用者明確授權 commit／push |
+| Commit／Push（提交／推送） | 本輪已授權保存至 origin/work | SDK 自動認證已保存為 `3bf090e`；本輪 TUI 的交付版本以 Git 紀錄為準 |
 
 狀態語意：`Planned` 為預計開發；`In Progress` 為正在進行；`Implemented` 為已有實作；`Tested` 為已執行具體測試並有結果；`Verified` 為在聲稱的真實條件下實際驗證。不可因 Implemented 就改成 Tested，也不能以模擬測試把 Windows 硬體標為 Verified。文件可標示「已建立／已檢查」，但不讓這些詞代表產品已實作。
 

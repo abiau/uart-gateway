@@ -113,11 +113,13 @@ def prepare_config(path: Path, *, record_directory: Path | None = None, no_recor
 
 async def launch_config(path: Path, monitor: Callable[..., Awaitable[int]], *,
                         record_directory: Path | None = None, no_record: bool = False,
-                        startup_timeout: float = 20, capture_ready: Callable | None = None) -> int:
+                        startup_timeout: float = 20, capture_ready: Callable | None = None,
+                        reporter: Callable[[str], None] | None = None) -> int:
     plan = await asyncio.to_thread(prepare_config, path, record_directory=record_directory, no_record=no_record)
-    print(f"使用 Gateway 設定：{label(path)}；錄製：{label(plan.recording or '停用')}。", flush=True)
+    report = reporter or (lambda message: print(message, flush=True))
+    report(f"使用 Gateway 設定：{label(path)}；錄製：{label(plan.recording or '停用')}。")
     if plan.temporary_token:
-        print("本次使用臨時憑證，僅供此本機工作區使用；結束時清理本次 Gateway。", flush=True)
+        report("本次使用臨時憑證，僅供此本機工作區使用；結束時清理本次 Gateway。")
 
     async def observe(clients, channels):
         snapshots = []
@@ -138,4 +140,5 @@ async def launch_config(path: Path, monitor: Callable[..., Awaitable[int]], *,
     return await launch_channels(plan.channels, observe, gateway_port=plan.port,
         startup_timeout=startup_timeout, record_directory=plan.recording,
         prepared_config=plan.config, token=plan.token, expected_grants=plan.grants,
-        **({"capture_ready": capture_ready} if capture_ready else {}))
+        **({"capture_ready": capture_ready} if capture_ready else {}),
+        **({"reporter": reporter} if reporter else {}))

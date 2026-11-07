@@ -10,6 +10,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from .client import Client
+from .client.rx import StreamContextChanged as StreamSelectionChanged, subscribe_checked
 from .client.transport import LocalDataLoss
 from .protocol.codec import binary_decode
 from .protocol.errors import ProtocolError, RemoteError
@@ -36,10 +37,6 @@ class ChineseArgumentParser(argparse.ArgumentParser):
         self.print_usage(sys.stderr)
         translated = message if any("\u4e00" <= char <= "\u9fff" for char in message) else "參數不合法，請使用 --help 查看用法。"
         self.exit(2, f"參數錯誤：{translated}\n")
-
-
-class StreamSelectionChanged(ValueError):
-    """選單快照已失效；不可顯示另一個資料流。"""
 
 
 def read_client_token(args: argparse.Namespace) -> str:
@@ -151,27 +148,7 @@ async def watch_client(client: Client, channel_id: str, *, duration: float | Non
                        expected_context: tuple[str, str, str | None] | None = None) -> int:
     text_mode = text_mode or terminal_mode
     renderer = TerminalRenderer() if terminal_mode else None
-    if expected_context is not None and client.instance != expected_context[0]:
-        raise StreamSelectionChanged("Gateway 已重新啟動，請按 R 更新清單後重新選擇。")
-    if replay or expected_context is not None:
-        channel = await client.get_channel(channel_id)
-        if expected_context is not None and (channel["state"] != "ready" or
-                (client.instance, channel["binding"]["revision"], channel["stream_epoch"]) != expected_context):
-            raise StreamSelectionChanged("所選通道狀態或資料流已改變，請按 R 更新清單後重新選擇。")
-    if replay:
-        if channel["stream_epoch"] is None:
-            raise ValueError("通道沒有可讀資料流，請先查看 channels 的 last_error")
-        sub = await client.subscribe(channel_id, epoch=channel["stream_epoch"],
-                                     offset=channel["rx"]["earliest_offset"])
-    else:
-        sub = await client.subscribe(channel_id)
-    if expected_context is not None and (client.instance, sub["binding_revision"], sub["stream_epoch"]) != expected_context:
-        error = StreamSelectionChanged("訂閱時資料流已改變，未顯示 RX；請按 R 更新清單後重新選擇。")
-        try:
-            await client.unsubscribe(sub["subscription_id"])
-        except Exception as exc:
-            error.add_note(f"取消失效訂閱另有錯誤：{type(exc).__name__}")
-        raise error
+    sub = await subscribe_checked(client, channel_id, replay=replay, expected_context=expected_context)
     decoder = codecs.getincrementaldecoder("utf-8")(errors="backslashreplace")
     last_delivery = None
     text_parts: list[str] = []
@@ -411,6 +388,20 @@ def _run_selected(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "tui":
+        from .tui import run_tui
+        if args.local:
+            _check_local_args(args)
+            if args.port != 18081:
+                raise ValueError("本機 TUI 的 TCP Port 請由 Gateway 設定 network.port 指定。")
+            if args.channels:
+                raise ValueError("本機 TUI 監看設定的全部目標，不另接受 --channels。")
+            settings = None
+        else:
+            if args.config or args.record_dir or args.no_record:
+                raise ValueError("設定與錄製選項僅用於 --local；遠端 TUI 不修改 Gateway 設定。")
+            settings = await asyncio.to_thread(client_connection, args)
+        return await run_tui(args, settings=settings)
     if args.command == "auth":
         from . import auth_setup
         from .protected_files import read_private
@@ -638,6 +629,17 @@ def main() -> None:
     import_auth.add_argument("--port", dest="import_port", type=int, help="本機 SSH Tunnel Port，省略沿用來源")
     use_auth = setup.add_parser("use", help="選擇預設遠端連線，日常仍預設讀取")
     use_auth.add_argument("name", help="已初始化的連線名稱")
+    tui = commands.add_parser("tui", help="多窗格 UART：資料、狀態與操作區固定分開")
+    tui.add_argument("--local", action="store_true", help="沿用上次本機設定，啟動並管理自己的 Gateway")
+    tui.add_argument("--config", type=Path, help="本機完整 Gateway TOML，需搭配 --local")
+    tui.add_argument("--channels", nargs="+", help="遠端直接選定一至四路；省略使用畫面選擇")
+    tui.add_argument("--preferences-file", type=Path, default=Path(".uart-workbench.local.json"), help="本機沿用的工作台偏好")
+    tui.add_argument("--recordings-dir", type=Path, default=Path("recordings"), help="本機啟用錄製時的根目錄")
+    tui_record = tui.add_mutually_exclusive_group()
+    tui_record.add_argument("--record-dir", type=Path, help="本次本機 TUI 啟用錄製")
+    tui_record.add_argument("--no-record", action="store_true", help="本次本機 TUI 停用錄製")
+    tui.add_argument("--startup-timeout", type=float, default=20, help="本機 Gateway 全部就緒等待秒數")
+    tui.add_argument("--pause-on-error", action="store_true", help="雙擊入口失敗時保留視窗")
     commands.add_parser("channels", help="列出通道")
     commands.add_parser("ports", help="只列出本機 Serial 裝置，不開啟端點")
     menu = commands.add_parser("menu", help="開啟只讀工作台：本機操作或連線既有 Gateway")
@@ -738,6 +740,8 @@ def main() -> None:
 
             def dispatch(argv: list[str]) -> int:
                 child = parser.parse_args(["--port", str(args.port), *argv])
+                if child.command == "tui" and not child.local:
+                    child.port_explicit = args.port_explicit
                 child.capture_ready = session.capture_ready
                 child.search_ready = session.search_ready
                 if child.command == "local" and child.select:
@@ -751,7 +755,7 @@ def main() -> None:
         raise SystemExit(asyncio.run(run(args)))
     except (RemoteError, ProtocolError, OSError, ValueError, TimeoutError) as exc:
         _report_failure(exc)
-        if args.command in ("local", "menu") and args.pause_on_error and sys.stdin.isatty():
+        if args.command in ("local", "menu", "tui") and args.pause_on_error and sys.stdin.isatty():
             try:
                 input("按 Enter 關閉此視窗。")
             except (EOFError, KeyboardInterrupt):

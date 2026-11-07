@@ -1,5 +1,13 @@
 # 開發規範
 
+## 多窗格 TUI 測試（2026-11-07）
+
+TUI 為可選依賴，完整測試先安裝 `python -m pip install -e '.[server,tui]'`；只裝 SDK 的環境會明確略過需要 TUI 的測試，不能以略過視為通過。一般 CLI／SDK 匯入不載入 Textual／pyte。
+
+`tests/unit/test_tui.py` 涵蓋 SDK Cursor 脈絡／位移／Gap、增量解碼／顏色／CR／退格、歷史／組合符號與控制字串界限、暫停快照、非 TTY／缺依賴、工作台共用 SDK 來源與管理選擇，以及端點配置／錄製偏好。`tests/integration/test_tui.py` 以真 TCP／SDK、Fake Serial 與 Textual run_test 驗證獨立窗格、固定區域不重疊、縮放、暫停仍接收、最多四路、雙路各 704000 bytes 歷史重播後即時、一路遺失／慢重開與確認期間另一路持續、權限與零 TX、Gateway 重啟必須重選、啟動中取消及清理失敗不隱藏。
+
+`tests/integration/test_tui_process.py` 另用真 CLI、POSIX 終端、pySerial PTY 與 Gateway 子程序，條件式等待訂閱就緒再注入資料，驗證 Q／Ctrl+C 鍵／SIGINT 終端還原、COM Handle 釋放、錄製正常 Footer、啟動前取消與既有 Listener 保護。無頭畫面驗證與 POSIX PTY 都不代表 Win11、雙擊、實體 USB 或公司 SSH 已通過，請依 [Windows Quickstart](windows-quickstart.md) 另測。
+
 ## 自動認證測試（2026-11-07）
 
 test_credentials 覆蓋受保護檔案、初始化兩角色、來源不變、匯出／匯入、部署衝突／重複、未知格式與界限、路徑 traversal、固定來源優先於舊環境、失效不降級、權限不符與 FIFO／symlink 拒絕、每次重讀、秘密不出現在 CLI，以及初始化／管理匯入寫入失敗清理。Windows 使用 ACL 呼叫替身，確認內容寫入前配置 ACL、錯誤拒絕及固定 PowerShell 腳本，不代表 Windows ACL 實際執行通過。

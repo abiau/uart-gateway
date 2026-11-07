@@ -32,7 +32,7 @@ flowchart LR
         subgraph P["Podman 容器"]
             LS["SSH 本地轉送接聽端"]
             SDK["Client SDK／共同介面"]
-            UI["CLI／未來 TUI 與 Agent"]
+            UI["CLI／TUI 與未來 Agent"]
             LS <--> SDK
             UI --> SDK
         end
@@ -70,7 +70,11 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 | `recording_play` | 錄製檔快速回看、邊界提示與取消 | 共用 recording_info／TerminalRenderer；慢終端直接減慢離線掃描，不建立 Gateway 連線 |
 | `server.config`、`server.app` | 驗證設定、組裝具體物件、啟停順序 | 組裝層可以知道具體 Backend，不把此依賴帶入 Core |
 | `client.transport`、`client.sdk` | 連線、版本、請求配對、訂閱、Lease 更新與重連 | Protocol；不依賴 Server 或 Windows Serial |
-| `cli`、未來 `tui`／工具介面 | 參數、顯示、使用者或 Agent 操作 | 只經 SDK 進入 Gateway；不複製協定實作 |
+| `client.rx` | SDK 共用快照／訂閱脈絡核對與 RX Cursor 位移／Gap 檢查 | 不依賴畫面、Server 或 Serial，CLI 共用訂閱核對 |
+| `cli`、工具介面 | 參數、顯示、使用者或 Agent 操作 | 只經 SDK 進入 Gateway；不複製協定實作 |
+| `tui`／`tui_app` | 可選多窗格、固定按鈕、人工選擇／確認與本次 Launcher 生命週期 | 遠端共通 SDK 設定，本機重用 configured_launcher、不接管其他程序 |
+| `tui_controller` | 各路 SDK 接收、狀態與人工 RX 恢復 | 共用 client.rx／既有管理 API，無 TX 或自動重連 |
+| `tui_buffer`／`tui_widgets` | 有界終端模型、獨立資料窗格與狀態列 | 可選 pyte／Textual；沿用控制字元過濾器，裝置 ANSI 不輸出主終端 |
 | `text_renderer` | 終端模式的增量控制序列過濾與顏色驗證 | 純文字轉換，不依賴 Serial、Core 或 Server，不修改原始 RX |
 | `local_launcher` | 本機只讀啟動、就緒檢查與自己子程序的生命週期 | 建立既有 `server.app` 子程序，UART 操作只經 SDK；端點名稱正規化重用純函式，不直接存取 Serial |
 | `local_ports` | 本機裝置顯示、互動選擇與選擇後重驗 | 只用 Backend 的只讀枚舉結果，交回既有 Adapter Selector；不開啟 Serial、不新增遠端 API |
@@ -83,7 +87,8 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 ```mermaid
 flowchart TB
     CLI["CLI／命令列"] --> SDK["client／共同 SDK"]
-    FUTURE["未來 TUI、MCP、韌體工作流程"] --> SDK
+    TUI["可選 Textual 多窗格"] --> SDK
+    FUTURE["未來 MCP、韌體工作流程"] --> SDK
     SDK --> P["protocol／線上契約"]
     APP["server.app／組裝"] --> TCP["server.tcp／傳輸"]
     APP --> IO["serial_backend／裝置實作"]
@@ -103,6 +108,8 @@ flowchart TB
 `run-com3.cmd` 是本機薄入口，由 `cli local` 呼叫 `local_launcher` 管理一個 Gateway 子程序，再以同一 SDK 接收資料；CLI 不把 Server／Core 直接當作 UART 操作介面。它只維護自己建立的子程序，不接管既有 Gateway，也不改 API Contract。就緒、程序鎖、臨時認證與 EOF 關閉的設計理由見 [啟動器審查](local-launcher.md)。
 
 兩條模式沿用同一生命週期：先取得全部端點鎖，再建立唯一 Gateway。各 Channel 使用獨立 SDK Session 與原 `watch_client`，共用有界畫面 Writer；不讓兩個監控搶讀同一 SDK 事件佇列。各自維持解碼及顏色狀態，輸出加上來源標記。單條遺失只結束該監控；全部停止、整體程序退出、顯示失敗或 Ctrl+C 才結束整組。新配置只在啟動前載入，不新增 Runtime 設定 API。
+
+多窗格 TUI 每路先經 SDK 更新有界終端模型，畫面定時重畫；頂部說明、底部訊息／按鈕各自固定，UART 不寫入指令提示。最多四路遠端訂閱與短期管理仍在八 Client 上限內。暫停只凍結畫面，Gap／世代改變與重開均有明確邊界。`tui --local` 的全部 Ready、程序鎖、臨時認證與 EOF 關閉重用原 Launcher，程序日誌透過可選 reporter 交給 UI。操作與容量見 [TUI 說明](tui.md)。
 
 ## 身分與資料模型
 
