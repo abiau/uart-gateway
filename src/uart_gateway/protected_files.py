@@ -15,24 +15,33 @@ $ErrorActionPreference = 'Stop'
 $p = $env:UART_GATEWAY_PRIVATE_PATH
 $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
 if ($env:UART_GATEWAY_PRIVATE_ACTION -eq 'protect') {
+    $acl = Get-Acl -LiteralPath $p
+    if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { exit 2 }
     if (Test-Path -LiteralPath $p -PathType Container) {
-        $acl = New-Object System.Security.AccessControl.DirectorySecurity
         $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit'
     } else {
-        $acl = New-Object System.Security.AccessControl.FileSecurity
         $inherit = [System.Security.AccessControl.InheritanceFlags]::None
     }
-    $acl.SetOwner($sid)
     $acl.SetAccessRuleProtection($true, $false)
+    foreach ($existing in @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))) {
+        [void]$acl.RemoveAccessRuleSpecific($existing)
+    }
     $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, 'None', 'Allow')
     $acl.AddAccessRule($rule)
     Set-Acl -LiteralPath $p -AclObject $acl
 }
 $acl = Get-Acl -LiteralPath $p
 if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $sid.Value) { exit 2 }
+if ($env:UART_GATEWAY_PRIVATE_ACTION -eq 'protect' -and -not $acl.AreAccessRulesProtected) { exit 4 }
+$ownFullControl = $false
 foreach ($rule in $acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
     if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -ne $sid.Value) { exit 3 }
+    if ($rule.AccessControlType -eq 'Allow' -and $rule.IdentityReference.Value -eq $sid.Value -and
+        ($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -eq [System.Security.AccessControl.FileSystemRights]::FullControl) {
+        $ownFullControl = $true
+    }
 }
+if ($env:UART_GATEWAY_PRIVATE_ACTION -eq 'protect' -and -not $ownFullControl) { exit 5 }
 """
 
 
@@ -45,7 +54,9 @@ def windows_acl(path: Path, *, protect: bool = False) -> None:
     except (OSError, subprocess.TimeoutExpired):
         raise ValueError("無法檢查 Windows 憑證 ACL，請確認系統 PowerShell 可用。") from None
     if result.returncode:
-        raise ValueError("憑證 ACL 未限制為目前使用者，請重新初始化或修正檔案權限。")
+        if result.returncode == 1:
+            raise ValueError("Windows 無法設定或讀取憑證 ACL；請檢查目錄權限及 PowerShell 錯誤。")
+        raise ValueError(f"憑證 ACL 未通過安全檢查（代碼 {result.returncode}），請確認擁有者與權限。")
 
 
 def private_directory(path: Path) -> None:

@@ -212,6 +212,18 @@ assert "serial" not in sys.modules
 
 
 class WindowsPrivateFileTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "需要 Windows 實際 ACL；Linux 只驗證替身")
+    def test_actual_windows_private_directory_and_file_acl(self):
+        from uart_gateway.protected_files import private_directory
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary) / "private"
+            private_directory(directory)
+            secret = directory / "test.secret"
+            write_private(secret, b"test-only")
+            self.assertEqual(read_private(secret, 1024), b"test-only")
+            windows_acl(directory)
+            windows_acl(secret)
+
     def test_acl_is_applied_before_secret_content_and_failures_are_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "private" / "test.secret"

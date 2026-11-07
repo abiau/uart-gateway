@@ -4,6 +4,12 @@
 
 更新日期：2026-11-07（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## Windows 憑證 ACL 修正（2026-11-08）
+
+使用者在 Win11 執行 `auth init --enable-tx` 時，原本建立新安全描述元的 Set-Acl 回報缺少 SeSecurityPrivilege；同機測試沿用 Get-Acl 的安全描述元並更換存取規則成功。已修改為沿用現有描述元，先確認擁有者為目前使用者，再停用繼承、移除既有規則並加入僅目前使用者 FullControl；設定後重新檢查擁有者、繼承、其他允許身分與目前使用者權限。秘密仍在空檔 ACL 保護成功後才寫入，失敗不降級。
+
+Linux 憑證／TX 回歸 26 項通過；新增實際 Windows 目錄與檔案測試在 Linux 略過。使用者手動驗證了目錄的 ACL 設定方法，但修正版完整 auth init、檔案 ACL、讀取、TX Gateway 與實體 IPCAM 尚待 Windows 重測；不得據此宣稱已實機通過。使用者已授權提交並推送此修正至 `origin/work`，交付版本以 Git 紀錄為準。
+
 ## 本輪 Container／Codex Shell 交接（2026-11-07）
 
 使用者明確授權實作 Linux Container UART Client 操作 IPCAM。**Implemented**：新增 `uart shell-ready <Channel> --newline lf|cr|crlf`，由人在互動終端核對接線、已登入 Shell 與換行，必要時沿用 Confirm，保存目前 Principal／Instance／Revision／Epoch／Adapter 脈絡；非互動 exec 不自行 Confirm。`uart exec <Channel> '命令'` 回傳結構化 JSON、UART 輸出／Base64、exit code 及原 execution_id；`uart exec-status <ID> [--wait 秒數]` 只查原操作，不取 Lease 或傳送。固定 TX 憑證、SDK／TX 工作流程與有界收據共用，沒有修改 Server、Core 或 Protocol。
