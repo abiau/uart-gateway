@@ -101,6 +101,24 @@ class PaneTerminalTests(unittest.TestCase):
         self.assertTrue(screen.display[1].startswith("abX"))
         self.assertEqual(screen.buffer[0][0].fg, "red")
 
+    def test_ascii_run_preserves_cells_and_history_at_wrap_boundary(self):
+        import pyte
+
+        from uart_gateway.text_renderer import TerminalRenderer
+
+        self.terminal.resize(10, 2)
+        reference = pyte.HistoryScreen(10, 2)
+        reference.set_mode(pyte.modes.LNM)
+        stream = pyte.Stream(reference)
+        renderer = TerminalRenderer()
+        for data in (b"\x1b[31m0123456789", b"AB\x1b[0m\rxy", b"\nwide-\xe4\xb8\xad\nnext"):
+            self.terminal.feed(data)
+            stream.feed(renderer.feed(data.decode()))
+        self.assertEqual(self.terminal.lines(), [*reference.history.top,
+                         *(reference.buffer.get(row, {}) for row in range(reference.lines))])
+        self.assertEqual((self.terminal.screen.cursor.x, self.terminal.screen.cursor.y),
+                         (reference.cursor.x, reference.cursor.y))
+
     def test_history_width_and_combining_glyphs_are_bounded(self):
         from uart_gateway.tui_buffer import HISTORY_LINES, MAX_COLUMNS, MAX_ROWS
         self.terminal.resize(10000, 10000)

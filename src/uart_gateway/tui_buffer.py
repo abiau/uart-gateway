@@ -2,6 +2,7 @@
 
 import codecs
 import unicodedata
+from functools import lru_cache
 
 import pyte
 
@@ -12,6 +13,11 @@ MAX_COLUMNS = 240
 MAX_ROWS = 80
 
 
+@lru_cache(maxsize=4096)
+def _ascii_cell(attrs, char: str):
+    return attrs._replace(data=char)
+
+
 class BoundedScreen(pyte.HistoryScreen):
     def __init__(self, *args, **kwargs):
         self.omitted_marks = 0
@@ -19,7 +25,19 @@ class BoundedScreen(pyte.HistoryScreen):
 
     def draw(self, data: str) -> None:
         if data.isascii() and data.isprintable():
-            # 常見 UART 紀錄沒有組合字元，可整段交給 pyte 繪製。
+            x, y = self.cursor.x, self.cursor.y
+            end = x + len(data)
+            if end <= self.columns and pyte.modes.IRM not in self.mode:
+                translated = data.translate(self.g1_charset if self.charset else self.g0_charset)
+                if translated.isascii() and translated.isprintable():
+                    # 單欄字元不跨行時可共用不可變的彩色格子，省去逐字元計算寬度。
+                    attrs = self.cursor.attrs
+                    self.buffer[y].update((column, _ascii_cell(attrs, char))
+                                          for column, char in enumerate(translated, x))
+                    self.cursor.x = end
+                    self.dirty.add(y)
+                    return
+            # 跨行、插入模式和特殊字集仍交給 pyte。
             super().draw(data)
             return
         # pyte 可把無限個組合符號附在一個字元；限制每個格子的字串長度。
