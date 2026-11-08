@@ -2,7 +2,7 @@
 
 import asyncio
 
-from uart_gateway.protocol.codec import encode_frame, read_frame
+from uart_gateway.protocol.codec import encode_frame, read_sized_frame
 from uart_gateway.protocol.errors import ProtocolError, RemoteError
 from uart_gateway.protocol.messages import EVENTS, uint
 
@@ -23,6 +23,7 @@ class Transport:
         self.send_lock = asyncio.Lock()
         self.events: asyncio.Queue[tuple[dict, int] | None] = asyncio.Queue(maxsize=256)
         self.event_bytes, self.event_used = event_bytes, 0
+        self.tx_changed = asyncio.Event()
         self.failure: Exception | None = None
         self.reader_task = asyncio.create_task(self._receive())
         self.heartbeat_task: asyncio.Task | None = None
@@ -45,8 +46,10 @@ class Transport:
                 raw = encode_frame({"type": "request", "id": request_id, "method": method, "params": params}, self.maximum)
                 self.pending[request_id] = future
                 self.writer.write(raw)
-                await asyncio.wait_for(self.writer.drain(), self.timeout)
-            return await asyncio.wait_for(future, self.timeout)
+                async with asyncio.timeout(self.timeout):
+                    await self.writer.drain()
+            async with asyncio.timeout(self.timeout):
+                return await future
         finally:
             if request_id is not None:
                 self.pending.pop(request_id, None)
@@ -68,11 +71,12 @@ class Transport:
             self.events.get_nowait()
         self.event_used = 0
         self.events.put_nowait(None)
+        self.tx_changed.set()
 
     async def _receive(self) -> None:
         try:
             while True:
-                message = await read_frame(self.reader, self.maximum, self.depth)
+                message, size = await read_sized_frame(self.reader, self.maximum, self.depth)
                 if message.get("type") == "response":
                     request_id = message.get("id")
                     if request_id is None:
@@ -100,11 +104,13 @@ class Transport:
                             {"channel_id", "binding_revision", "stream_epoch", "timestamp_utc", "data"} <= message.keys()
                             or not isinstance(message["data"], dict)):
                         raise ProtocolError("INVALID_FRAME", "事件外層不合法。")
-                    size = len(encode_frame(message))
                     if self.events.full() or self.event_used + size > self.event_bytes:
                         raise LocalDataLoss("SDK 事件佇列已滿，資料連續性中斷。")
                     self.event_used += size
                     self.events.put_nowait((message, size))
+                    if message["event"] == "tx_result":
+                        self.tx_changed.set()
+                        self.tx_changed = asyncio.Event()
                     # 已緩衝的重播也讓消費者取得執行機會，不放大有界佇列。
                     await asyncio.sleep(0)
                 else:

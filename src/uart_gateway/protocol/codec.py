@@ -85,6 +85,12 @@ def encode_frame(message: dict, maximum: int = MAX_FRAME_BYTES) -> bytes:
 
 async def read_frame(reader: asyncio.StreamReader, maximum: int = MAX_FRAME_BYTES,
                      depth: int = 16) -> dict:
+    message, _ = await read_sized_frame(reader, maximum, depth)
+    return message
+
+
+async def read_sized_frame(reader: asyncio.StreamReader, maximum: int = MAX_FRAME_BYTES,
+                           depth: int = 16) -> tuple[dict, int]:
     try:
         raw = await reader.readuntil(b"\n")
     except asyncio.LimitOverrunError as exc:
@@ -93,7 +99,7 @@ async def read_frame(reader: asyncio.StreamReader, maximum: int = MAX_FRAME_BYTE
         if not exc.partial:
             raise EOFError from exc
         raise ProtocolError("INVALID_FRAME", "連線在訊框完成前結束。") from exc
-    return decode_frame(raw, maximum, depth)
+    return decode_frame(raw, maximum, depth), len(raw)
 
 
 def binary_encode(payload: bytes) -> str:

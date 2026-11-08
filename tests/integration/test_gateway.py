@@ -119,11 +119,20 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         for terminal in (False, True):
             client = await self.client(True)
             console = Console()
-            with self.subTest(terminal=terminal), patch("sys.stdout", console), patch("sys.stderr", io.StringIO()):
-                result = await watch_client(client, "a", duration=1, text_mode=True, replay=True,
-                                            terminal_mode=terminal)
-            self.assertEqual(result, 0)
             expected = payload.decode() if terminal else safe_text(payload.decode())
+            with self.subTest(terminal=terminal), patch("sys.stdout", console), patch("sys.stderr", io.StringIO()):
+                task = asyncio.create_task(watch_client(client, "a", duration=None, text_mode=True,
+                                                        replay=True, terminal_mode=terminal))
+                try:
+                    await eventually(lambda: task.done() or
+                        len(console.getvalue().replace(RESET, "")) >= len(expected), timeout=5)
+                    if task.done():
+                        self.fail(f"重播應持續監看，實際結束結果：{await task}")
+                finally:
+                    if not task.done():
+                        task.cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await task
             self.assertEqual(console.getvalue().replace(RESET, ""), expected)
             self.assertIsNone(client.transport.failure)
 

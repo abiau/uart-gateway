@@ -195,3 +195,10 @@ class TxWorkflowTests(unittest.IsolatedAsyncioTestCase):
         await self.workflow.query(receipt)
         self.assertNotEqual(receipt.result["state"], "pending")
         self.assertEqual(self.devices[0].write_count, 1)
+
+    async def test_send_uses_terminal_event_without_status_roundtrip(self):
+        target = await self.target()
+        with patch.object(Client, "tx_status", side_effect=AssertionError("不應查詢已收到的終態")):
+            receipt = await self.workflow.send(target, b"event")
+        self.assertEqual(receipt.result["state"], "written_to_driver")
+        self.assertEqual(self.devices[0].write_count, 1)

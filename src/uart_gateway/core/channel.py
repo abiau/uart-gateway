@@ -94,7 +94,16 @@ class Channel:
 
     async def _stop_workers(self) -> None:
         if self.tasks:
-            _, pending = await asyncio.wait(self.tasks, timeout=self.lifecycle_timeout)
+            clock = asyncio.get_running_loop().time
+            deadline = clock() + self.lifecycle_timeout
+            interrupt_read = getattr(self.port, "interrupt_read", None)
+            if interrupt_read is not None and not self.tasks[0].done():
+                try:
+                    await self._device_operation(interrupt_read)
+                except OSError:
+                    # Driver 若拒絕中斷，仍等待原讀取及期限，避免提前關閉 Handle。
+                    pass
+            _, pending = await asyncio.wait(self.tasks, timeout=max(0, deadline - clock()))
             if pending:
                 self.state, self.confirmed, self.epoch = "faulted", False, None
                 self.last_error = ("SERIAL_IO_FAILED", "Serial 工作尚未收斂，不允許重開或交接 Handle。")

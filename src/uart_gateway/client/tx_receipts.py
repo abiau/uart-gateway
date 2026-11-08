@@ -1,6 +1,7 @@
 """有界 TX 收據；每個操作獨立檔案，不保存命令、Payload 或憑證。"""
 
 from dataclasses import asdict, dataclass, field
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
@@ -48,44 +49,51 @@ class TxJournal:
             return []
         if self.directory.is_symlink():
             raise ValueError("TX 收據目錄不得是符號連結。")
-        rows = []
+        paths = []
         with os.scandir(self.directory) as entries:
             for count, entry in enumerate(entries):
                 if count >= 256:
                     raise ValueError("TX 收據目錄超過掃描上限；請先封存舊檔，不會傳送 UART 資料。")
                 if not re.fullmatch(r"tx-[0-9a-f]{32}\.json", entry.name):
                     continue
-                try:
-                    path = Path(entry.path)
-                    if path.is_symlink():
-                        raise ValueError
-                    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
-                    with os.fdopen(os.open(path, flags), "rb") as stream:
-                        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                            raise ValueError
-                        raw = stream.read(4097)
-                    if len(raw) > 4096:
-                        raise ValueError
-                    # 收據不含秘密且只能用來查詢；此處只掃描有界的 Metadata。
-                    value = json.loads(raw)
-                    required = {"tx_id", "channel_id", "instance", "principal", "created", "result"}
-                    if not required <= set(value) or set(value) - required - {"last_query", "execution"}:
-                        raise ValueError
-                    row = TxReceipt(**value)
-                    for item in (row.channel_id, row.instance, row.principal):
-                        identifier(item)
-                    if self.path(row).name != entry.name or not isinstance(row.created, str) or len(row.created) > 40:
-                        raise ValueError
-                    datetime.fromisoformat(row.created)
-                    validate_result(row.result)
-                    if row.last_query is not None:
-                        validate_result(row.last_query)
-                    if row.execution is not None:
-                        validate_execution(row.execution)
-                except (TypeError, ValueError, KeyError, RecursionError):
-                    raise ValueError("TX 收據損壞或權限不符；請先保留檔案並處理，不會自動重送。") from None
-                rows.append(row)
+                paths.append(Path(entry.path))
+        if len(paths) < 8:
+            rows = [self._read(path) for path in paths]
+        else:
+            # 每份收據獨立驗證，重疊 Windows 冷檔案的開啟等待。
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                rows = list(executor.map(self._read, paths))
         return sorted(rows, key=lambda r: (r.created, r.tx_id), reverse=True)
+
+    def _read(self, path: Path) -> TxReceipt:
+        try:
+            if path.is_symlink():
+                raise ValueError
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+            with os.fdopen(os.open(path, flags), "rb") as stream:
+                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                    raise ValueError
+                raw = stream.read(4097)
+            if len(raw) > 4096:
+                raise ValueError
+            value = json.loads(raw)
+            required = {"tx_id", "channel_id", "instance", "principal", "created", "result"}
+            if not required <= set(value) or set(value) - required - {"last_query", "execution"}:
+                raise ValueError
+            row = TxReceipt(**value)
+            for item in (row.channel_id, row.instance, row.principal):
+                identifier(item)
+            if self.path(row).name != path.name or not isinstance(row.created, str) or len(row.created) > 40:
+                raise ValueError
+            datetime.fromisoformat(row.created)
+            validate_result(row.result)
+            if row.last_query is not None:
+                validate_result(row.last_query)
+            if row.execution is not None:
+                validate_execution(row.execution)
+        except (TypeError, ValueError, KeyError, RecursionError):
+            raise ValueError("TX 收據損壞或權限不符；請先保留檔案並處理，不會自動重送。") from None
+        return row
 
     def save(self, receipt: TxReceipt, *, create: bool = False) -> None:
         private_directory(self.directory)
@@ -132,10 +140,12 @@ class TxJournal:
                             (receipt.channel_id, receipt.instance, receipt.principal, receipt.execution["authorization_id"])):
                         raise ValueError("前次 Shell 命令尚未結案；請 exec-status 查詢，或由人確認 Shell 恢復後重新 shell-ready。")
             # 只淘汰已知終態；不明／pending 收據保留供人工核對。
+            count = len(rows)
             for row in rows[63:]:
                 if row.result["state"] in FINAL and (row.execution is None or row.execution["state"] in ("completed", "not_sent")):
                     self.path(row).unlink()
-            if len(self.list()) >= 128:
+                    count -= 1
+            if count >= 128:
                 raise ValueError("未結案的 TX 收據已達上限，請先查詢／封存；本次未傳送。")
         validate_result(receipt.result)
         if receipt.last_query is not None:
@@ -146,7 +156,7 @@ class TxJournal:
         if create and (path.exists() or path.is_symlink()):
             raise ValueError("TX 收據識別已存在；本次未送出。")
         if not create:
-            previous = next((row for row in self.list() if row.tx_id == receipt.tx_id), None)
+            previous = self._read(path) if path.exists() or path.is_symlink() else None
             if previous is not None:
                 if (previous.channel_id, previous.instance, previous.principal) != (receipt.channel_id, receipt.instance, receipt.principal):
                     raise ValueError("既有收據的操作身分不符，未覆蓋。")

@@ -18,6 +18,10 @@ class BoundedScreen(pyte.HistoryScreen):
         super().__init__(*args, **kwargs)
 
     def draw(self, data: str) -> None:
+        if data.isascii() and data.isprintable():
+            # 常見 UART 紀錄沒有組合字元，可整段交給 pyte 繪製。
+            super().draw(data)
+            return
         # pyte 可把無限個組合符號附在一個字元；限制每個格子的字串長度。
         for char in data:
             if unicodedata.combining(char):

@@ -178,7 +178,7 @@ Server Restart、裝置遺失及設定變更後取消既有確認資格。是否
 
 ## Session 與 Lease 生命週期
 
-歷史重播交由 Session 的單一 Writer 逐筆編碼與傳送，Response 優先、不同訂閱輪流排程，同一訂閱必須先送完快照再送已排入有界 Queue 的 Live。快照共用每 Session 兩倍 Ring 的預算與有期限保留，不會將大量歷史一次塞進訂閱即時 Queue。取消、Epoch 結束、期限或連線關閉釋放引用；配額不足撤銷當次新訂閱並回 QUEUE_FULL。此為 Server 內部排程修正，Core、SDK 及線上契約不變；限額見設定與協定文件。
+歷史重播交由 Session 的單一 Writer 逐筆編碼與傳送，Response 優先、不同訂閱輪流排程，同一訂閱須先送完快照再送已入列的 Live。Writer 保留每框的背壓期限，送滿八框或累積達 16 KiB 便讓出執行權。SDK 直接以接收框大小計費。快照共用每 Session 兩倍 Ring 的預算與期限，取消、Epoch 結束或連線關閉會釋放引用。配額不足時撤銷該次新訂閱並回 QUEUE_FULL。限額見設定與協定文件。
 
 ```mermaid
 sequenceDiagram

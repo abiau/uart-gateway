@@ -14,6 +14,8 @@ from uart_gateway.protocol.messages import identifier
 
 LOG = logging.getLogger(__name__)
 FOOTER_RESERVE = 8192
+BATCH_ITEMS = 64
+BATCH_BYTES = 65536
 
 
 class RecordingCapacityError(OSError):
@@ -63,6 +65,7 @@ class Recorder:
         self.state, self.integrity, self.reason = "recording", "no_known_gap", None
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=1024)
         self.used = 0
+        self.pending = 0
         self.task: asyncio.Task | None = None
         self.closing = False
         self.file = None
@@ -179,10 +182,11 @@ class Recorder:
         if self.closing or self.state == "failed":
             return
         raw = encode_record(record)
-        if self.queue.full() or self.used + len(raw) > self.config.queue_bytes:
+        if self.pending >= self.queue.maxsize or self.used + len(raw) > self.config.queue_bytes:
             self.fail("RECORDING_OVERFLOW", "磁碟持續跟不上接收速度，錄製佇列已滿")
             return
         self.used += len(raw)
+        self.pending += 1
         self.queue.put_nowait((raw, snapshot))
 
     def channel_state(self, channel: dict) -> None:
@@ -205,14 +209,31 @@ class Recorder:
         self.expected_epoch, self.expected_offset = epoch, int(record["next_offset"])
         self.put({"type": "rx", **record})
 
+    def _write_batch(self, items: list[tuple[bytes, dict | None]]) -> None:
+        for raw, snapshot in items:
+            self._write(raw, snapshot)
+
     async def _run(self) -> None:
         try:
             while (item := await self.queue.get()) is not None:
-                raw, snapshot = item
+                items = [item]
+                size = len(item[0])
+                stopping = False
+                # 只收現有項目，不等待湊批；執行中的項目繼續計入配額。
+                while len(items) < BATCH_ITEMS and size < BATCH_BYTES and not self.queue.empty():
+                    item = self.queue.get_nowait()
+                    if item is None:
+                        stopping = True
+                        break
+                    items.append(item)
+                    size += len(item[0])
                 try:
-                    await disk_io(self._write, raw, snapshot)
+                    await disk_io(self._write_batch, items)
                 finally:
-                    self.used -= len(raw)
+                    self.used -= size
+                    self.pending -= len(items)
+                if stopping:
+                    break
             if self.file is not None:
                 await disk_io(self._finish_segment, final=True)
         except RecordingCapacityError:
@@ -231,6 +252,7 @@ class Recorder:
             while not self.queue.empty():
                 self.queue.get_nowait()
             self.used = 0
+            self.pending = 0
 
     async def close(self) -> None:
         if self.closing:

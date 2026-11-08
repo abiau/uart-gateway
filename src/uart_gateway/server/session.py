@@ -12,6 +12,8 @@ from uart_gateway.protocol.codec import encode_frame
 from uart_gateway.protocol.errors import ProtocolError
 
 LOG = logging.getLogger(__name__)
+WRITER_TURN_FRAMES = 8
+WRITER_TURN_BYTES = 16384
 
 
 @dataclass
@@ -105,6 +107,7 @@ class Session:
         self.wakeup.set()
 
     async def run(self) -> None:
+        frames = sent = 0
         try:
             while not self.closed:
                 await self.wakeup.wait()
@@ -139,7 +142,14 @@ class Session:
                         if sid in self.replays or sid in self.data:
                             self.order.append(sid)
                     self.writer.write(raw)
-                    await asyncio.wait_for(self.writer.drain(), timeout=5)
+                    async with asyncio.timeout(5):
+                        await self.writer.drain()
+                    frames += 1
+                    sent += len(raw)
+                    if frames == WRITER_TURN_FRAMES or sent >= WRITER_TURN_BYTES:
+                        frames = sent = 0
+                        # drain 在輸出緩衝未滿時不會讓出執行權。
+                        await asyncio.sleep(0)
         except (ConnectionError, OSError, TimeoutError, ProtocolError):
             self.abort()
 

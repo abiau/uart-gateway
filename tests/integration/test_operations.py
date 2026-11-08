@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import secrets
 import tempfile
+import threading
 import unittest
 
 from uart_gateway.client import Client
@@ -155,3 +156,53 @@ class OperationsTests(unittest.IsolatedAsyncioTestCase):
                                 break
             finally:
                 await gateway.close()
+
+    async def test_settings_interrupts_read_before_reopening_handle(self):
+        entered, released = threading.Event(), threading.Event()
+
+        class BlockingReader(FakeSerial):
+            def read(self, size):
+                entered.set()
+                if not released.wait(2):
+                    raise AssertionError("應先中斷讀取")
+                return super().read(size)
+
+            def interrupt_read(self):
+                released.set()
+                super().interrupt_read()
+
+        token = secrets.token_urlsafe(32)
+        gateway = Gateway([(ChannelConfig("a", "A"), BlockingReader())],
+            (Principal("operator", token, {"a": frozenset({"read", "configure"})}),))
+        port = await gateway.start(port=0)
+        try:
+            await eventually(entered.is_set)
+            async with await Client.connect("127.0.0.1", port, token) as client:
+                old = await client.get_channel("a")
+                updated = await client.configure_rx(old, {"read_timeout_ms": 30}, instance=client.instance)
+                self.assertTrue(released.is_set())
+                self.assertNotEqual(updated["stream_epoch"], old["stream_epoch"])
+                self.assertEqual(updated["state"], "ready")
+        finally:
+            released.set()
+            await gateway.close()
+
+    async def test_retention_keeps_all_candidates_if_one_hash_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            token = secrets.token_urlsafe(32)
+            captures = []
+            for _ in range(2):
+                gateway = Gateway([(ChannelConfig("a", "A"), FakeSerial())],
+                    (Principal("reader", token, {"a": frozenset({"read"})}),),
+                    recording=RecordingConfig(root))
+                await gateway.start(port=0)
+                await gateway.close()
+                captures.append(root / f"capture-{gateway.store.instance}")
+            segment = captures[-1] / "a" / "000001.jsonl"
+            segment.write_bytes(segment.read_bytes().replace(b'"label":"A"', b'"label":"B"', 1))
+            plan = retention(root, max_bytes=1)
+            self.assertEqual(len(plan["candidates"]), 2)
+            with self.assertRaisesRegex(ValueError, "未通過檢查"):
+                retention(root, max_bytes=1, apply=plan["plan"])
+            self.assertTrue(all(path.is_dir() for path in captures))

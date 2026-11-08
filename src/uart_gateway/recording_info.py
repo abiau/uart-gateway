@@ -22,6 +22,11 @@ def inspect_capture(directory: Path, *, on_record: Callable[[dict | None], None]
             raise ValueError("找不到有效錄製分段，或檔案總量超過本格式上限。")
     except OSError as exc:
         raise ValueError("無法列出錄製檔，請確認目錄與讀取權限。") from exc
+    return _inspect_segments(files, on_record=on_record)
+
+
+def _inspect_segments(files: list[Path], *, on_record: Callable[[dict | None], None] | None = None) -> dict:
+    """檢查已依分段編號排序及限制總量的檔案清單。"""
     integrity = "no_known_gap"
     issues = []
     identity = None

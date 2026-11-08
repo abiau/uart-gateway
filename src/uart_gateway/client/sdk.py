@@ -135,10 +135,17 @@ class Client:
     async def wait_tx(self, channel_id: str, tx_id: str, *, timeout: float = 5) -> dict:
         async with asyncio.timeout(timeout):
             while True:
+                # 先記住通知，避免在查詢與等待之間錯過終態事件。
+                changed = self.transport.tx_changed
                 result = await self.tx_status(channel_id, tx_id)
                 if result["state"] != "pending":
                     return result
-                await asyncio.sleep(0.02)
+                try:
+                    async with asyncio.timeout(0.02):
+                        await changed.wait()
+                except TimeoutError:
+                    # 查詢者可能不是原 Session，仍支援原查詢間隔。
+                    pass
 
 
 class LeaseHandle:

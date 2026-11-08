@@ -23,6 +23,13 @@ class FakeSerial:
     def set_settings(self, settings: SerialSettings) -> None:
         self.settings = settings
 
+    def interrupt_read(self) -> None:
+        try:
+            self.rx.put_nowait(b"")
+        except queue.Full:
+            # 已有資料可喚醒讀取。
+            pass
+
     def open(self) -> None:
         while not self.rx.empty():
             self.rx.get_nowait()

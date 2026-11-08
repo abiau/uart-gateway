@@ -120,6 +120,25 @@ class TxWorkflow:
             receipt.result = filtered
         await asyncio.to_thread(self.journal.save, receipt)
 
+    async def _wait_result(self, client, receipt: TxReceipt, wait: float) -> dict:
+        """此工作台的單次連線沒有 RX 訂閱，可直接等待自己的 TX 終態事件。"""
+        async with asyncio.timeout(wait):
+            while True:
+                try:
+                    async with asyncio.timeout(0.05):
+                        event = await client.next_event()
+                except TimeoutError:
+                    result = await client.tx_status(receipt.channel_id, receipt.tx_id)
+                else:
+                    if event["event"] != "tx_result" or event["channel_id"] != receipt.channel_id:
+                        continue
+                    result = event["data"].get("tx")
+                    if not isinstance(result, dict) or (result.get("tx_id"), result.get("channel_id"),
+                            result.get("gateway_instance_id")) != (receipt.tx_id, receipt.channel_id, receipt.instance):
+                        continue
+                if result.get("state") != "pending":
+                    return result
+
     async def send(self, target: TxTarget, payload: bytes, *, wait: float = 5) -> TxReceipt:
         if self.busy or not self.is_acknowledged(target):
             raise ValueError("操作進行中或目標未人工核對；本次未送出。")
@@ -141,7 +160,8 @@ class TxWorkflow:
                         try:
                             pending = await lease.write_bytes(payload, tx_id=receipt.tx_id)
                             await self.update(receipt, pending)
-                            await self.update(receipt, await client.wait_tx(receipt.channel_id, receipt.tx_id, timeout=wait))
+                            if pending["state"] == "pending":
+                                await self.update(receipt, await self._wait_result(client, receipt, wait))
                         except (TxUncertain, TimeoutError, ConnectionError, ProtocolError):
                             self.notice = "結果未確認；請查詢結果，不重送原指令。"
                         except RemoteError as exc:

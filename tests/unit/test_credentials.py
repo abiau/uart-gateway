@@ -223,6 +223,9 @@ class WindowsPrivateFileTests(unittest.TestCase):
             self.assertEqual(read_private(secret, 1024), b"test-only")
             windows_acl(directory)
             windows_acl(secret)
+            with patch("uart_gateway.windows_acl._set_security", side_effect=AssertionError("相同 ACL 不應重寫")):
+                private_directory(directory)
+                windows_acl(secret, protect=True)
 
     def test_acl_is_applied_before_secret_content_and_failures_are_closed(self):
         with tempfile.TemporaryDirectory() as temporary:

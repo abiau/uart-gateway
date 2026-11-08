@@ -96,7 +96,7 @@ def _current_user():
         _close(token)
 
 
-def _inspect(handle, sid, *, verify_rules, require_protection=False):
+def _inspect(handle, sid, *, verify_rules, require_protection=False, exact_flags=None):
     owner, dacl, descriptor = c_void_p(), c_void_p(), c_void_p()
     error = _get_security(handle, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
                           byref(owner), None, byref(dacl), None, byref(descriptor))
@@ -116,11 +116,16 @@ def _inspect(handle, sid, *, verify_rules, require_protection=False):
                 raise ValueError("Windows ACL 仍允許繼承。")
         info = _AclSizeInformation()
         _require(_acl_info(dacl, byref(info), sizeof(info), ACL_SIZE_INFORMATION_CLASS))
+        if exact_flags is not None and info.count != 1:
+            raise ValueError("Windows ACL 與私有設定不一致。")
         own_full_control = False
         for index in range(info.count):
             address = c_void_p()
             _require(_get_ace(dacl, index, byref(address)))
             ace = _Ace.from_address(address.value)
+            if exact_flags is not None and (ace.type != ACCESS_ALLOWED_ACE or
+                    ace.flags != exact_flags or ace.mask != FILE_ALL_ACCESS):
+                raise ValueError("Windows ACL 與私有設定不一致。")
             if ace.type == ACCESS_DENIED_ACE:
                 continue
             # 只接受能完整判讀的允許規則，未知類型一律拒絕。
@@ -147,8 +152,14 @@ def check_acl(path: str, *, protect: bool) -> None:
         user = _current_user()
         sid = _TokenUser.from_buffer(user).sid
         if protect:
-            _inspect(handle, sid, verify_rules=False)
             flags = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE if info.attributes & FILE_ATTRIBUTE_DIRECTORY else 0
+            try:
+                _inspect(handle, sid, verify_rules=True, require_protection=True, exact_flags=flags)
+            except ValueError:
+                _inspect(handle, sid, verify_rules=False)
+            else:
+                # 已有相同的受保護規則，避免每次存收據都重設目錄及繼承。
+                return
             acl = create_string_buffer(ACL_HEADER_SIZE + _Ace.sid_start.offset + _sid_length(sid))
             _require(_initialize_acl(acl, len(acl), ACL_REVISION))
             _require(_add_allow(acl, ACL_REVISION, flags, FILE_ALL_ACCESS, sid))

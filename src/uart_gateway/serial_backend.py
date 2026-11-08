@@ -127,6 +127,11 @@ class PySerialBackend:
             raise RuntimeError("變更設定前必須關閉 Serial Handle。")
         self.settings = settings
 
+    def interrupt_read(self) -> None:
+        """要求 Driver 結束目前讀取；Handle 仍由生命週期流程關閉。"""
+        if self._serial is not None:
+            self._serial.cancel_read()
+
     def _open(self, expected: AdapterInfo | None = None) -> None:
         if self._serial is not None:
             raise SerialBackendError("PORT_BUSY", "此 Backend 尚有未釋放的 Handle，請先關閉。")
