@@ -28,6 +28,23 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 ## SDK 遠端自動認證
 
+### 簡化入口與遠端啟動設定（2026-11-12）
+
+| 入口／資料 | 現行行為與界限 |
+| --- | --- |
+| `uart`／`uart client` | 互動遠端 Client；沿用全域 connection／access／端點／明確來源規則。無子命令不再是參數錯誤；非互動輸入／輸出拒絕並提示腳本命令 |
+| `uart client --text` | 強制內建文字工作台；未安裝 TUI 時預設亦使用此介面，不自動安裝依賴 |
+| `uart setup`／`uart gateway`／`uart remote` | 互動設定／啟動／選單；接受全域 --connection、--connections-dir，不接受角色／Token／端點覆寫；雙擊使用 run-remote.cmd。設定目的地不檢查本機 Port；啟動前以短暫綁定檢查，不建立 TCP Session。前置綁定失敗回選單，真正啟動仍須再次取得接聽端 |
+| `connections/<名稱>/remote.json` | 受保護 JSON，最多 8192 bytes；version=1，ssh、ssh_port、container、python、name、port、roles；沒有 Token／SSH 密碼。預設 SSH 22、python3、Linux 名稱 company、Loopback Port 18081、read；container 空字串為主機 |
+| SSH 目的地 | 主機或 帳號@主機／SSH 別名，最多 255 個受限 ASCII 字元；不接受選項、空白、任意 Shell 片段。容器名稱最多 128 字元，僅支援既有 host 網路 |
+| roles | 非空、不同且包含 read；只接受 read／manage／tx。精靈 R=read、M=read＋manage、T=read＋manage＋tx；既有缺少角色拒絕，不更換憑證 |
+| `client-preferences/<部署ID>-<角色>.json` | 受保護 JSON，最多 2048 bytes；version=1、channels 為 1～4 個不同合法 ID。明確舊 Token 來源不保存偏好；損壞偏好告警且不覆蓋，不影響重新人工選擇 |
+| Linux Client 安裝 | 單一 ZIP 最多 2 MiB、250 個套件 .py；固定時間戳使內容相同時雜湊相同。安裝目錄 `~/.local/share/uart-gateway/client/<SHA-256>.pyz`，最多八版，不改寫其他 Client 使用中的版本；達限需結束 Client 後人工清理舊版 |
+| 安裝與控制交接 | JSON stdin 單行最多 3 MiB；只傳所選角色。安裝包不落地為秘密傳輸檔，遠端不回印輸入／traceback。SSH 控制輸出最多 64 KiB，啟動就緒等待 90 秒；逾時／取消收尾本次子程序 |
+| UART 換選 | 新配置 1～2 路；既有通道 Serial 值保留，新通道沿用第一路 Serial。固定認證參照與部署 ID 不變；原 gateway.toml 保存為受保護 gateway.previous.toml。確認前不開 Serial，既有 Port 使用中拒絕 |
+
+此設定是本機部署工具資料，不新增線上欄位。互動步驟與 PATH／容器重建前提見 [認證流程](authentication.md)。
+
 本機 `local`／`start` 沿用原本的臨時或明確設定來源。本節是遠端固定連線：Server 的 auth.authenticate、權限欄位、Confirm／Lease／TX 及線上版本不變。完整操作見 [認證初始化](authentication.md)。
 
 | 來源／參數 | 現行行為與上限 |

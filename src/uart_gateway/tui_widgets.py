@@ -152,16 +152,17 @@ class UARTPane(Vertical):
 class ChannelPicker(ModalScreen):
     BINDINGS = [("escape", "cancel", "取消")]
 
-    def __init__(self, channels):
+    def __init__(self, channels, preferred=None):
         super().__init__()
         self.channels = channels
+        self.preferred = preferred
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog"):
             yield Label(Text("選擇要顯示的 UART（最多四路）"))
             yield Static("Tab 移動、空白勾選，Enter 開始。套用會重新建立本次監看。", markup=False)
             yield SelectionList(*[(Text(f"{label(c['adapter'].get('port') or c['channel_id'])}／{label(c['label'])} | {STATES.get(c['state'], '未知')}"),
-                                   c["channel_id"], True) for c in self.channels], id="channels")
+                                   c["channel_id"], self.preferred is None or c["channel_id"] in self.preferred) for c in self.channels], id="channels")
             with Horizontal():
                 yield Button("取消", id="cancel")
                 yield Button("開啟所選", id="open", variant="primary")

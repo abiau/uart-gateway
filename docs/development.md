@@ -1,5 +1,13 @@
 # 開發規範
 
+## 簡化 Client 與遠端設定測試（2026-11-12）
+
+`test_simple_client` 單元涵蓋預設入口／全域參數、非互動拒絕、免 TUI 文字入口、依部署／角色的偏好與格式界限、目前快照重選、ZIP 可重現及免虛擬環境執行、SSH 參數／Shell 引用、所選角色 stdin、重試保留原秘密、換 UART／新增通道不換憑證，以及控制輸出超限／啟動取消時子程序收尾。
+
+首次設定逾時回歸另模擬本機 TCP 連線一律逾時，驗證既有部署仍進入目的地設定與安裝、零 Port 探測、憑證／Gateway 設定不變。以真本機 Socket 測啟動前忙碌／空閒判斷與探測資源釋放，另測綁定錯誤轉譯、前置錯誤返回選單後仍可選 2，以及 Gateway 清理失敗不得被選單吞掉。
+
+整合測試在 POSIX 的隔離 HOME 執行真安裝程式、Client ZIP／CLI 與真 Gateway／SDK／Fake Serial，驗證權限、重複安裝、衝突／壞雜湊／使用者入口保護、只有實際認證成功才 READY、EOF 清理、人工恢復保留原 Epoch 與零 TX。真終端另驗無子命令、監看／Ctrl+C、跨程序上次選擇；可選 TUI 測偏好只預選、Enter 前無訂閱及已移除通道不誤選。SSH 子程序以本機 Python 程序取代，不能據此宣稱 OpenSSH、公司 Podman 或 Windows 雙擊／實體 UART 驗收。
+
 ## Container Shell 測試（2026-11-07）
 
 `tests/unit/test_shell_exec.py` 檢查單行 POSIX 引用、拆分標記、TTY echo 不誤判、跨區塊 UTF-8／二進位／CRLF、非零 exit code、stdin=/dev/null 與有界輸出。測試專用 /bin/sh 只執行固定測試字串，產品從不在本機執行使用者的命令。

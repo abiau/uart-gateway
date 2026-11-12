@@ -53,13 +53,15 @@ class UARTApp(App[int]):
         ("f2", "send_tx", "傳送"), ("f3", "tx_results", "TX 結果")]
 
     def __init__(self, connect=None, *, local_launch=None, local_preview=None, local_devices=None,
-                 local_select=None, local_record=None, description="遠端讀取", channels=None, tx_journal=None):
+                 local_select=None, local_record=None, description="遠端讀取", channels=None, tx_journal=None,
+                 preferred_channels=None, selection_saved=None):
         super().__init__()
         self.controller = TUIController(connect, self.note)
         self.tx = TxWorkflow(connect, tx_journal) if tx_journal is not None else None
         self.local_launch, self.local_preview, self.description = local_launch, local_preview, description
         self.local_devices, self.local_select, self.local_record = local_devices, local_select, local_record
         self.requested_channels = channels
+        self.preferred_channels, self.selection_saved = preferred_channels, selection_saved
         self.selected = 0
         self.failure = None
         self._uart_control = self._uart_local_task = self._uart_quit_task = None
@@ -199,6 +201,13 @@ class UARTApp(App[int]):
             self.selected = 0
         finally:
             self._uart_rebuilding = False
+        self.preferred_channels = [c["channel_id"] for c in channels]
+        if self.selection_saved is not None:
+            try:
+                await self.selection_saved(self.preferred_channels)
+            except (OSError, ValueError) as exc:
+                self.note("已開始監看，但本次通道選擇未保存：" + label(exc))
+                return
         self.note("已開始監看；重開 RX 使用所選窗格，Q 清理後離開。" if self.local_launch else "已開始監看；Q 只關閉 Client，Gateway 繼續執行。")
         self.select_pane(0)
 
@@ -222,7 +231,7 @@ class UARTApp(App[int]):
                     self.operation(lambda: self.install_panes(result, instance))
                 else:
                     self.note("已取消選擇；現有監看繼續，C 可重新選擇。")
-            self.push_screen(ChannelPicker(channels), selected)
+            self.push_screen(ChannelPicker(channels, self.preferred_channels), selected)
 
     def action_choose(self):
         if len(self.screen_stack) == 1:

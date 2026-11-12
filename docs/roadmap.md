@@ -49,6 +49,8 @@ RX 錄製切片已加入 Gateway 端有界 Queue、分段、每 Capture 容量�
 
 ## Phase 2：多設備與互動工具
 
+2026-11-12 使用者授權進一步簡化 Windows／Linux 操作。切片包括 Linux `uart` 單一入口、依現場清單預選上次通道、首次設定與連線錯誤引導，以及 Windows 固定憑證精靈、選 UART 與 Gateway／SSH 啟動。驗收：取消不傳憑證／不開 Serial；換 COM／新增第二路不生新 Token，TX 範圍保留；安裝角色明確、衝突不覆蓋、秘密不進 argv／Log；Linux 無虛擬環境仍能認證監看；舊偏好不跳過目前脈絡核對；SSH 中斷時 RX 保持、人工 R 恢復及 Q 清理本次資源。Python／PATH、既有入口與容器 host 網路前提需明示。模擬 SSH／真本機 TCP 與公司 SSH／實體 UART 分開驗收，不擴充 Protocol、匿名、容器網路或 TX 自動化。
+
 2026-11-08 加入本機設定版本預覽與套用，以及受 configure 權限保護的單通道 UART 調整。跨次錄製保留、集中操作稽核也已有獨立 CLI 入口。驗收以 [專案狀態](status.md) 為準。
 
 2026-11-07 使用者授權 Linux Container／Codex 透過 UART Client 執行 IPCAM 指令。已加入 CLI／SDK 的已登入 POSIX Shell 單次操作：人工 shell-ready 保存目標脈絡，exec 整段 Lease、拆分完成標記／exit code、有界 UART 輸出，以及 exec-status 原操作查詢。沒有新增通用 Server Shell RPC／MCP、自動登入、控制字元、重送或韌體更新。此小切片提前提供 Phase 4 的已知 Shell Helper；不代表 Phase 1–4 整體驗收完成。[Shell 文件](shell-exec.md) 區分自動化與 IPCAM／SSH 待測。

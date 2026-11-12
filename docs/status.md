@@ -2,7 +2,29 @@
 
 > 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
-更新日期：2026-11-08（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
+更新日期：2026-11-12（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
+
+## 遠端設定前置檢查逾時修正（2026-11-12）
+
+使用者回報 run-remote.cmd 選 2 後，尚未出現 SSH 主機問題即收到 TimeoutError 並退出。**Implemented**：原設定流程在既有固定部署上先以 0.5 秒 TCP 連線檢查本機 Gateway Port，逾時未轉譯，阻擋不需要本機連線的目的地設定。已移除設定流程的 Port 前置檢查，既有 Gateway 可持續執行，保留原憑證與 UART 設定。僅啟動新 Gateway 前以短暫綁定檢查 Port，不建立 Session；占用／系統保留／權限或其他綁定錯誤顯示具體原因並回遠端選單。真正啟動仍由原 Gateway 取得接聽端；選單只收斂此無資源的前置錯誤，不吞掉 Gateway 清理失敗。
+
+**Tested**：Win11／Python 3.15.0 的簡化入口與憑證相關 36 項，35 通過、1 項平台略過；WSL／Python 3.14.8 的設定與安裝／生命週期 16 項全數通過。新增五項回歸涵蓋 TCP 永遠逾時仍可設定、零本機 Port 探測且原資料不變、真 Socket 忙碌／空閒與釋放、綁定錯誤轉譯、回選單後仍可進入設定，以及清理失敗繼續向外回報；既有安裝失敗重試案例另加驗不呼叫 Port 檢查。git diff --check 通過。
+
+本輪未重跑全套，前輪重播／TUI 未通過紀錄仍保留。使用者現場重開 CMD、實際 SSH／Podman 與 UART 尚待回報，未將模擬逾時回歸標為現場 Verified。未重新產生實際使用者憑證、未操作現場 Gateway／UART。使用者已明確授權本輪變更提交並推送至 origin/work，交付版本以 Git 紀錄為準。
+
+## 遠端首次設定與 Client 單一入口（2026-11-12）
+
+**Implemented**：使用者授權簡化 Windows 固定認證與 Linux Client。無子命令的 `uart` 開啟遠端工作台，依已安裝依賴使用多窗格或內建文字介面；保留原 CLI／SDK、認證來源與角色。每次查詢目前目標，依部署 ID／角色預選上次通道，仍需人工開始。未初始化、Gateway／Tunnel 未就緒與認證錯誤提供下一步，不猜測秘密、不降級或自動提權。
+
+Windows 新增 `run-remote.cmd`／`uart remote` 選單、`uart setup` 與 `uart gateway`。首次選 UART、明確目的地與角色，保留 OpenSSH 指紋核對，經 stdin 安裝免 pip／虛擬環境的 Linux Client 與固定角色。日後沿用原憑證；D 可重選一至兩路，新增通道加入既有 read／manage 範圍，TX 不擴大，移除仍授權 TX 的通道拒絕。啟動以原 Server／Gateway、Backend 與非阻塞主控台管理本次單一 Gateway／SSH；只有遠端 SDK 完成認證與通道查詢才顯示就緒。SSH 中斷時 RX／錄製繼續，R 人工恢復，Q／Ctrl+C 收尾本次資源。
+
+Linux Client 使用不可變雜湊版本路徑，更新不覆寫其他 Client 正在使用的 ZIP；既有使用者／pip 的同名入口拒絕覆蓋。安裝與輸出有界，秘密不進 argv、日誌或一般暫存包，固定秘密可在容器重建後由 Windows 下一次明確啟動重新安裝。權威參數及界限見 [設定](configuration.md)，實際步驟見 [認證](authentication.md)。
+
+**Tested**：WSL `podman-machine-default`／Python 3.14.8 的最新相關 27 項測試，26 項通過，1 項因缺少可選 TUI 依賴略過。涵蓋初次讀取安裝／取消、固定角色、換 UART／新增通道與 TX 範圍、可重現 ZIP、真安裝程式與 CLI／SDK／TCP、POSIX 真終端跨程序偏好、衝突／使用者入口／壞雜湊保護、就緒前取消與控制輸出超限收尾、實際認證才 READY、SSH 替身中斷／人工恢復且 Epoch 保持與零 TX。SSH 傳輸以本機 Python 子程序替代；不是 OpenSSH／公司 SSH 驗證。Win11／Python 3.15.0 最後執行新增的兩個測試模組，共 21 項，15 項通過、6 項因 POSIX 前提略過，包含全部 14 項新單元測試及新 TUI 偏好案例。文件連結與 git diff --check 通過。
+
+**全套回歸未通過**：Windows 初輪 469 項為 404 通過、65 平台略過。後續全套重跑出現既有慢終端重播未收齊、TUI 重開後暫停畫面尚未更新，以及大型雙路重播後另一通道未及收到即時資料；失敗後 TUI 清理另回報缺少 pane-title 元件。最後一輪 474 項為 407 通過、65 略過、1 個失敗與 1 個錯誤，失敗案例為 test_replay_survives_temporarily_stalled_console 與 test_dual_large_replay_does_not_overflow_or_mix_with_operating_area。曾試將前兩個案例改為有界等待實際內容／畫面狀態，隔離通過，但全套仍不穩定，因此還原這兩份既有測試，未將延長等待視為修復。根因未確認；產品的監看期限、SDK 接收及 Server 重播路徑本輪未變更。不得將新功能相關測試通過擴大為全套回歸通過。
+
+**尚未 Verified／限制**：新 CMD 雙擊／主機指紋互動、Windows OpenSSH 到公司 Linux／Podman、實體 COM／換板／新增第二路、硬體插拔、實際 Tunnel 故障與長時間接收均未在本輪執行。只支援已有 Python 3.12 以上的 Linux 主機或既有 host 網路容器，不修改容器網路／掛載／Shell 啟動檔。若 PATH 未含 ~/.local/bin，需用工具提示的 ~/.local/bin/uart 或重新登入；既有同名入口需先自行確認。此切片沒有提供 TX 自動登入、Confirm、Lease 恢復或重送，不新增線上格式／匿名／自動重連。使用者已明確授權與前置檢查修正一併提交／推送；原有未追蹤的 protected_files.py.before-dacl.bak 不納入版本庫。
 
 ## 跨主機量測與窗格繪製改善（2026-11-08）
 

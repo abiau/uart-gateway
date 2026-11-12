@@ -653,7 +653,14 @@ def main() -> None:
     parser.add_argument("--connection", help="遠端連線名稱，省略使用已初始化的預設連線")
     parser.add_argument("--access", choices=("read", "manage", "tx"), help="讀取／管理／TX 模式；固定連線預設 read")
     parser.add_argument("--connections-dir", type=Path, help="受保護連線設定根目錄，預設使用者資料目錄")
-    commands = parser.add_subparsers(dest="command", required=True)
+    commands = parser.add_subparsers(dest="command")
+    client = commands.add_parser("client", help="開啟遠端工作台；直接執行 uart 亦可")
+    client.add_argument("--text", action="store_true", help="使用內建文字工作台，不需多窗格依賴")
+    for name, description in (("setup", "互動設定固定 Gateway 與 Linux Client"),
+                              ("gateway", "沿用固定憑證啟動 Gateway 與 SSH 轉送"),
+                              ("remote", "Windows 遠端使用選單：設定、選 UART 與啟動")):
+        remote = commands.add_parser(name, help=description)
+        remote.add_argument("--pause-on-error", action="store_true", help="雙擊失敗時保留視窗")
     auth = commands.add_parser("auth", help="一次性初始化、傳輸與安裝遠端憑證；不顯示 Token")
     setup = auth.add_subparsers(dest="auth_command", required=True)
     initialize = setup.add_parser("init", help="依既有實體 Gateway 設定建立固定讀取／管理憑證")
@@ -795,12 +802,20 @@ def main() -> None:
             command.add_argument("tx_id")
             command.add_argument("--instance", help="收據的原 Gateway Instance；省略為目前程序")
     args = parser.parse_args()
+    if args.command is None:
+        args.command, args.text = "client", False
     if args.command in ("watch", "local") and args.duration is not None and (
             not math.isfinite(args.duration) or not args.duration > 0):
         parser.error("觀測時間必須是大於零的有限秒數")
     if args.command == "local" and not args.select and (args.count != 1 or args.save_profile is not None):
         parser.error("--count 與 --save-profile 僅能搭配 --select 使用")
     try:
+        if args.command == "client":
+            from .client_entry import run_client
+            raise SystemExit(run_client(args, parser.parse_args))
+        if args.command in ("setup", "gateway", "remote"):
+            from .remote_setup import run_remote_entry
+            raise SystemExit(run_remote_entry(args))
         if args.command == "shell-ready":
             from .shell_cli import prepare_shell
             raise SystemExit(prepare_shell(args))
@@ -848,7 +863,11 @@ def main() -> None:
         raise SystemExit(asyncio.run(run(args)))
     except (RemoteError, ProtocolError, OSError, ValueError, TimeoutError) as exc:
         _report_failure(exc)
-        if args.command in ("local", "menu", "tui", "tx") and args.pause_on_error and sys.stdin.isatty():
+        if args.command == "client":
+            from .client_guidance import connection_hint
+            if hint := connection_hint(exc):
+                print(hint, file=sys.stderr, flush=True)
+        if args.command in ("local", "menu", "tui", "tx", "setup", "gateway", "remote") and args.pause_on_error and sys.stdin.isatty():
             try:
                 input("按 Enter 關閉此視窗。")
             except (EOFError, KeyboardInterrupt):

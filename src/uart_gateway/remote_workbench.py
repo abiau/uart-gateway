@@ -46,7 +46,9 @@ async def reopen_channel(connect: Callable[[], Awaitable[Client]], channel: dict
 def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Callable[..., Awaitable[int]], *,
                          host: str, port: int, read: Callable[[], str] | None = None,
                          report: Callable[[str], None] | None = None,
-                         monitor_group: Callable[..., Awaitable[int]] | None = None) -> int:
+                         monitor_group: Callable[..., Awaitable[int]] | None = None,
+                         preferred_channels: list[str] | None = None,
+                         selection_saved: Callable[[list[str]], None] | None = None) -> int:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError("遠端工作台需要互動式終端機輸入與輸出。")
     if not host or not host.isprintable() or type(port) is not int or not 1 <= port <= 65535:
@@ -59,6 +61,9 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
         return read().strip().casefold()
 
     def failed(exc: Exception) -> None:
+        from .client_guidance import connection_hint
+        if hint := connection_hint(exc):
+            report(hint)
         code = getattr(exc, "code", type(exc).__name__)
         if code == "AUTH_FAILED":
             report("認證失敗（AUTH_FAILED），請確認已初始化相同部署憑證，且 Gateway 已載入目前版本；按 R 才重新讀取憑證並連線。")
@@ -67,6 +72,15 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
 
     instance, channels = "", []
     refresh, connected, recovering = True, False, False
+
+    def remember(selected: list[dict]) -> None:
+        nonlocal preferred_channels
+        preferred_channels = [c["channel_id"] for c in selected]
+        if selection_saved is not None:
+            try:
+                selection_saved(preferred_channels)
+            except (OSError, ValueError) as exc:
+                report("本次通道選擇未保存：" + label(exc))
     try:
         while True:
             if refresh:
@@ -107,7 +121,15 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                 prompt = "輸入 Channel 編號；R 更新／重新連線；Q 或 Enter 離開："
             if monitor_group is not None:
                 report("雙路同時監看可輸入兩個不同編號，例如 1,2；上限兩路。")
+            suggested = [str(i) for i, c in enumerate(channels, 1) if preferred_channels and c["channel_id"] in preferred_channels]
+            can_suggest = (connected and preferred_channels and len(suggested) == len(preferred_channels)
+                           and len(suggested) <= (2 if monitor_group else 1)
+                           and all(c["state"] == "ready" for c in channels if c["channel_id"] in preferred_channels))
+            if can_suggest:
+                prompt = "輸入編號；Enter 使用上次選擇 " + ",".join(suggested) + "；R 更新；Q 離開："
             choice = ask(prompt)
+            if not choice and can_suggest:
+                choice = ",".join(suggested)
             if choice == "q" or (not choice and not recovering):
                 report("已離開遠端工作台，Gateway 繼續執行。")
                 return 0
@@ -127,6 +149,7 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                 mode = ask("雙路模式：L 或 Enter 即時；R 歷史＋即時；其他輸入取消：")
                 if mode not in ("", "l", "r"):
                     continue
+                remember(selected)
                 try:
                     asyncio.run(monitor_group(selected, instance, mode == "r"))
                 except (KeyboardInterrupt, asyncio.CancelledError):
@@ -169,6 +192,7 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                 report("請輸入 L、R 或 Q。")
             if mode == "q":
                 continue
+            remember([channel])
             report(f"正在只讀監看 {label(channel['channel_id'])}；Ctrl+C 停止監看並返回清單，Gateway 繼續執行。")
             try:
                 result = asyncio.run(monitor_channel(connect, monitor, channel, instance, mode == "r"))

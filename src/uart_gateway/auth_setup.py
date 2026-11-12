@@ -106,8 +106,8 @@ def initialize(source: Path, *, name: str = "default", directory: Path | None = 
     return target / "gateway.toml"
 
 
-def export_credential(*, name: str | None = None, access: str = "read", output: Path | None = None,
-                      directory: Path | None = None) -> Path:
+def credential_bundle(*, name: str | None = None, access: str = "read", directory: Path | None = None) -> bytes:
+    """供既有匯出與 SSH 安裝共用；秘密只回傳給明確的傳輸呼叫端。"""
     if access not in ACCESS_ROLES:
         raise ValueError("匯出角色僅接受 read、manage 或 tx。")
     root = (directory or config_directory()).expanduser().absolute()
@@ -119,13 +119,21 @@ def export_credential(*, name: str | None = None, access: str = "read", output: 
     if reference.startswith("file:") and not Path(reference[5:]).is_absolute():
         reference = "file:" + str(profile_path(root, selected) / reference[5:])
     token = TokenSource(reference).read()
+    return encoded({"version": 1, "deployment_id": profile["deployment_id"], "access": access,
+                    "token": token, "port": profile["port"]})
+
+
+def export_credential(*, name: str | None = None, access: str = "read", output: Path | None = None,
+                      directory: Path | None = None) -> Path:
+    data = credential_bundle(name=name, access=access, directory=directory)
+    root = (directory or config_directory()).expanduser().absolute()
+    selected = connection_name(name) if name is not None else default_name(root)
     target = output or root / "transfers" / f"{selected}.{access}.{secrets.token_hex(4)}.uart-credential"
     if target.suffix != ".uart-credential":
         raise ValueError("憑證傳輸包請使用 .uart-credential 副檔名，不是一般連線設定。")
     if in_repository(target.absolute()):
         raise ValueError("憑證傳輸包須放在版本庫之外。")
-    write_private(target, encoded({"version": 1, "deployment_id": profile["deployment_id"], "access": access,
-                                  "token": token, "port": profile["port"]}))
+    write_private(target, data)
     return target
 
 

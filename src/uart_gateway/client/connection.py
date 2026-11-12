@@ -74,6 +74,7 @@ class ConnectionSettings:
     source: TokenSource = field(repr=False)
     access: str | None = None
     name: str | None = None
+    deployment_id: str | None = None
 
     def __post_init__(self):
         if self.access not in (None, *ACCESS_ROLES):
@@ -119,7 +120,7 @@ def resolve_connection(*, name: str | None = None, access: str | None = None, di
         # 相容舊部署；一旦已有固定設定，不能以環境變數遮蔽其錯誤。
         return ConnectionSettings(host or "127.0.0.1", port if port is not None else 18081, explicit_source())
     if not configured:
-        raise ValueError("尚未初始化遠端連線，請先使用 uart auth init 或 uart auth import。")
+        raise ValueError("此環境尚未設定遠端連線。請在 Windows 執行 uart setup（或雙擊 run-remote.cmd），將連線安裝到此 Linux／Container，再執行 uart。既有部署仍可使用 uart auth import。")
     value = read_profile(root, selected)
     role = access or "read"
     reference = value["credentials"].get(role)
@@ -132,4 +133,4 @@ def resolve_connection(*, name: str | None = None, access: str | None = None, di
         reference = "file:" + str(path)
     destination, number = host or value["host"], port if port is not None else value["port"]
     endpoint(destination, number)
-    return ConnectionSettings(destination, number, TokenSource(reference), role, selected)
+    return ConnectionSettings(destination, number, TokenSource(reference), role, selected, value["deployment_id"])

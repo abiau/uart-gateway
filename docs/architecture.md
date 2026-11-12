@@ -45,6 +45,8 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 
 ## 軟體模組與依賴
 
+2026-11-12 的操作簡化維持既有邊界：client_entry 將無子命令入口交給原文字／多窗格工作台，client_preferences 僅保存部署／角色對應的通道 ID，client_guidance 提供固定錯誤提示。remote_setup 組合原裝置選單、auth_setup、Server load／Gateway 生命週期與 ConsoleInput；固定遠端 Gateway 仍只有一個程序，每路 Backend／SDK／TX 保護不變。remote_install 管理自己建立的 SSH 子程序，以 stdin 傳受限 Client ZIP 與明確角色。remote_bootstrap 在指定 Linux 使用者環境安裝不可變 Client 版本及受保護角色，沿用原 import_credential／SDK，不新增配對服務或 Wire Model。中斷不自動重建 SSH；Gateway RX 獨立繼續，R 由人觸發，退出依序收尾 SSH 與 Gateway。
+
 2026-11-07 自動認證沿用原 hello／auth.authenticate：client.credentials 統一讀取來源，client.connection 載入使用者私有連線／角色並核對實際 grants，SDK Client.connect_auto 與 CLI／遠端 Workbench 都經相同路徑。protected_files 負責 OS 檔案保護；只在明確呼叫時使用，SDK 不反向依賴 Server 或 Serial。auth_setup 是獨立的一次部署工具，僅以原 Server 純組裝驗證產生 Gateway 副本與角色秘密，不開裝置或 Listener。Profile、部署 ID、匯出包均不是線上欄位，Server／Core／Protocol 不改。
 
 操作簡化延續原邊界：workbench_state 只保存無秘密的本機啟動偏好與記憶體中的 Capture／搜尋結果。local_launcher 在真實就緒後回報本次錄製位置，不讓 UI 推測最新檔案；原生命週期、SDK 與清理失敗政策不變。recording_workbench 僅組合原 CLI，recording_navigation 經原離線檢查器建立有界資料流／時間摘要，再轉為原 RXSelection。跨區塊命中僅保存有界時間跨度，以涵蓋完整關鍵字，不新增線上 API 或 Serial 操作。

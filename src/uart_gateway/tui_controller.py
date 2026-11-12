@@ -14,14 +14,9 @@ ERRORS = (OSError, ValueError, ProtocolError, RemoteError, TimeoutError)
 
 
 def explain_error(exc: Exception) -> str:
-    if getattr(exc, "code", None) == "AUTH_FAILED":
-        return "認證失敗，請確認固定憑證來源。"
-    if isinstance(exc, ConnectionRefusedError):
-        return "無法連到 Gateway，請確認 Gateway 與 SSH Tunnel 已啟動。"
-    if isinstance(exc, TimeoutError):
-        return "等待 Gateway 回應逾時，請先更新狀態再決定是否重試。"
-    if isinstance(exc, (ConnectionResetError, BrokenPipeError)):
-        return "Gateway 連線已中斷，未自動重連。"
+    from .client_guidance import connection_hint
+    if hint := connection_hint(exc):
+        return hint
     return label(exc)
 
 

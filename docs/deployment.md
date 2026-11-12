@@ -4,6 +4,8 @@
 
 ## 日常自動認證（2026-11-07）
 
+2026-11-12 新增可選的 `run-remote.cmd`／`uart setup` 與 `uart gateway`，將下方原手動部署組合成互動流程。精靈安裝使用者私有、免 pip／虛擬環境的 Linux Client 與固定角色，日常由 Windows 建立本次 Gateway、SSH 反向轉送與 SDK 驗證。只支援直接 Linux 主機或已使用 host 網路的容器；不變更 Podman 網路、掛載、Shell 設定或防火牆。Windows 持久保存原憑證，容器重建後下一次明確啟動可重裝相同來源；不宣稱容器本身已有持久儲存。首次安裝與日常使用見 [認證流程](authentication.md)。原 CLI／手動 Tunnel 仍可單獨使用。
+
 遠端可改採一次初始化的受保護憑證，由 SDK 自動載入；預設 read、明確 --access manage 選管理。步驟見 [認證初始化與 dxan 安裝](authentication.md)。Gateway 仍只綁 Loopback，SSH／Podman 路徑與 Host Key 驗證不變；不因已有 Tunnel 而略過應用層認證。初始化副本提供讀取／管理兩身分，原本機 S 臨時啟動保持獨立。
 
 傳輸包只經受信任 SSH 標準輸入或受保護檔案安裝，不在聊天、argv 或一般設定放秘密；不自動配置遠端主機或容器。Container 的 SDK 來源屬其執行使用者，掛載或複製時須維持擁有者與保護，不能靠共享管理憑證當成 Agent 讀取隔離。這些新設定／ACL／初始化流程尚未在 Win11 或公司 SSH 實機驗證。

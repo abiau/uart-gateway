@@ -120,8 +120,19 @@ async def run_tui(args, *, settings=None) -> int:
         journal = TxJournal((getattr(args, "connections_dir", None) or config_directory()) / "tx-receipts" /
                             connection_name(settings.name or "direct")) if settings.access == "tx" else None
         mode = {"manage": "管理", "tx": "TX 操作"}.get(settings.access, "讀取／明確來源")
+        from .client_preferences import load_selection, preference_path, save_selection
+        path = preference_path(getattr(args, "connections_dir", None) or config_directory(), settings)
+        try:
+            preferred = await asyncio.to_thread(load_selection, path)
+        except (ValueError, OSError) as exc:
+            print(label(exc), file=sys.stderr)
+            preferred = None
+
+        async def remember(channels):
+            await asyncio.to_thread(save_selection, path, channels)
+
         app = UARTApp(settings.connect, description=f"遠端｜{label(settings.host)}:{settings.port}｜{mode}／{label(settings.name or '明確來源')}",
-                      channels=args.channels, tx_journal=journal)
+                      channels=args.channels, tx_journal=journal, preferred_channels=preferred, selection_saved=remember)
     try:
         result = await app.run_async()
     finally:
