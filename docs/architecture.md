@@ -45,6 +45,10 @@ Gateway 與兩端 Forward（轉送）都綁定各自的 Loopback（回送介面�
 
 ## 軟體模組與依賴
 
+2026-11-13 新增 `go-client/client` 作為 Linux 原生介面的共用 SDK，負責 JSON Lines、認證與固定來源、RX Cursor、Lease、TX 收據及 Shell 流程；`internal/cli` 只組合此 SDK，不操作 Serial、Core 或 Server。Windows Gateway 與既有 Python SDK／TUI 保留，線上契約仍為 Protocol V1。Python 與 Go 的收據／Shell 核對分開保存，避免跨實作誤用資格；固定連線與角色秘密格式相容。相容性以 Go Client 對真 Python Gateway 的整合測試驗證。
+
+`remote_install` 預設經受信任 SSH 的 stdin 傳靜態 ELF、SHA-256 與固定角色中繼資料；POSIX sh 只暫存非秘密執行檔，核對雜湊後由 Go bootstrap 寫入使用者私有版本與憑證。Go bootstrap 的 READY 在 hold 模式仍須經 SDK 完成真實認證／通道查詢。保留明確 client=python 的舊 ZIP 安裝，不在原生失敗後換實作或權限。SSH 與 Gateway 的程序生命週期仍由 Windows 原流程管理。
+
 2026-11-12 的操作簡化維持既有邊界：client_entry 將無子命令入口交給原文字／多窗格工作台，client_preferences 僅保存部署／角色對應的通道 ID，client_guidance 提供固定錯誤提示。remote_setup 組合原裝置選單、auth_setup、Server load／Gateway 生命週期與 ConsoleInput；固定遠端 Gateway 仍只有一個程序，每路 Backend／SDK／TX 保護不變。remote_install 管理自己建立的 SSH 子程序，以 stdin 傳受限 Client ZIP 與明確角色。remote_bootstrap 在指定 Linux 使用者環境安裝不可變 Client 版本及受保護角色，沿用原 import_credential／SDK，不新增配對服務或 Wire Model。中斷不自動重建 SSH；Gateway RX 獨立繼續，R 由人觸發，退出依序收尾 SSH 與 Gateway。
 
 2026-11-07 自動認證沿用原 hello／auth.authenticate：client.credentials 統一讀取來源，client.connection 載入使用者私有連線／角色並核對實際 grants，SDK Client.connect_auto 與 CLI／遠端 Workbench 都經相同路徑。protected_files 負責 OS 檔案保護；只在明確呼叫時使用，SDK 不反向依賴 Server 或 Serial。auth_setup 是獨立的一次部署工具，僅以原 Server 純組裝驗證產生 Gateway 副本與角色秘密，不開裝置或 Listener。Profile、部署 ID、匯出包均不是線上欄位，Server／Core／Protocol 不改。

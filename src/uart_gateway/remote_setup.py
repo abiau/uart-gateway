@@ -114,7 +114,8 @@ def setup_remote(root: Path, name: str) -> int:
         raise ValueError("請使用 R、M 或 T 選擇權限。")
     target = RemoteTarget(ssh, container="" if container == "-" else container, roles=roles,
                           ssh_port=int(ask("SSH Port", str(previous.ssh_port if previous else 22))),
-                          python=ask("Linux Python 執行檔（需 3.12 以上）", previous.python if previous else "python3"),
+                          python=previous.python if previous else "python3",
+                          client="native", connect_timeout=previous.connect_timeout if previous else 180,
                           name=ask("Linux 連線名稱", previous.name if previous else "company"),
                           port=int(ask("Linux 轉送 Port", str(previous.port if previous else 18081))))
     print(f"即將設定：{label(target.ssh)}／{label(target.container or 'Linux 主機')}；角色：{'／'.join(target.roles)}。", flush=True)

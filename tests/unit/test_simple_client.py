@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import struct
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -14,7 +15,7 @@ import zipfile
 
 from uart_gateway.cli import main
 from uart_gateway.client_preferences import load_selection, preference_path, save_selection
-from uart_gateway.remote_install import RemoteTarget, build_client, install_payload, load_target, remote_command, save_target, ssh_arguments
+from uart_gateway.remote_install import RemoteTarget, build_client, build_python_client, install_payload, load_target, remote_command, save_target, ssh_arguments
 from uart_gateway.remote_setup import GatewayPortUnavailable, check_idle, run_remote_entry, setup_remote, update_devices
 from uart_gateway.remote_workbench import run_remote_workbench
 from tests.unit import test_credentials as credential_fixture
@@ -86,8 +87,8 @@ class SimpleClientTests(unittest.TestCase):
                 self.assertEqual(monitor.call_args.args[2:4], (current, "new-instance"))
 
     def test_client_zip_is_deterministic_runs_without_venv_and_excludes_backups(self):
-        archive = build_client()
-        self.assertEqual(archive, build_client())
+        archive = build_python_client()
+        self.assertEqual(archive, build_python_client())
         with zipfile.ZipFile(io.BytesIO(archive)) as package:
             self.assertFalse(any(name.endswith(".bak") or ".secret" in name for name in package.namelist()))
         with tempfile.TemporaryDirectory() as temporary:
@@ -119,7 +120,7 @@ class RemoteSetupTests(unittest.TestCase):
 
     def test_install_payload_reuses_exact_selected_role_and_target_has_no_secrets(self):
         fixture = self.fixture
-        target = RemoteTarget("user@host", port=28081)
+        target = RemoteTarget("user@host", port=28081, client="python")
         raw = install_payload(target, name="default", root=fixture.authority, hold=False)
         payload = json.loads(raw)
         self.assertEqual([b["access"] for b in payload["credentials"]], ["read"])
@@ -134,6 +135,43 @@ class RemoteSetupTests(unittest.TestCase):
         before = fixture.gateway_config.read_bytes()
         install_payload(target, name="default", root=fixture.authority, hold=True)
         self.assertEqual(fixture.gateway_config.read_bytes(), before)
+
+    def test_native_payload_is_bounded_binary_plus_private_metadata_and_extended_timeout(self):
+        target = RemoteTarget("user@host")
+        binary = b"\x7fELF\n\x00\xff" * 10
+        with patch("uart_gateway.remote_install.build_client", return_value=binary):
+            raw = install_payload(target, name="default", root=self.fixture.authority, hold=True)
+        header, remainder = raw.split(b"\n", 1)
+        magic, length, digest = header.split()
+        import hashlib
+        self.assertEqual((magic, int(length), digest.decode()), (b"UART_NATIVE_V1", len(binary), hashlib.sha256(binary).hexdigest()))
+        self.assertEqual(remainder[:len(binary)], binary)
+        metadata = json.loads(remainder[len(binary):])
+        self.assertEqual((metadata["hold"], metadata["name"]), (True, "company"))
+        self.assertEqual([b["access"] for b in metadata["credentials"]], ["read"])
+        self.assertIn("ConnectTimeout=180", ssh_arguments(target))
+        self.assertNotIn("python3", remote_command(target))
+        path = self.fixture.authority / "native-remote.json"
+        save_target(path, target)
+        old = json.loads(path.read_bytes()); old.pop("client"); old.pop("connect_timeout")
+        path.write_text(json.dumps(old))
+        self.assertEqual(load_target(path), target)
+
+    def test_binary_preflight_rejects_dynamic_elf_and_wrong_architecture(self):
+        binary = bytearray(120); binary[:6] = b"\x7fELF\x02\x01"
+        struct.pack_into("<HH", binary, 16, 2, 62)
+        struct.pack_into("<Q", binary, 32, 64)
+        struct.pack_into("<HH", binary, 54, 56, 1)
+        struct.pack_into("<I", binary, 64, 1)
+        path = self.fixture.root / "native-elf"
+        with patch.dict("os.environ", {"UART_GATEWAY_CLIENT_BINARY": str(path)}):
+            path.write_bytes(binary); self.assertEqual(build_client(), binary)
+            struct.pack_into("<I", binary, 64, 3); path.write_bytes(binary)
+            with self.assertRaisesRegex(ValueError, "動態"):
+                build_client()
+            struct.pack_into("<H", binary, 18, 183); path.write_bytes(binary)
+            with self.assertRaisesRegex(ValueError, "amd64"):
+                build_client()
 
     def test_device_change_and_added_uart_keep_tokens_deployment_and_tx_boundary(self):
         from uart_gateway.local_profile import LocalChannel
@@ -151,7 +189,7 @@ class RemoteSetupTests(unittest.TestCase):
     def test_setup_existing_connection_cancel_and_retry_do_not_regenerate_secrets(self):
         fixture = self.fixture
         before = {p.name: p.read_bytes() for p in fixture.gateway_config.parent.iterdir()}
-        answers = ["user@host", "-", "R", "22", "python3", "company", "18081", ""]
+        answers = ["user@host", "-", "R", "22", "company", "18081", ""]
         with patch("uart_gateway.remote_setup.ask", side_effect=answers), \
                 patch("uart_gateway.remote_setup.check_idle", side_effect=TimeoutError("timed out")) as idle, \
                 patch("uart_gateway.remote_setup.trust_target"), patch("uart_gateway.remote_setup.install_remote", new=AsyncMock(side_effect=ValueError("測試失敗"))), \
@@ -168,7 +206,7 @@ class RemoteSetupTests(unittest.TestCase):
         from uart_gateway.serial_backend import AdapterSelector
         selected = (LocalChannel("ch_uart_1", "第一路", AdapterSelector(port="COM8")),)
         root = self.fixture.root / "fresh"
-        answers = ["1", "user@host", "-", "R", "22", "python3", "company", "18081", ""]
+        answers = ["1", "user@host", "-", "R", "22", "company", "18081", ""]
         with patch("uart_gateway.remote_setup.ask", side_effect=answers), \
                 patch("uart_gateway.remote_setup.select_devices", return_value=selected), \
                 patch("uart_gateway.remote_setup.trust_target"), \
@@ -212,7 +250,7 @@ class RemoteSetupTests(unittest.TestCase):
     def test_setup_with_an_existing_gateway_does_not_probe_tcp_or_change_local_configuration(self):
         fixture = self.fixture
         before = {p.name: p.read_bytes() for p in fixture.gateway_config.parent.iterdir()}
-        answers = ["user@host", "-", "R", "22", "python3", "company", "18081", ""]
+        answers = ["user@host", "-", "R", "22", "company", "18081", ""]
         with patch("uart_gateway.remote_setup.ask", side_effect=answers), \
                 patch("socket.create_connection", side_effect=TimeoutError("timed out")) as connect, \
                 patch("uart_gateway.remote_setup.check_idle", side_effect=TimeoutError("timed out")) as idle, \

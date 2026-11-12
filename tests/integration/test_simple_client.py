@@ -37,7 +37,7 @@ class RemoteInstallTests(unittest.IsolatedAsyncioTestCase):
         self.device = FakeSerial(echo=False)
         self.gateway.channels["ch_uart_1"].port = self.device
         self.port = await self.gateway.start(port=0)
-        self.target = RemoteTarget("test@ssh.invalid", port=self.port)
+        self.target = RemoteTarget("test@ssh.invalid", port=self.port, client="python")
         self.processes, self.commands = [], []
         self.bootstrap = Path("src/uart_gateway/remote_bootstrap.py").read_text(encoding="utf-8")
         self.real_spawn = asyncio.create_subprocess_exec
@@ -86,7 +86,7 @@ class RemoteInstallTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_explicit_manager_import_and_conflict_preserve_original_secret(self):
         await self.install()
-        target = RemoteTarget("test@ssh.invalid", port=self.port, roles=("read", "manage"))
+        target = RemoteTarget("test@ssh.invalid", port=self.port, roles=("read", "manage"), client="python")
         await self.install(target)
         self.assertEqual((await self.cli("--access", "manage", "channels"))[0], 0)
         path = self.home / ".config/uart-gateway/connections/company/read.secret"

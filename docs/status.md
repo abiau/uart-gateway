@@ -2,7 +2,33 @@
 
 > 核准更新（2026-11-03）：使用者已在本次對話接受全部建議答案，核准 Phase 0 文件與建議基線。下文「候選／建議／待核准」保留設計來源與理由，現已作為初始採用值；不代表硬體或網路已驗證。Q-11 接線與 UART 參數已由使用者確認；Q-12～Q-14、Q-17 的現場資訊仍待取得。目前實作與驗證進度以專案狀態文件為準。
 
-更新日期：2026-11-12（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
+更新日期：2026-11-13（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
+
+## Linux Go 獨立 Client（2026-11-13）
+
+**Implemented**：依使用者「開始實作並測試」授權新增 Go 共用 SDK、CLI 與文字工作台。Windows Python Gateway／Serial／Recorder、原 SDK／TUI 與 Protocol V1 保留。原生端涵蓋固定憑證／角色、channels、RX／重播／最多四路來源顯示、人工管理、TX 精確預覽／收據與查詢、人工 shell-ready、單次 exec／exec-status。維持 Instance／Revision／Epoch 核對、Confirm／Lease／Fencing、傳送前保存收據、未知不重送；沒有自動登入、Ctrl+C UART bytes 或韌體操作。Go 收據及 Shell 核對獨立保存，不把 Python 的舊操作資格帶入新實作。
+
+Windows 設定不再詢問 Linux Python 路徑，預設傳靜態 ELF、SHA-256 與原固定角色，遠端只需 sh／coreutils；明確 client=python 才使用原相容安裝，不自動降級。舊 remote.json 缺新欄位預設 native，SSH ConnectTimeout 預設 180 秒、安裝／認證就緒總期限預設 300 秒。現有本工具 v1 入口可更新，使用者其他入口拒絕覆蓋；秘密不進 argv／一般暫存包。設定、部署與範圍見 [Go Client](go-client.md)、[設定](configuration.md)、[ADR-008](adr/ADR-008-native-linux-client.md)。
+
+**產物**：本工作目錄 dist/uart-linux-amd64，4,096,160 bytes。Go 1.27.4 windows/amd64 交叉編譯，CGO_ENABLED=0、GOOS=linux、GOARCH=amd64、GOAMD64=v1，無第三方 Go 模組。SHA-256：`983fc2a6ec10bc2df618c60d6abeaf332b8cb8bf18fe042ac7be8cf434c7053b`，建置中繼資料在 dist/uart-linux-amd64.build.json。ELF 檢查無動態載入器／函式庫；ldd 回報 not a dynamic executable（該 ldd 判定本身退出 1，版本執行及測試正常）。dist 與開發用 Go SDK 保持忽略，發行須附執行檔，未宣稱 Python wheel 自帶 ELF。
+
+**Tested**：
+
+- Go Windows `go vet ./...`、`go test ./...` 通過；Linux 專屬測試另以交叉編譯測試執行檔於 WSL／Ubuntu 容器執行，client 16 項、CLI 2 項通過。涵蓋嚴格 JSON／Unicode／U64／Base64、亂序回覆、角色錯配、溢位與逾時不重試、取消等待寫入鎖不送請求或破壞連線、RX 脈絡／缺口、控制碼與標記、真 POSIX sh 引用／exit code、私有檔案／symlink／FIFO／模式、固定來源與衝突、flock、終態保留時間遞減、損壞偏好及慢管線兩秒有界停止。
+- WSL／Python 3.14.8 的 Go 對原 Python Gateway 整合最終共 14 項整組通過。使用 Fake Serial／Fake Shell、真 TCP／POSIX 終端，含二進位／雙路、786432 bytes 重播逐 byte 相符、人工核對零 TX、精確 binary＋CRLF 單次傳送、部分寫入回 unknown／退出碼 2、原 ID 查詢零重送、Shell 完成／非零／截斷／逾時／取消／舊 Epoch、超過初始租約期限持續續約且第二 Owner 得 LEASE_BUSY、Ctrl+C 回選單與資源收尾、壞雜湊／自有入口保護及 hold 模式真 SDK 認證才 READY。
+- Ubuntu 14.04.6 與 16.04.7 官方容器使用相同最終 ELF，均通過重複原生安裝／固定角色／版本入口、壞雜湊與使用者入口保護各 2 項；network=none，沒有安裝 Python／Go。兩個容器另執行 Go client 16 項與 CLI 2 項單元測試通過；與 WSL 共用核心，不是舊核心或公司主機驗收。
+- Windows／Python 3.15.0 的簡化入口、固定憑證及原入口相關共 45 項：38 通過、7 平台略過。既有 Python ZIP 相容安裝／生命週期 5 項另於 WSL 通過。這次未重跑 Windows 全套，前輪重播／TUI 的失敗紀錄保留於下節，不能宣稱全套回歸通過。
+
+**Verified（限定真 SSH＋模擬 UART）**：由 Windows 另建本次 SSH／Loopback 反向轉送到 d3s1，實際查得 x86_64、Ubuntu 22.04.5、核心 5.15.0-144-generic。在獨立臨時 HOME 安裝最終 SHA 執行檔，完成版本、原 SDK 格式憑證認證、channels 與 Go watch 重播，收到固定 Fake RX，核對遠端 SHA 相同、零 UART TX，退出後清除測試 HOME／憑證及本次 SSH／Fake Gateway。沒有變更使用者原預設連線或接管原三條 SSH 分頁。測試可由明確 UART_GO_SSH_TARGET 重現。
+
+| 目標 | 本輪證據 | 尚待驗證 |
+| --- | --- | --- |
+| d3s1 | 真 SSH 查得 Ubuntu 22.04.5／amd64；相同執行檔安裝、認證與模擬 RX 重播通過 | 現場實體 UART、正式安裝／互動選單與長時間接收 |
+| rd1-4 | 使用者更正為 Ubuntu 16.04；16.04 容器通過 | 主機 uname／核心、相同 ELF 與真 Tunnel |
+| rd-192 | 使用者有既有 SSH 分頁；本輪未查詢實際系統 | 版本／架構／核心與相同 ELF 真主機測試 |
+| Ubuntu 14.04 | 官方容器原生安裝及 Go 單元通過 | 公司對應主機及其舊核心實測 |
+
+**限制／未執行**：控制工具視窗清單未提供 Windows Terminal，使用者確認原 SSH 在 Terminal 分頁，因此未能利用另兩台需要密碼的既有 Session，未要求或猜測密碼。只支援 Linux amd64，尚無 ARM／32 位發行檔；未移植 Textual 多窗格／TX 表單或離線錄製工具，Go tui 是文字入口別名。未測實體 COM／IPCAM TX／BusyBox、USB 拔插、實際 Tunnel 故障及長時間完整性。Windows 精靈仍僅保存一個目前 SSH 目的地，不提供三台同時管理。使用者已以「commit/push」授權本輪程式、測試與文件提交並推送至 origin/work，交付版本以 Git 紀錄為準；原未追蹤 protected_files.py.before-dacl.bak 保留，dist／工具鏈、憑證及錄製不納入提交。本次保存沿用上述測試證據，未重跑全套或新增實機驗證。
 
 ## 遠端設定前置檢查逾時修正（2026-11-12）
 

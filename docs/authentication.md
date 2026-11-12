@@ -6,7 +6,7 @@ Windows 在專案安裝完成後雙擊 `run-remote.cmd`，第一次選 **2**。�
 
 選 2 只設定 Linux 目的地及安裝原角色，可在既有 Gateway 執行期間進行，不連線或檢查本機 Gateway TCP Port，也不修改既有 UART 設定。選 1 啟動新 Gateway 才會以短暫綁定檢查本機 Port，不發起 TCP 連線；占用／系統保留／綁定權限失敗會顯示原因並返回遠端選單，不停止其他程序。實際啟動仍由原 Gateway 再次取得接聽端，避免前置檢查後的競爭。
 
-工具只要求 Linux 已有 Python 3.12 以上及可用 SSH；容器另需既有 Podman 與 host 網路。Client 與所選角色經同一 SSH 標準輸入傳輸，不需手動匯出／貼上／傳送 Token，也不需要 pip、虛擬環境或管理員權限。安裝後 Linux 日常執行：
+預設安裝 Go 的 Linux x86_64 靜態執行檔，Linux 不需要 Python、Go、pip、虛擬環境或管理員安裝；需要既有 SSH 與 POSIX sh／coreutils，容器另需既有 Podman 與 host 網路。Windows 開發／發行端先用 build-go-client.ps1 建立 dist/uart-linux-amd64，或提供 UART_GATEWAY_CLIENT_BINARY；缺少發行檔會明示錯誤，不在日常啟動下載編譯器。Client 與所選角色經同一 SSH 標準輸入傳輸，不需手動匯出／貼上／傳送 Token。完整範圍見 [Go Client](go-client.md)。安裝後 Linux 日常執行：
 
 ```sh
 uart
@@ -16,7 +16,7 @@ uart client --text
 uart --access manage
 ```
 
-已有 Textual／pyte 使用多窗格；未安裝則直接使用內建文字介面，不在啟動時下載依賴。固定連線／角色與原 CLI、SDK 共用。多窗格最多四路、文字同時最多兩路；每次都查詢目前通道，顯示本次目標，人工選定後才監看。依部署 ID 與角色記住上次通道 ID，不保存 UART 資料、秘密或 TX 確認資格。文字介面以 Enter 使用目前清單中仍就緒的上次選擇；多窗格僅預先勾選，仍須 Enter。消失、失效或改名的通道不會用舊快照啟動；同 ID 的新目標以新查詢結果顯示，TX 仍需重新核對。
+Go Client 使用最多四路的文字工作台。原 Python Client 有 Textual／pyte 時仍使用多窗格；原 Python 文字介面最多兩路，不在啟動時下載依賴。固定連線與角色格式相容；每次都查詢目前通道，顯示本次目標，人工選定後才監看。依部署 ID 與角色記住上次通道 ID，不保存 UART 資料、秘密或 TX 確認資格。文字介面以 Enter 使用目前清單中仍就緒的上次選擇；Python 多窗格僅預先勾選，仍須 Enter。消失、失效或改名的通道不會用舊快照啟動；同 ID 的新目標以新查詢結果顯示，TX 仍需重新核對。
 
 之後 Windows 選 **1**（或 `uart gateway`）核對摘要並開始。D 可重新選一至兩條設備，依位置沿用邏輯通道 ID，保留固定 Token／部署 ID，保存前一份設定供檢查；新增通道明確加入 read／manage 範圍，既有 TX 範圍保留。移除仍在 TX 授權內的通道會拒絕，需先明確調整授權。一般重新啟動不改寫 UART 設定。這個固定遠端入口與原本機 S／local 的臨時憑證入口分開。
 
@@ -24,11 +24,13 @@ uart --access manage
 
 若容器重建而遺失 Client，Windows 下一次啟動可從原部署重新安裝同一份憑證；不要求重新產生 Token。持久來源仍在 Windows，這不是自動替容器建立掛載；已有持久 HOME／XDG_CONFIG_HOME 可以繼續沿用。Container 使用者與權限變更時需重新核對安裝目的地。
 
-Linux 入口在 `~/.local/bin/uart`，若目前 PATH 未包含 `~/.local/bin`，工具會提示直接執行 `~/.local/bin/uart`；不修改 Shell 啟動檔。已有其他程式／pip 建立的同名入口會拒絕覆蓋，須先自行確認。Python 與既有 SSH 登入仍是前提；使用現有 SSH 金鑰可避免重複輸入 SSH 密碼。可用 `uart setup` 重跑設定，目的地與權限預先帶入上次值。
+Linux 入口在 `~/.local/bin/uart`，若目前 PATH 未包含 `~/.local/bin`，工具會提示直接執行 `~/.local/bin/uart`；不修改 Shell 啟動檔。已有其他程式／pip 建立的同名入口會拒絕覆蓋，須先自行確認。既有 SSH 登入仍是前提；使用現有 SSH 金鑰可避免重複輸入 SSH 密碼。可在 Windows 用 `uart setup` 重跑設定，目的地與權限預先帶入上次值。Go Client 的相容來源與獨立收據說明見 [Go Client](go-client.md)。
 
-本輪自動化涵蓋 Windows 引導邊界，以及 Linux 安裝、固定認證、真 TCP／SDK、互動入口與模擬 SSH 子程序；尚未驗證公司 SSH／Podman 與實體 UART 新流程。以下逐步初始化／匯出／匯入仍供進階部署使用。
+Go Client 已增加舊版 Ubuntu 容器與 d3s1 真 SSH／模擬 Gateway 驗證，實體 UART 與另兩台主機的界線以 [目前狀態](status.md) 為準。以下保留 Python 進階部署步驟；Go 的日常安裝使用上方 Windows 選單。
 
 ## 日常使用
+
+本節以下保留既有 Python 進階入口；Linux 原生 Go 的日常操作與功能差異請見 [Go Client](go-client.md)。
 
 TX 入口為 `uart tx`／工作台 X，需明確建立 tx 角色；原 read／manage 不變。[TX 工作台](tx-workbench.md) 包含新部署、通道範圍與實機驗收。以下未加 --enable-tx 的初始化仍只產生兩個角色。
 

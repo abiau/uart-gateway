@@ -4,6 +4,10 @@
 
 ## 日常自動認證（2026-11-07）
 
+2026-11-13 起 Linux 預設採 [Go 獨立 Client](go-client.md)。Windows 開發端先執行 `./build-go-client.ps1` 建立 dist/uart-linux-amd64，發行時須隨附此檔，或明確設定 UART_GATEWAY_CLIENT_BINARY。Windows 的 Python Gateway／啟動器不變；Linux 目標只需要 x86_64、核心至少 3.2、既有 SSH 與 POSIX sh／coreutils，不需要 Python、Go、pip 或管理員安裝。CPU／核心須以現場 uname 確認；不同架構需另行建置。官方最低核心基準見 [Go Minimum Requirements](https://go.dev/wiki/MinimumRequirements)。
+
+Linux 日常執行 `uart`，PATH 尚未包含 ~/.local/bin 時執行 `~/.local/bin/uart`。原 Python 管理的 v1 入口可由 Go v2 安全更新，固定角色不重新產生；其他同名入口拒絕覆蓋。重跑 Windows 選 2 可明確安裝到新主機。設定只保存一個目前目的地，三台不會同時建立三組 Tunnel；需切換目的地時重跑選 2。既有手動 SSH 連線與 Gateway 不會被接管。
+
 2026-11-12 新增可選的 `run-remote.cmd`／`uart setup` 與 `uart gateway`，將下方原手動部署組合成互動流程。精靈安裝使用者私有、免 pip／虛擬環境的 Linux Client 與固定角色，日常由 Windows 建立本次 Gateway、SSH 反向轉送與 SDK 驗證。只支援直接 Linux 主機或已使用 host 網路的容器；不變更 Podman 網路、掛載、Shell 設定或防火牆。Windows 持久保存原憑證，容器重建後下一次明確啟動可重裝相同來源；不宣稱容器本身已有持久儲存。首次安裝與日常使用見 [認證流程](authentication.md)。原 CLI／手動 Tunnel 仍可單獨使用。
 
 遠端可改採一次初始化的受保護憑證，由 SDK 自動載入；預設 read、明確 --access manage 選管理。步驟見 [認證初始化與 dxan 安裝](authentication.md)。Gateway 仍只綁 Loopback，SSH／Podman 路徑與 Host Key 驗證不變；不因已有 Tunnel 而略過應用層認證。初始化副本提供讀取／管理兩身分，原本機 S 臨時啟動保持獨立。

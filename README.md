@@ -4,7 +4,7 @@
 
 UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 獨占 USB-UART 對應的 COM Port，Linux d3s1 上的 Podman Container（容器）透過 SSH Tunnel 使用共同 Client SDK（用戶端開發套件），供 CLI（命令列介面）、TUI（文字使用者介面）及未來 Agent（代理工具）操作。
 
-**簡化遠端使用**：Windows 雙擊 `run-remote.cmd`，第一次選 2 設定 Linux SSH 主機／容器及權限；之後選 1 啟動，D 可換選 UART，固定憑證不重生。工具經 SSH 安裝免虛擬環境的 Client，Linux 日常執行 `uart` 即可；沒有多窗格依賴時使用內建文字工作台。步驟、Python／PATH 前提與實測界線見 [遠端設定](docs/authentication.md#簡化遠端設定與-client-入口2026-11-12)。
+**簡化遠端使用**：Windows 雙擊 `run-remote.cmd`，第一次選 2 設定 Linux SSH 主機／容器及權限；之後選 1 啟動，D 可換選 UART，固定憑證不重生。預設安裝 Go 的 Linux x86_64 獨立執行檔，不需要 Linux Python、pip 或 Go；Linux 日常執行 `uart` 選通道。發行檔由開發端執行 `build-go-client.ps1` 建立，這份工作目錄已備妥。支援範圍與操作見 [Go Client](docs/go-client.md)，設定見 [遠端設定](docs/authentication.md#簡化遠端設定與-client-入口2026-11-12)。
 
 **多窗格監看**：安裝 `python -m pip install -e ".[server,tui]"` 後雙擊 `run-tui.cmd`，選 UART、核對摘要並開始；每路資料與狀態獨立，底部固定操作按鈕。已有 Gateway 使用 `uart tui`，管理模式使用 `uart --access manage tui`，共用 SDK 自動認證。本機最多兩路、遠端最多四路；操作與驗證界線見 [多窗格 TUI](docs/tui.md)，Win11 新介面尚待實測。
 
@@ -79,7 +79,7 @@ Phase 0 已核准；Phase 1 已完成無硬體通路、Serial Backend 與 Win11 
 
 ## 第一批的安裝與模擬操作
 
-需要 Python 3.12 以上。SDK／Fake Serial 沒有執行期第三方依賴，建置使用 setuptools；實體 Serial 安裝 `.[server]` 加入 pySerial。
+以下是 Python Gateway／SDK 的開發與進階入口，需要 Python 3.12 以上。Linux 日常獨立 Client 使用 [Go 發行檔](docs/go-client.md)，不需要這個 Python 環境。Python SDK／Fake Serial 沒有執行期第三方依賴，建置使用 setuptools；實體 Serial 安裝 `.[server]` 加入 pySerial。
 
 Linux：
 

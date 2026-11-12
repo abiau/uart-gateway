@@ -35,15 +35,30 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 | `uart`／`uart client` | 互動遠端 Client；沿用全域 connection／access／端點／明確來源規則。無子命令不再是參數錯誤；非互動輸入／輸出拒絕並提示腳本命令 |
 | `uart client --text` | 強制內建文字工作台；未安裝 TUI 時預設亦使用此介面，不自動安裝依賴 |
 | `uart setup`／`uart gateway`／`uart remote` | 互動設定／啟動／選單；接受全域 --connection、--connections-dir，不接受角色／Token／端點覆寫；雙擊使用 run-remote.cmd。設定目的地不檢查本機 Port；啟動前以短暫綁定檢查，不建立 TCP Session。前置綁定失敗回選單，真正啟動仍須再次取得接聽端 |
-| `connections/<名稱>/remote.json` | 受保護 JSON，最多 8192 bytes；version=1，ssh、ssh_port、container、python、name、port、roles；沒有 Token／SSH 密碼。預設 SSH 22、python3、Linux 名稱 company、Loopback Port 18081、read；container 空字串為主機 |
+| `connections/<名稱>/remote.json` | 受保護 JSON，最多 8192 bytes；version=1，ssh、ssh_port、container、python、name、port、roles，另接受 client、connect_timeout。預設 client=native、connect_timeout=180 秒（30～600）；舊檔缺欄位也採此預設。client=python 必須明確設定，python 僅供此相容模式。預設 SSH 22、Linux 名稱 company、Loopback Port 18081、read；container 空字串為主機，沒有 Token／SSH 密碼 |
 | SSH 目的地 | 主機或 帳號@主機／SSH 別名，最多 255 個受限 ASCII 字元；不接受選項、空白、任意 Shell 片段。容器名稱最多 128 字元，僅支援既有 host 網路 |
 | roles | 非空、不同且包含 read；只接受 read／manage／tx。精靈 R=read、M=read＋manage、T=read＋manage＋tx；既有缺少角色拒絕，不更換憑證 |
 | `client-preferences/<部署ID>-<角色>.json` | 受保護 JSON，最多 2048 bytes；version=1、channels 為 1～4 個不同合法 ID。明確舊 Token 來源不保存偏好；損壞偏好告警且不覆蓋，不影響重新人工選擇 |
-| Linux Client 安裝 | 單一 ZIP 最多 2 MiB、250 個套件 .py；固定時間戳使內容相同時雜湊相同。安裝目錄 `~/.local/share/uart-gateway/client/<SHA-256>.pyz`，最多八版，不改寫其他 Client 使用中的版本；達限需結束 Client 後人工清理舊版 |
-| 安裝與控制交接 | JSON stdin 單行最多 3 MiB；只傳所選角色。安裝包不落地為秘密傳輸檔，遠端不回印輸入／traceback。SSH 控制輸出最多 64 KiB，啟動就緒等待 90 秒；逾時／取消收尾本次子程序 |
+| Linux Client 安裝 | 預設靜態 Linux amd64 ELF，最多 16 MiB；安裝目錄 `~/.local/share/uart-gateway/client-go/<SHA-256>`，最多八版。來源為 `dist/uart-linux-amd64` 或明確 UART_GATEWAY_CLIENT_BINARY，拒絕動態載入器／函式庫與不同架構。入口 ~/.local/bin/uart 可更新本工具 v1／v2 入口；其他程式不覆蓋。明確 Python 相容模式沿用最多 2 MiB／250 個 .py 的 ZIP 及 client/<SHA-256>.pyz |
+| 安裝與控制交接 | 原生 stdin：ASCII 標頭 `UART_NATIVE_V1 <長度> <SHA-256>\n`、指定長度 ELF、最多 16 KiB 的單行 JSON（version、credentials、name、port、hold）。秘密僅在 stdin／受保護目的檔，不寫一般暫存包。Python 相容模式維持單行 JSON 最多 3 MiB。控制輸出最多 64 KiB；就緒等待 connect_timeout＋120 秒，預設 300 秒；逾時／取消收尾本次子程序 |
 | UART 換選 | 新配置 1～2 路；既有通道 Serial 值保留，新通道沿用第一路 Serial。固定認證參照與部署 ID 不變；原 gateway.toml 保存為受保護 gateway.previous.toml。確認前不開 Serial，既有 Port 使用中拒絕 |
 
 此設定是本機部署工具資料，不新增線上欄位。互動步驟與 PATH／容器重建前提見 [認證流程](authentication.md)。
+
+### Go Client 本機資料與界限（2026-11-13）
+
+固定來源與 client.json 沿用下節；預設 read，明確 TX 命令選 tx，不從 read／manage 提權或失敗降級。私有檔須為目前 UID、普通檔且無群組／其他人權限，拒絕末端符號連結與 FIFO。新目錄 0700、新檔 0600，執行檔／入口 0700；既有目錄不得允許群組／其他人寫入。
+
+| 參數／資料 | Go 實作界限 |
+| --- | --- |
+| RPC／連線 | TCP 建立與單次 RPC 各最多 5 秒；hello＋auth 共用 5 秒；依 Hello 啟動心跳，不自動重連 |
+| SDK／顯示佇列 | 各 256 筆／262144 bytes；超限明示連續性失效並停止，慢輸出管線寫入期限 2 秒 |
+| watch | 一至四路，每路獨立連線；duration=0 持續，有限值最大 86400 秒；JSON 保留原始 Base64，--text 跳脫控制字元，--terminal 僅允許安全顏色及單路 CR／退格 |
+| go-receipts/<連線名>/<ID>.json | Go 收據最多 256 份、每份 16 KiB；傳送前保存，結果不明只查原 ID。無固定名稱時為 direct，與 Python 收據分開 |
+| go-shell-targets/<連線名>/<Channel>.json | 人工 shell-ready 核對，最多 8192 bytes，含本次目標／Instance／Principal／核對世代／換行；不自動登入或 Confirm |
+| go-locks/<連線名>/<Channel>.lock | 同一 Go Client 設定來源的跨程序 flock，拒絕同路重疊操作；Server Lease 仍負責跨來源／實作互斥 |
+| exec／exec-status | timeout 預設 10 秒、0.1～300 秒；wait 預設 0（僅原 Cursor 重播，最多等待 10 秒），明確 wait 最大 300 秒；max-output 預設 65536、1～1048576 bytes。單次 TX 含包裝／換行仍最多 4096 bytes；超限拒絕，不拆送 |
+
 
 本機 `local`／`start` 沿用原本的臨時或明確設定來源。本節是遠端固定連線：Server 的 auth.authenticate、權限欄位、Confirm／Lease／TX 及線上版本不變。完整操作見 [認證初始化](authentication.md)。
 

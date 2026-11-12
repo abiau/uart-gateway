@@ -1,5 +1,17 @@
 # 開發規範
 
+## Go Linux Client 測試（2026-11-13）
+
+在 go-client 執行 `go vet ./...`、`go test ./...`；Linux 專屬檔案權限／flock／慢管線測試需在 Linux 執行，Windows 通過不能替代。可在 Windows 設 GOOS=linux、GOARCH=amd64、CGO_ENABLED=0，以 go test -c 分別產生 client 與 internal/cli 的測試執行檔，再於 WSL 2 執行。
+
+Go 單元涵蓋重複 JSON Key／Unicode／深度／U64／Base64、亂序回覆、角色錯配、事件溢位、逾時不重試、RX 脈絡、控制碼／標記解析、Linux 私有來源與衝突、flock、收據終態及保留時間遞減、損壞偏好與慢輸出有界停止。建置方式見 [Go Client](go-client.md)。
+
+Linux 設 `PYTHONPATH=src UART_GO_BINARY=<本輪 ELF 絕對路徑>` 後執行 `python3 -m unittest tests.integration.test_go_client -v`，使用原 Python Gateway／Fake Serial／Fake Shell、真 TCP 與 POSIX PTY，驗證二進位重播／雙路、人工核對零 TX、單次精確傳送／部分寫入、Shell 完成／非零／截斷／逾時／取消／舊 Epoch、原操作查詢零重送、工作台 Ctrl+C 收尾、安裝雜湊／入口保護及實際認證才 READY。
+
+舊使用者環境安裝可明確設定 UART_GO_INSTALL_IMAGE=docker.io/library/ubuntu:14.04 或 :16.04，只執行 GoInstallTests 的安裝／壞雜湊兩案例；測試需可用 Podman，使用隔離 HOME 及 network=none。不要在這個模式執行需要主機 Gateway 網路的 hold 測試。容器共用執行主機核心，不能當作舊 Ubuntu 實機證據。
+
+`UART_GO_SSH_TARGET=d3s1 python -m unittest tests.integration.test_go_remote -v` 為明確選用的真 SSH 測試，只連本機 Fake Gateway，傳臨時讀取角色、建立並清除獨立測試 HOME，不讀使用者真憑證／不開實體 COM。保留主機指紋核對，BatchMode 不要求密碼；反向 Port 隨機選擇，衝突直接失敗不悄悄換端點。既有 SSH 分頁／Gateway 不接管。完整結果、平台限制及未執行項目記於 status。
+
 ## 簡化 Client 與遠端設定測試（2026-11-12）
 
 `test_simple_client` 單元涵蓋預設入口／全域參數、非互動拒絕、免 TUI 文字入口、依部署／角色的偏好與格式界限、目前快照重選、ZIP 可重現及免虛擬環境執行、SSH 參數／Shell 引用、所選角色 stdin、重試保留原秘密、換 UART／新增通道不換憑證，以及控制輸出超限／啟動取消時子程序收尾。
