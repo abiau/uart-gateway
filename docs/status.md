@@ -4,6 +4,34 @@
 
 更新日期：2026-11-13（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## 多窗格 COM5 重複序號修正（2026-11-13）
+
+使用者回報 run-uart.cmd 多窗格顯示「有多個 Adapter 符合條件」。**原因**：前次修正僅處理文字工作台的 Profile；多窗格另將有序號的已選端點無條件移除 Port，COM5／COM6 相同序號時儲存的 Gateway 設定無法唯一解析。使用者既有設定已缺少 Port，不能推測原本選的是哪一個；須重新選取。
+
+**Implemented**：多窗格重新枚舉並核對所選端點與所有可用條件；序號條件唯一時維持追蹤 COM 重編，條件重複時保留明確選定的 Port。所選端點消失或資訊改變時拒絕，不自動改選另一個裝置。Gateway 啟動失敗畫面新增直接選擇 UART 的操作，沿用原確認與清理路徑。原未提交的入口整合及文字工作台修正保留。
+
+**Tested**：Windows／Python 3.13.17 的 TUI 單元與真 Textual 畫面整合共 23 項通過（87.253 秒）；另在加入消失端點回歸後重跑三項本機 TUI 入口測試均通過。涵蓋重複序號下保存所選 COM5、唯一序號保留原重編行為、端點消失時不改選 COM6，以及啟動失敗後從對話框重新選擇而不自動啟動。git diff --check 通過；未重跑全套。
+
+**Verified／實體啟動**：以隔離偏好呼叫真多窗格的選擇／摘要／Launcher 程式路徑，選 COM3／COM5 並保留現場 COM6 的重複序號；摘要為 COM3／COM5，兩路均達 ready，約 2 秒後正常收尾且退出碼 0。未發送 UART TX、未操作 USB、未變更使用者保存的舊設定；未量測 RX 內容或長時間接收，也不是人工螢幕操作驗收。
+
+## 工作台 S 選 COM5 的重複序號修正（2026-11-13）
+
+使用者回報 run-uart.cmd 的 S 無法監看 COM5。**Verified／重現**：目前實際枚舉 COM5、COM6 均為 VID/PID 0403:6001、序號 6、無位置資訊。以真枚舉及隔離偏好模擬 S → D → 4 選 COM5，啟動前即得到「裝置無法唯一核對／有多個 Adapter 符合條件」，零 Launcher 分派。原因是 Profile 解析看到序號就移除 Port，丟失使用者剛選定的 COM5 限制；不是本次 Gateway／18081 占用。
+
+**Implemented**：只有序號與其餘已存條件能唯一定位時才追蹤目前 COM；符合多個端點時保留原 COM，再以全部條件唯一核對。原端點缺少、不符、仍有多筆符合或雙路解析到同端點仍拒絕，沒有放寬序號、VID/PID、位置或自動選第一個。設定格式、Protocol 與權限不變；使用者已開啟的工作台須重新啟動以載入修正。
+
+**Tested**：Windows／Python 3.13.17 的七個相關模組共 94 項全部通過（11.683 秒，無略過），含新增 COM5／COM6 重複序號、原端點缺失／身分不符／仍模糊的拒絕，以及 S 保存後重新載入仍選定 COM5 的回歸；git diff --check 通過。未重跑全套或重做實體長時間接收。
+
+**Verified／限定啟動**：用目前 COM5 的完整枚舉條件建立隔離 Profile，執行原 local --profile 的 3 秒只讀監看，退出碼 0、Gateway 正常清理、18081 無監聽，沒有 UART TX。觀察期間零 RX，僅證明選擇／開啟／關閉成功，不代表本次 IPCAM 輸出或接收驗收通過。未關閉使用者的工作台、操作 USB 或建立 SSH。
+
+## Windows 啟動入口整合（2026-11-13）
+
+使用者核准執行前輪盤點建議。**Implemented**：七個 run-*.cmd 整理為兩個：run-uart.cmd 啟動統一工作台，run-remote.cmd 共用前者的環境檢查並直接進入遠端管理。移除固定 COM3、雙路、舊 workbench、TUI 與 TX 的五個 CMD；單／雙路由 S → D 選擇，多窗格由 T、獨立 TX 由 X 進入，原 CLI 保留。兩個 CMD 均在目前視窗等待工具結束並傳回原退出碼，不再以開出視窗當作工具成功。build-go-client.ps1 保留為開發建置工具。
+
+工作台新增 R，經同步 CLI 分派呼叫既有遠端選單，保留受保護設定目錄及原端點覆寫檢查；設定／啟動／停止仍由原 remote_setup 管理，沒有新增 Gateway 或 SSH 常駐機制。取消可返回工作台，清理失敗仍停止工作台。同步更新 README、操作、架構、設定與部署文件，現行教學不再使用已移除的 CMD。run-remote.cmd 仍有效，原程式的相關錯誤引導保留。
+
+**驗證範圍**：新增真 Windows CMD＋替身 CLI 的兩入口路由測試，分別檢查退出碼 0／7／130，從不同工作目錄執行；另測工作台 R 返回、真 CLI 同步分派／設定目錄、真遠端選單取消零啟動／安裝，以及遠端清理失敗不得繼續操作。此輪不啟動實體 Gateway／SSH、不開 UART，未重做實機接收或滑鼠雙擊驗收；前輪停止紀錄保留。**Tested**：Windows／Python 3.13.17 的六個相關測試模組共 80 項全部通過（11.230 秒，無略過）；git diff --check 通過。未執行本輪全套測試，沒有將替身 CLI 的 CMD 路由驗證當作實體 UART 證據。
+
 ## COM3／COM5 與三主機完整驗收（2026-11-13，接續）
 
 使用者指定目前接上的 IPCAM 為 COM3／COM5，三個 SSH 別名均可免密登入，要求建立 Gateway／Tunnel、完整測試並直接修正程式，排除 USB 插拔。後續明確核准 CR、必要時每路一次 UART Ctrl+C，以及觀察到已登入 Shell 後代做本輪 shell-ready、uname、子 Shell exit 7、短暫 sleep 與固定終點的輸出。實際兩路各送一次 CR 即出現可用提示，沒有送 UART Ctrl+C、登入、操作電源或韌體。
@@ -31,9 +59,9 @@
 
 兩路共同完整範圍雜湊分別為 `9e94dee175a293cc02e0d9e985b8c1d8babaa2b47004f5eb95da5e290f6d7a0d` 與 `b20a9070ee5f4ad3ecaa173d8b42916c4f876e152077903448c5b1b52c039338`，包含同世代的 Shell／密集／長測輸出。三台重播後接即時的穩定接收輪約 1332 秒，涵蓋完整 30 分鐘來源資料；期間接收版本為 7162a156，最終版 afe03d6f 另有三台逐 byte 快照、單元與整合證據，不混稱為最終版連續即時 30 分鐘。最初的零 RX 狀態已由本輪 CR、實際命令結果及已知輸出解決，不再沿用「COM3 零 RX／Shell 未確認」作為現行結論。
 
-**交接時狀態**：Gateway 新 Instance 為 `610e735519074735bde2bc7cdcc8a493`，COM3／COM5 ready、read timeout 已還原 20 ms、TX idle。三條本輪反向 Tunnel 保留；依本輪授權重新核對 CR 提示及 shell-ready 後，三台均可查詢新通道。各台 SSH 登入後使用 `~/.local/bin/uart-acceptance-20261113-121028`，預設 read；Windows 可執行私人驗收目錄的 watch.cmd。沒有改原本 uart 入口、預設連線或建立系統服務，驗收控制器同時保留三條 Tunnel 不代表精靈新增多目的地管理。
+**交接與停止狀態**：Gateway 新 Instance 為 `610e735519074735bde2bc7cdcc8a493`；交接時 COM3／COM5 ready、read timeout 已還原 20 ms、TX idle，三條本輪反向 Tunnel 保留，三台均可查詢新通道。2026-11-13 依使用者要求正常停止三條 Tunnel 與 Gateway，Gateway 紀錄顯示兩路均已關閉，並確認本機 18081 已無監聽程序。各台 SSH 登入後的 `~/.local/bin/uart-acceptance-20261113-121028` 與 Windows 私人驗收目錄的 watch.cmd 不再連接此 Gateway。沒有改原本 uart 入口、預設連線或建立系統服務，驗收控制器同時保留三條 Tunnel 不代表精靈新增多目的地管理。
 
-無秘密的現場參照保存在 `%LOCALAPPDATA%/uart-gateway/acceptance-active.json`，包含本輪根目錄、入口與正常停止控制檔。目前新 Capture 仍在錄製；上述 30 分鐘驗證必須選已停止的 b0533724273346a7b5f5ad6732065e50，不能以最新目錄代替。205 個 Markdown 相對檔案連結與 git diff --check 通過；私人憑證、錄製與執行檔未加入 Git。
+無秘密的現場參照保存在 `%LOCALAPPDATA%/uart-gateway/acceptance-active.json`，包含本輪根目錄、入口與停止狀態。重啟後的 Capture `610e735519074735bde2bc7cdcc8a493` 已正常收尾，兩路完整性檢查均為無已知缺口；上述 30 分鐘驗證仍須選已停止的 `b0533724273346a7b5f5ad6732065e50`，不能以最新目錄代替。205 個 Markdown 相對檔案連結與 git diff --check 通過；私人憑證、錄製與執行檔未加入 Git。
 
 ## 實體 UART／原生 Client 自動驗收與操作改善（2026-11-13）
 

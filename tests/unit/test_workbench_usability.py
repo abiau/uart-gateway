@@ -87,6 +87,33 @@ class PreferencesTests(unittest.TestCase):
         self.assertIn("--record-dir", argv)
         self.assertFalse(Path(argv[argv.index("--config") + 1]).exists())
 
+    def test_start_selected_duplicate_serial_reaches_launcher_with_exact_port(self):
+        import tomllib
+        from uart_gateway.core.models import AdapterInfo
+        selected = (LocalChannel("one", "IPCAM", AdapterSelector(
+            port="COM5", vid=0x0403, pid=0x6001, serial_number="6")),)
+        devices = [AdapterInfo(port=port, vid=0x0403, pid=0x6001, serial_number="6")
+                   for port in ("COM5", "COM6")]
+        plans = []
+
+        def inspect_start(argv):
+            config = Path(argv[argv.index("--config") + 1])
+            plans.append(tomllib.loads(config.read_text(encoding="utf-8")))
+            return 0
+
+        with patch("uart_gateway.local_ports.choose_channels", return_value=selected), \
+                patch("uart_gateway.local_profile.list_adapters", return_value=devices):
+            result, _, messages, _ = self.fixture.run_menu(
+                ["s", "d", "4", "1", "", "q"], Mock(side_effect=inspect_start))
+        self.assertEqual(result, 0)
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(plans[0]["channels"][0]["adapter"]["port"], "COM5")
+        self.assertEqual(plans[0]["channels"][0]["adapter"]["serial_number"], "6")
+        self.assertNotIn("裝置無法唯一核對", "\n".join(messages))
+        choice = load_choice(self.path)
+        with patch("uart_gateway.local_profile.list_adapters", return_value=devices), choice_config(choice) as config:
+            self.assertEqual(tomllib.loads(config.read_text(encoding="utf-8"))["channels"][0]["adapter"]["port"], "COM5")
+
     def test_fatal_cleanup_in_new_start_never_returns_to_another_start(self):
         dispatch = Mock(side_effect=LauncherCleanupError("測試清理不明"))
         answers = iter(["s", "", "s"])

@@ -8,6 +8,8 @@
 
 Linux 日常執行 `uart`，PATH 尚未包含 ~/.local/bin 時執行 `~/.local/bin/uart`。原 Python 管理的 v1 入口可由 Go v2 安全更新，固定角色不重新產生；其他同名入口拒絕覆蓋。重跑 Windows 選 2 可明確安裝到新主機。設定只保存一個目前目的地，三台不會同時建立三組 Tunnel；需切換目的地時重跑選 2。既有手動 SSH 連線與 Gateway 不會被接管。
 
+2026-11-13 起可由 `run-uart.cmd` 的 R 進入下列管理流程；保留 `run-remote.cmd` 捷徑，Q／Ctrl+C 清理本次啟動的 Gateway／SSH。
+
 2026-11-12 新增可選的 `run-remote.cmd`／`uart setup` 與 `uart gateway`，將下方原手動部署組合成互動流程。精靈安裝使用者私有、免 pip／虛擬環境的 Linux Client 與固定角色，日常由 Windows 建立本次 Gateway、SSH 反向轉送與 SDK 驗證。只支援直接 Linux 主機或已使用 host 網路的容器；不變更 Podman 網路、掛載、Shell 設定或防火牆。Windows 持久保存原憑證，容器重建後下一次明確啟動可重裝相同來源；不宣稱容器本身已有持久儲存。首次安裝與日常使用見 [認證流程](authentication.md)。原 CLI／手動 Tunnel 仍可單獨使用。
 
 遠端可改採一次初始化的受保護憑證，由 SDK 自動載入；預設 read、明確 --access manage 選管理。步驟見 [認證初始化與 dxan 安裝](authentication.md)。Gateway 仍只綁 Loopback，SSH／Podman 路徑與 Host Key 驗證不變；不因已有 Tunnel 而略過應用層認證。初始化副本提供讀取／管理兩身分，原本機 S 臨時啟動保持獨立。

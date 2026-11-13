@@ -266,6 +266,29 @@ class TUIIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app.return_value, 1)
         self.assertTrue(self.gateway.listener.is_serving())
 
+    async def test_local_start_failure_can_select_device_before_retry(self):
+        from unittest.mock import AsyncMock
+        from uart_gateway.core.models import AdapterInfo
+        from uart_gateway.serial_backend import AdapterDetails
+        from uart_gateway.tui_widgets import ConfirmDialog, DevicePicker
+        devices = [AdapterDetails(AdapterInfo(port="COM5"), "模擬裝置")]
+        launch = AsyncMock(side_effect=ValueError("有多個 Adapter 符合條件"))
+        select = AsyncMock()
+        app = self.app_type(local_launch=launch, local_preview=AsyncMock(return_value="本機設定"),
+            local_devices=AsyncMock(return_value=(devices, set())), local_select=select, local_record=AsyncMock())
+        async with app.run_test(size=(120, 36)) as pilot:
+            await eventually(lambda: isinstance(app.screen, ConfirmDialog))
+            await pilot.press("enter")
+            await eventually(lambda: launch.await_count == 1 and isinstance(app.screen, ConfirmDialog))
+            await pilot.click("#devices")
+            await eventually(lambda: isinstance(app.screen, DevicePicker))
+            await pilot.press("space")
+            await pilot.click("#apply")
+            await eventually(lambda: select.await_count == 1 and isinstance(app.screen, ConfirmDialog))
+            select.assert_awaited_once_with(devices)
+            self.assertEqual(launch.await_count, 1)
+            await pilot.press("q")
+
     async def test_local_picker_and_record_toggle_do_not_start_gateway(self):
         from unittest.mock import AsyncMock
         from uart_gateway.core.models import AdapterInfo

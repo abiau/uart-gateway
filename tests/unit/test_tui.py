@@ -182,6 +182,8 @@ class LocalEntryTests(unittest.IsolatedAsyncioTestCase):
                 return 0
             with patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True), \
                     patch("uart_gateway.serial_backend.list_adapter_details", return_value=[device]), \
+                    patch("uart_gateway.serial_backend.list_adapters", return_value=[device.adapter]), \
+                    patch("uart_gateway.configured_launcher.list_adapters", return_value=[device.adapter]), \
                     patch("uart_gateway.tui.launch_config", new_callable=AsyncMock, return_value=0) as launch, \
                     patch.object(UARTApp, "run_async", run_headless):
                 self.assertEqual(await run_tui(args), 0)
@@ -190,3 +192,61 @@ class LocalEntryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(launch.call_args.kwargs["record_directory"], args.recordings_dir)
             self.assertIsNotNone(launch.call_args.kwargs["reporter"])
             self.assertNotIn("Token", saved.config.read_text())
+
+    async def test_duplicate_serial_keeps_selected_com5_in_saved_config_and_preview(self):
+        from uart_gateway.core.models import AdapterInfo
+        from uart_gateway.serial_backend import AdapterDetails
+        from uart_gateway.tui import run_tui
+        from uart_gateway.tui_app import UARTApp
+        from uart_gateway.workbench_state import load_choice
+        import tomllib
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(local=True, config=Path("examples/gateway.com3.toml"), record_dir=None,
+                no_record=False, recordings_dir=root / "recordings", preferences_file=root / "preferences.json",
+                startup_timeout=20)
+            devices = [AdapterDetails(AdapterInfo(port=port, vid=0x0403, pid=0x6001, serial_number="6"), port)
+                       for port in ("COM5", "COM6")]
+
+            async def run_headless(app):
+                await app.local_select([devices[0]])
+                self.assertIn("COM5", await app.local_preview())
+                await app.local_launch(AsyncMock(), Mock())
+                return 0
+
+            with patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True), \
+                    patch("uart_gateway.serial_backend.list_adapters", return_value=[d.adapter for d in devices]), \
+                    patch("uart_gateway.tui.launch_config", new_callable=AsyncMock, return_value=0), \
+                    patch.object(UARTApp, "run_async", run_headless):
+                self.assertEqual(await run_tui(args), 0)
+            saved = load_choice(args.preferences_file)
+            config = tomllib.loads(saved.config.read_text(encoding="utf-8"))
+            self.assertEqual(config["channels"][0]["adapter"]["port"], "COM5")
+            self.assertEqual(config["channels"][0]["adapter"]["serial_number"], "6")
+
+    async def test_disappeared_selection_does_not_switch_to_duplicate(self):
+        from uart_gateway.core.models import AdapterInfo
+        from uart_gateway.serial_backend import AdapterDetails
+        from uart_gateway.tui import run_tui
+        from uart_gateway.tui_app import UARTApp
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = SimpleNamespace(local=True, config=Path("examples/gateway.com3.toml"), record_dir=None,
+                no_record=False, recordings_dir=root / "recordings", preferences_file=root / "preferences.json",
+                startup_timeout=20)
+            selected = AdapterDetails(AdapterInfo(port="COM5", vid=0x0403, pid=0x6001, serial_number="6"), "COM5")
+            remaining = AdapterInfo(port="COM6", vid=0x0403, pid=0x6001, serial_number="6")
+
+            async def run_headless(app):
+                with self.assertRaises(OSError):
+                    await app.local_select([selected])
+                return 0
+
+            with patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True), \
+                    patch("uart_gateway.serial_backend.list_adapters", return_value=[remaining]), \
+                    patch.object(UARTApp, "run_async", run_headless):
+                self.assertEqual(await run_tui(args), 0)
+            self.assertEqual(list(root.glob(".uart-tui-*.local.toml")), [])
+            self.assertFalse(args.preferences_file.exists())

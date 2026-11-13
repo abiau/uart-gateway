@@ -4,7 +4,7 @@ Go Client 將原本依賴 Linux Python 的日常操作編成單一 Linux x86_64 
 
 ## 第一次及日常使用
 
-在已安裝專案的 Windows 雙擊 `run-remote.cmd`，選 **2**，輸入 Linux SSH 主機。直接使用主機時，Container 選 `-`。一般接收選 R；已有明確管理／TX 需求才選 M／T。安裝沿用原固定憑證，不會因新 UART 或重新安裝而重生 Token。
+在已安裝專案的 Windows 雙擊 `run-uart.cmd` 選 R，或直接雙擊 `run-remote.cmd`，選 **2**，輸入 Linux SSH 主機。直接使用主機時，Container 選 `-`。一般接收選 R；已有明確管理／TX 需求才選 M／T。安裝沿用原固定憑證，不會因新 UART 或重新安裝而重生 Token。
 
 設定完成後 Windows 選 **1** 啟動 Gateway／Tunnel；Linux 執行：
 

@@ -847,6 +847,12 @@ def main() -> None:
 
             def dispatch(argv: list[str]) -> int:
                 child = parser.parse_args(["--port", str(args.port), *argv])
+                if child.command == "remote":
+                    from .remote_setup import run_remote_entry
+                    for name in ("host", "port", "host_explicit", "port_explicit", "token_file", "token_env",
+                                 "connection", "access", "connections_dir"):
+                        setattr(child, name, getattr(args, name))
+                    return run_remote_entry(child)
                 if child.command in ("tui", "tx") and not child.local:
                     child.port_explicit = args.port_explicit
                     child.connections_dir = args.connections_dir

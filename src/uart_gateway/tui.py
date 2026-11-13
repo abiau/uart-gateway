@@ -74,13 +74,17 @@ async def run_tui(args, *, settings=None) -> int:
             from .configured_launcher import config_text
             from .local_launcher import _gateway_profile
             from .local_profile import LocalChannel
-            from .serial_backend import AdapterSelector
+            from .serial_backend import AdapterSelector, SerialBackendError, list_adapters, port_key
             def build():
                 channels = []
+                available = list_adapters()
                 for number, device in enumerate(devices, 1):
                     info = device.adapter
                     selector = AdapterSelector(port=info.port, vid=info.vid, pid=info.pid,
                                                serial_number=info.serial_number, location=info.location)
+                    actual = selector.resolve(available)
+                    if not any(item.port and port_key(item.port) == port_key(actual.port) for item in available):
+                        raise ValueError("所選端點已不在裝置清單中，請重新選擇。")
                     channels.append(LocalChannel(f"ch_uart_{number}", f"UART {number}", selector))
                 config = tomllib.loads(_gateway_profile(tuple(channels), last_plan.port if last_plan else 18081))
                 if last_plan and all("configure" in g["permissions"] for g in last_plan.grants):
@@ -89,9 +93,16 @@ async def run_tui(args, *, settings=None) -> int:
                     existing = tomllib.loads(last_plan.config).get("recording")
                     if existing:
                         config["recording"] = existing
-                for entry in config["channels"]:
-                    if entry["adapter"].get("serial_number"):
-                        del entry["adapter"]["port"]
+                for entry, channel in zip(config["channels"], channels, strict=True):
+                    if channel.adapter.serial_number:
+                        try:
+                            replace(channel.adapter, port=None).resolve(available)
+                        except SerialBackendError as exc:
+                            if exc.code != "AMBIGUOUS_ADAPTER":
+                                raise
+                            # 重複序號保留使用者選定的 Port，避免啟動時無法唯一解析。
+                        else:
+                            del entry["adapter"]["port"]
                 path = args.preferences_file.parent / (".uart-tui-" + secrets.token_hex(8) + ".local.toml")
                 with path.open("x", encoding="utf-8") as stream:
                     stream.write(config_text(config))

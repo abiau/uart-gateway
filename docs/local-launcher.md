@@ -12,7 +12,7 @@
 - 各監控沿用既有 `watch_client`，各用一條 SDK Session，避免兩個消費者搶讀同一 SDK 事件佇列；兩者連到同一 Gateway。全部授權僅 read。Ready 核對所有 Channel、UART 設定及每條 Session 的 Instance。
 - 共用原有有界畫面 Writer，每批／每行帶 Channel ID 與名稱。各自維持 UTF-8 與 ANSI 解析狀態；多通道模式跳脫 CR／BS，顏色在每批輸出重設並於續批恢復，避免跨 Channel 改寫。這是區分來源的合併畫面，不是持續錄製或分割視窗 TUI。
 - 運行中一個 Channel 遺失或訂閱失敗，顯示該 Channel 原因，另一條繼續接收；所有監控停止後才清理並回互動選單。共用畫面 Writer 失敗或 Gateway 整體退出會結束整組。Ctrl+C 清理兩條 SDK 與唯一自有子程序；不做執行中重連或重新 Confirm。
-- 保存全部可用裝置條件。有序號時以序號及其他已存條件唯一解析目前 COM；無序號時保守沿用全部條件及原 COM。名稱不是板子識別。模糊或不符要求重新選擇，不能用舊編號代替確認。
+- 保存全部可用裝置條件。有序號時先以序號及其他已存條件唯一解析目前 COM；符合多個端點時保留原 COM 並核對全部條件，無序號時亦保守沿用全部條件及原 COM。名稱不是板子識別。模糊或不符要求重新選擇，不能用舊編號代替確認。
 
 本輪本機配置上限為兩條；Server 載入器與 Gateway 建構器的四條上限均不改動。兩條時 Ring 基線合計 8 MiB，SDK 事件佇列各 256 項／256 KiB，共用顯示佇列 256 項／256 KiB，未增加無界緩衝。五至六條需另量測吞吐、慢速顯示、SDK Session 數、開啟／關閉期限與記憶體，不能只放寬通道數字。API V1、Serial Server、控制線與 TX 政策不變。
 
@@ -28,7 +28,7 @@
 | PowerShell | Windows 程序管理容易，既有教學可直接延伸 | 執行原則、引號及測試環境較複雜；容易把敏感資料放進命令列 |
 | Python | 直接重用 SDK、標準函式庫與自動化測試 | 需要已安裝 Python 3.12 以上與專案；實體模式需 `[server]` |
 
-採薄 CMD + Python。`run-com3.cmd` 只切換工作目錄、檢查 `.venv` 並在獨立主控台呼叫 `uart local --port COM3 --read-only --watch --pause-on-error`。Python 負責生命週期，Serial 與協定仍由原模組處理。首次安裝維持明確步驟，不在雙擊時自動下載套件或改動系統執行原則。
+採薄 CMD + Python。`run-uart.cmd` 切換工作目錄、檢查 `.venv`，並在目前主控台等待 `uart menu --pause-on-error` 結束，傳回原退出碼；`run-remote.cmd` 共用此入口，改執行 `uart remote --pause-on-error`。Python 負責生命週期，Serial 與協定仍由原模組處理。首次安裝維持明確步驟，不在雙擊時自動下載套件或改動系統執行原則。
 
 CMD 啟動 Python 視窗後即結束，避免 Ctrl+C 留在批次檔並出現終止批次工作的提示。啟動錯誤在互動視窗以「按 Enter 關閉」保留；正常 Ctrl+C 清理後結束。從既有 PowerShell 執行 CLI 時不需加 `--pause-on-error`。
 
@@ -62,7 +62,7 @@ Windows 子程序群組不跟父程序同時處理 Ctrl+C；POSIX 子程序另�
 ## 本輪：本機端點列出與選擇
 
 - `uart ports` 只枚舉並顯示本機端點、描述、VID／PID、序號與位置，不需要 Token、不開啟 Serial、不啟動 Gateway。枚舉結果不代表端點未被其他程式占用。
-- `uart local --select` 與 `--port` 互斥；原本不加參數的 COM3 行為保留。新增 `run-uart.cmd`，固定 COM3 的 `run-com3.cmd` 不變。全部沿用只讀啟動與既有監控。
+- `uart local --select` 與 `--port` 互斥；原本不加參數的 COM3 行為保留。Windows 統一由 `run-uart.cmd` 選 S → D → 4 互動選擇，或直接使用原 CLI 指定 COM3。全部沿用只讀啟動與既有監控。
 - 選單在 `asyncio.run` 之前同步讀取互動輸入，沒有等待 input 的背景執行緒。只在 stdin 為 TTY 時允許選擇；支援編號、重新整理與取消，只有一個裝置也不自動開啟。清單輸出跳脫控制字元。
 - 選擇編號後再次枚舉，要求端點仍唯一且已知身分欄位未改變。變更或消失時重新顯示選單，不把原編號套用到另一個裝置。啟動時再以既有 Adapter Selector 的 Port 與可用 VID／PID、序號、位置交集匹配。
 - 裝置描述只屬本機 UI Metadata（顯示資訊），不加入 Core 或協定快照。重用原 Backend 的枚舉來源，不新增遠端枚舉 API。開啟後仍由 SDK 檢查 Ready、端點、只讀權限與 UART 安全設定。

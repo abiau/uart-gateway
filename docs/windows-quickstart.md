@@ -4,7 +4,7 @@
 
 ## 目前已知與驗證範圍
 
-新增 TX 工作台：一次明確建立 TX 部署後，可直接 `uart.exe tx`／雙擊 `run-tx.cmd`，F2 依序核對目標、輸入與預覽，F3 查詢收據。原 read／manage 不因此可傳送。完整 [TX 初始化、操作與實機驗收](tx-workbench.md) 建議先 USB-UART 自迴路，再使用者明確指定 IPCAM 指令／換行；目前實體 TX 尚未驗證，不能以 RX 或虛擬 Serial 成功代替。
+新增 TX 工作台：一次明確建立 TX 部署後，可直接 `uart.exe tx`／雙擊 `run-uart.cmd` 選 X，F2 依序核對目標、輸入與預覽，F3 查詢收據。原 read／manage 不因此可傳送。完整 [TX 初始化、操作與實機驗收](tx-workbench.md) 建議先 USB-UART 自迴路，再使用者明確指定 IPCAM 指令／換行；目前實體 TX 尚未驗證，不能以 RX 或虛擬 Serial 成功代替。
 
 使用者已確認 COM3 接著 IPCAM；只有 TX／RX／GND，DTR／RTS 未接，使用 115200／8N1／無流控。2026-11-05 使用者以原手動流程啟動 Gateway，並用 `uart.exe watch` 收到 IPCAM 開機訊息；這是既有 Win11 本機 RX 的實機證據。
 
@@ -21,7 +21,7 @@
 .\.venv\Scripts\uart.exe tui --local
 ```
 
-也可雙擊 `run-tui.cmd`。啟動摘要中點 **選擇 UART**，空白鍵勾選 COM3／COM4（最多兩路），點 **使用所選裝置**；需要錄製時點 **切換錄製**，核對後 Enter 開始。只有列裝置不會開 COM；預設沿用上次本機設定，未保存時為 COM3。既有 Gateway 已占用相同端點／Port 時，不要再啟動本機模式。
+也可雙擊 `run-uart.cmd` 選 T → 1（本機）。啟動摘要中點 **選擇 UART**，空白鍵勾選 COM3／COM4（最多兩路），點 **使用所選裝置**；需要錄製時點 **切換錄製**，核對後 Enter 開始。只有列裝置不會開 COM；預設沿用上次本機設定，未保存時為 COM3。既有 Gateway 已占用相同端點／Port 時，不要再啟動本機模式。
 
 已有獨立 Gateway 且已依 [自動認證](authentication.md) 初始化時，直接 `uart.exe tui`；管理使用 `uart.exe --access manage tui`。此模式只連線，最多四路，不停止 Gateway。從原 `uart.exe menu` 也可按 **T** 選本機／遠端，結束後仍可用 **L** 檢查該次本機錄製。
 
@@ -35,7 +35,7 @@
 
 完整快捷鍵、限制與錄製檢查見 [多窗格 TUI](tui.md)。目前只有 Linux／Fake Serial／TCP／PTY 自動化證據，沒有 Codex 操作實體 COM3／COM4 的結果。
 
-更新並完成安裝後，在專案根目錄雙擊 `run-workbench.cmd`，或執行：
+更新並完成安裝後，在專案根目錄雙擊 `run-uart.cmd`，或執行：
 
 ```powershell
 .\.venv\Scripts\uart.exe menu
@@ -56,7 +56,7 @@
 
 ## 進階整合入口與命令列驗收（尚待 Win11）
 
-以下保留進階命令的個別驗收。先關閉使用相同 COM 的舊 Gateway／MobaXterm，回到專案根目錄雙擊 `run-workbench.cmd`，或執行 `uart.exe menu`。
+以下保留進階命令的個別驗收。先關閉使用相同 COM 的舊 Gateway／MobaXterm，回到專案根目錄雙擊 `run-uart.cmd`，或執行 `uart.exe menu`。
 
 1. 選 **6**，COM3 選 **2**（只收 RX，另有手動重開權限）；COM3／COM4 雙路選 **3**。也可 M 指定既有完整 Gateway TOML；COM 名稱不同先修改私人副本。
 2. 錄製選 **Y**，待全部 Channel Ready 與錄製健康檢查通過後，確認有 UART 資料。按 **Q**，應看到本次 Gateway 已清理並回到主選單；再啟動一次以 **Ctrl+C** 關閉，也應清理後返回。不要用強制關視窗代替正常收尾。
@@ -214,7 +214,7 @@ $UartGateway = Start-Process -FilePath $UartPython -ArgumentList '-m uart_gatewa
 
 ## 安裝與更新步驟
 
-建議使用 Git 的 `work` 分支取得最新版，安裝後根目錄有固定 COM3 的 `run-com3.cmd` 與互動選擇的 `run-uart.cmd`。先前提供的 ZIP 屬當時快照，不包含之後所有功能；若要測本輪選單，請從 Git 更新。
+建議使用 Git 的 `work` 分支取得最新版，安裝後根目錄以 `run-uart.cmd` 作為統一工作台，S 開始監看、T 多窗格、X TX、R 遠端 Gateway／SSH；固定 COM3 與單／雙路選擇收進 S 的裝置選單。先前提供的 ZIP 屬當時快照，不包含之後所有功能；若要測本輪選單，請從 Git 更新。
 
 ```powershell
 git status --short
@@ -253,7 +253,7 @@ py -3 -m venv .venv
 .\.venv\Scripts\uart.exe ports
 ```
 
-需要選擇端點時，可雙擊 `run-uart.cmd`，或在 PowerShell 執行：
+需要選擇端點時，可雙擊 `run-uart.cmd` 選 S → D → 4，或在 PowerShell 執行：
 
 ```powershell
 .\.venv\Scripts\uart.exe local --select --read-only --watch
@@ -265,7 +265,7 @@ py -3 -m venv .venv
 
 若輸入來源結束（EOF），無法繼續等待鍵盤，會明確顯示「輸入來源已結束（EOF）」後退出；不要將它當成 Gateway 或 USB 清理失敗。請保留該訊息，並在互動式 PowerShell 重新執行。空白 Enter 與 EOF 現在有不同處理及訊息。
 
-Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清理後退出，不回選單。固定 `--port`、`run-com3.cmd` 與遠端 watch 保持原本的退出行為。若無法確認本次 Gateway 已清理，會停止流程，不允許重新選擇後再啟動另一個程序。
+Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清理後退出，不回選單。固定 `--port` 與遠端 watch 保持原本的退出行為。若無法確認本次 Gateway 已清理，會停止流程，不允許重新選擇後再啟動另一個程序。
 
 清單以 COM 數字排序（例如 COM3 在 COM10 之前），裝置未提供的資訊會明示。輸入無效編號不會開啟端點。選擇後再次枚舉；端點消失、身分資訊變更或重複時會要求重新選擇，不把原編號套用到另一個裝置。啟動時也將可用身分條件交給既有 Gateway 載入器檢查。
 
@@ -279,7 +279,7 @@ Ctrl+C 仍代表結束整個互動流程；到達 `--duration` 期限也會清�
 
 先準備兩個 USB-UART，核對各自接線及 115200／8N1／無流控設定。若目前只有一個轉接器，可繼續使用原單通道功能，不將藍牙 COM 當成第二個 UART 測試來源。
 
-在專案根目錄可雙擊 `run-dual-uart.cmd`，依序選擇兩個不同端點並命名。需要顏色並保存配置時，使用 PowerShell：
+在專案根目錄可雙擊 `run-uart.cmd`，選 S → D → 4 → 2，依序選擇兩個不同端點並命名。需要顏色並保存配置時，使用 PowerShell：
 
 ```powershell
 .\.venv\Scripts\uart.exe local --select --count 2 --read-only --watch --terminal --save-profile .\bench.local.toml
@@ -417,7 +417,7 @@ $UartChannel = Join-Path $UartCapture.FullName 'ch_uart_1'
 ## 固定 COM3 的啟動與關閉
 
 1. 關閉 MobaXterm 的 COM3 Serial 連線。若舊手動 Gateway 仍在執行，先在它的視窗按 Ctrl+C 正常停止；啟動器不會接管或結束它。
-2. 在檔案總管雙擊專案根目錄的 `run-com3.cmd`。它會開啟獨立 Python 監控視窗。
+2. 在檔案總管雙擊專案根目錄的 `run-uart.cmd`，選 S，必要時以 D 換選 COM3，核對摘要後按 Enter；在同一視窗監看。
 3. 等待「COM3 已就緒；只讀 RX 監控中」。這表示 SDK 已完成認證，Channel 為 ready、端點正確、UART 為 115200／8N1／無流控且權限只有 read；不是等待固定秒數就宣稱成功。
 4. IPCAM 有輸出時即可看到 UART Log。先顯示這次 Gateway 仍保留的歷史資料，再接即時 RX；模式會明示。無新資料不代表 Port 開啟失敗，且無法讀回先前被 MobaXterm 接走的內容。
 5. 在監控視窗按 Ctrl+C。啟動器會關閉 SDK，通知本次 Gateway 正常釋放 Serial，等待子程序結束後退出。一般正常關閉後該視窗會結束；需要檢查清理訊息時，使用下方 PowerShell 方式。
@@ -480,7 +480,7 @@ $UartChannel = Join-Path $UartCapture.FullName 'ch_uart_1'
 
 ## 新選單實機驗收（接收與顏色已回報，其餘待測）
 
-- 沒有裝置時執行 `uart ports`，確認顯示空清單；雙擊 `run-uart.cmd` 後可重新整理或取消。
+- 沒有裝置時執行 `uart ports`，確認顯示空清單；雙擊 `run-uart.cmd` 選 S → D → 4 後可重新整理或取消。
 - 插入 USB-UART，按 R 後核對描述、序號與 COM，確認 COM3／COM10 等數字排序正確。
 - 輸入無效編號、按 Enter 或 Ctrl+C 取消，確認沒有 Gateway 占用 COM。
 - 選擇裝置後確認 Ready、UART RX、Ctrl+C 清理及再次啟動；接收效果需有 IPCAM 或其他資料來源才能驗證。

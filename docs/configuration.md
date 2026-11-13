@@ -34,7 +34,7 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 | --- | --- |
 | `uart`／`uart client` | 互動遠端 Client；沿用全域 connection／access／端點／明確來源規則。無子命令不再是參數錯誤；非互動輸入／輸出拒絕並提示腳本命令 |
 | `uart client --text` | 強制內建文字工作台；未安裝 TUI 時預設亦使用此介面，不自動安裝依賴 |
-| `uart setup`／`uart gateway`／`uart remote` | 互動設定／啟動／選單；接受全域 --connection、--connections-dir，不接受角色／Token／端點覆寫；雙擊使用 run-remote.cmd。設定目的地不檢查本機 Port；啟動前以短暫綁定檢查，不建立 TCP Session。前置綁定失敗回選單，真正啟動仍須再次取得接聽端 |
+| `uart setup`／`uart gateway`／`uart remote` | 互動設定／啟動／選單；接受全域 --connection、--connections-dir，不接受角色／Token／端點覆寫；雙擊 run-uart.cmd 選 R，或直接使用 run-remote.cmd；共用檢查並回傳原退出碼。設定目的地不檢查本機 Port；啟動前以短暫綁定檢查，不建立 TCP Session。前置綁定失敗回選單，真正啟動仍須再次取得接聽端 |
 | `connections/<名稱>/remote.json` | 受保護 JSON，最多 8192 bytes；version=1，ssh、ssh_port、container、python、name、port、roles，另接受 client、connect_timeout。預設 client=native、connect_timeout=180 秒（30～600）；舊檔缺欄位也採此預設。client=python 必須明確設定，python 僅供此相容模式。預設 SSH 22、Linux 名稱 company、Loopback Port 18081、read；container 空字串為主機，沒有 Token／SSH 密碼 |
 | SSH 目的地 | 主機或 帳號@主機／SSH 別名，最多 255 個受限 ASCII 字元；不接受選項、空白、任意 Shell 片段。容器名稱最多 128 字元，僅支援既有 host 網路 |
 | roles | 非空、不同且包含 read；只接受 read／manage／tx。精靈 R=read、M=read＋manage、T=read＋manage＋tx；既有缺少角色拒絕，不更換憑證 |
@@ -165,7 +165,7 @@ TX 收據位於 SDK 設定根目錄 tx-receipts／連線名稱，不含命令、
 
 檔案上限 64 KiB，可讀 UTF-8／UTF-8 BOM；不允許 Token、權限、Confirm 或 Session 等額外欄位。保存時只建立新檔，不覆蓋既有配置；若後續監控失敗回到選單，重新選擇不會覆蓋首次保存的檔案。建議使用已被 Git 忽略的 `*.local.toml`，保存位置由使用者明確指定。
 
-`--profile` 每次重新枚舉：有序號時暫不以舊 COM 篩選，以序號及其餘已存條件唯一定位後採用目前 COM；位置、VID／PID 條件仍必須符合。無序號時必須符合原 COM 與其他已存條件，不自動跟隨重編 COM。不存在、模糊或兩條解析到同一端點時，要求重新選擇。若只有 Port 可用，不能證明同名 Port 仍是原轉接器；即使有序號也不能識別轉接器換接另一塊板子。配置不因解析到新 COM 而被自動改寫。
+`--profile` 每次重新枚舉：有序號時先以序號及其餘已存條件核對；只有唯一符合時才採用目前 COM。若序號條件符合多個端點，保留使用者明確選定的原 COM，仍須符合全部已存條件且結果唯一；不自動選第一個。位置、VID／PID 條件仍必須符合。無序號時必須符合原 COM 與其他已存條件，不自動跟隨重編 COM。不存在、模糊或兩條解析到同一端點時，要求重新選擇。若只有 Port 可用，不能證明同名 Port 仍是原轉接器；即使有序號也不能識別轉接器換接另一塊板子。配置不因解析到新 COM 而被自動改寫。
 
 全部端點鎖與 Ready 核對完成才開始監控；任一啟動失敗撤銷本次整組。啟動後單條失去連線只停止其訂閱，其餘繼續；沒有自動恢復該條。`--select` 在全組因錯誤停止且清理完成後返回選單；`--profile` 則退出。到達正常 `--duration` 期限或 Ctrl+C 結束整組。有限觀測中某條提前停止但其餘持續至期限時正常退出，提前停止原因仍保留於畫面。
 

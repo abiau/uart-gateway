@@ -116,7 +116,7 @@ flowchart TB
 
 圖中箭頭是程式依賴方向，不是資料傳送方向。`server/` 與 `gateway/` 合併為同一責任範圍；Session、Recorder 初期各用模組即可，不拆服務。DTO（資料傳輸物件）轉換放在 Server 邊界。
 
-`run-com3.cmd` 是本機薄入口，由 `cli local` 呼叫 `local_launcher` 管理一個 Gateway 子程序，再以同一 SDK 接收資料；CLI 不把 Server／Core 直接當作 UART 操作介面。它只維護自己建立的子程序，不接管既有 Gateway，也不改 API Contract。就緒、程序鎖、臨時認證與 EOF 關閉的設計理由見 [啟動器審查](local-launcher.md)。
+`run-uart.cmd` 是統一工作台薄入口；本機監看由 `cli local`／`cli start` 呼叫 `local_launcher` 管理一個 Gateway 子程序，再以同一 SDK 接收資料；CLI 不把 Server／Core 直接當作 UART 操作介面。它只維護自己建立的子程序，不接管既有 Gateway，也不改 API Contract。就緒、程序鎖、臨時認證與 EOF 關閉的設計理由見 [啟動器審查](local-launcher.md)。 工作台 R 透過同步 CLI 分派進入既有 remote_setup，管理本次固定 Gateway／SSH 的啟停；run-remote.cmd 是此管理入口的捷徑，兩個 CMD 共用環境檢查並傳回工具退出碼。
 
 兩條模式沿用同一生命週期：先取得全部端點鎖，再建立唯一 Gateway。各 Channel 使用獨立 SDK Session 與原 `watch_client`，共用有界畫面 Writer；不讓兩個監控搶讀同一 SDK 事件佇列。各自維持解碼及顏色狀態，輸出加上來源標記。單條遺失只結束該監控；全部停止、整體程序退出、顯示失敗或 Ctrl+C 才結束整組。新配置只在啟動前載入，不新增 Runtime 設定 API。
 

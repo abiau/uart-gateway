@@ -70,6 +70,47 @@ class WorkbenchTests(unittest.TestCase):
         self.assertIn("端點占用", "\n".join(messages))
         self.assertEqual(dispatch.call_args.args[0], ["ports"])
 
+    def test_remote_returns_to_workbench_and_allows_next_operation(self):
+        result, dispatch, messages, _ = self.run_menu(["r", "1", "q"])
+        self.assertEqual(result, 0)
+        self.assertEqual([call.args[0] for call in dispatch.call_args_list], [["remote"], ["ports"]])
+        self.assertIn("停止本次 Gateway 與 SSH", "\n".join(messages))
+
+    def test_remote_cleanup_failure_stops_workbench(self):
+        dispatch = Mock(side_effect=LauncherCleanupError("遠端資源未清理"))
+        with self.assertRaises(LauncherCleanupError):
+            self.run_menu(["r", "1", "q"], dispatch)
+        dispatch.assert_called_once_with(["remote"])
+
+    def test_real_cli_remote_uses_sync_entry_and_preserves_connection_directory(self):
+        with patch("sys.argv", ["uart", "--connections-dir", str(self.root), "menu"]), \
+                patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True), \
+                patch("builtins.input", side_effect=["r", "q"]), patch("sys.stderr", io.StringIO()), \
+                patch("uart_gateway.remote_setup.run_remote_entry", return_value=0) as remote:
+            with self.assertRaises(SystemExit) as result:
+                main()
+        self.assertEqual(result.exception.code, 0)
+        remote.assert_called_once()
+        args = remote.call_args.args[0]
+        self.assertEqual(args.command, "remote")
+        self.assertEqual(args.connections_dir, self.root)
+        self.assertFalse(args.port_explicit)
+
+    def test_real_cli_remote_cancel_returns_without_starting_or_installing(self):
+        with patch("sys.argv", ["uart", "--connections-dir", str(self.root), "menu"]), \
+                patch("sys.platform", "win32"), \
+                patch("sys.stdin.isatty", return_value=True), patch("sys.stdout.isatty", return_value=True), \
+                patch("builtins.input", side_effect=["r", "q", "q"]), \
+                patch("builtins.print"), patch("sys.stderr", io.StringIO()), \
+                patch("uart_gateway.remote_setup.load_target", return_value=None), \
+                patch("uart_gateway.remote_setup.start_remote") as start, \
+                patch("uart_gateway.remote_setup.setup_remote") as setup:
+            with self.assertRaises(SystemExit) as result:
+                main()
+        self.assertEqual(result.exception.code, 0)
+        start.assert_not_called()
+        setup.assert_not_called()
+
     def test_fatal_cleanup_stops_workbench_without_next_selection(self):
         dispatch = Mock(side_effect=LauncherCleanupError("子程序尚未結束"))
         answers = iter(["2", "", "", "1", "q"])

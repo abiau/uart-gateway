@@ -10,17 +10,20 @@
 | L 查看本次錄製 | 直接使用本工作台最近一次成功啟動錄製的 Launcher 回報；雙路再選通道 |
 | T 多窗格監看 | 選本機／遠端讀取／遠端管理，開啟獨立 UART 畫面與固定操作區；需可選 tui 依賴 |
 | X TX 操作 | 明確使用獨立 TX 憑證，開啟目標核對、輸入／預覽及收據查詢；不自動啟動 Gateway |
+| R 遠端 Gateway／SSH | Windows 設定 Linux 目的地、啟動固定部署與 SSH；啟動期間 Q／Ctrl+C 停止本次資源，離開遠端選單後返回工作台 |
 | 5 瀏覽錄製 | 以日期分組同一 Capture 的 Channel，先選 Capture，雙路再選 Channel |
 | A 進階工具 | 原裝置枚舉、手動監看／錄製、端點配置與完整 Gateway 設定入口 |
 | Q／Enter | 離開工作台；不自動重開上次裝置 |
 
 多窗格入口使用同一 SDK 認證及 Launcher；由 T 啟動的本機錄製也會回報本次 Capture，返回後可直接 L。遠端模式只清理 Client，不管理 Gateway。安裝、按鈕、快捷鍵及容量見 [多窗格 TUI](tui.md)。
 
+2026-11-13 起 Windows 日常入口統一為 `run-uart.cmd`，保留 `run-remote.cmd` 作為 R 的直接捷徑；兩者共用環境檢查，在目前視窗等待工具結束並回傳原退出碼。原本獨立的固定 COM3、雙路、工作台、TUI 與 TX CMD 已移除；功能分別由 S、T、X 及原 CLI 提供。選 T／X 才需要可選 tui 依賴，選 R 才進入 Gateway／SSH 管理。工作台本身離開不接管其他程序；無法確認清理完成時停止工作台。
+
 TX 的一次設定與實機驗收見 [TX 工作台](tx-workbench.md)。X／uart tx 不沿用本機臨時 read Token、不自動提權；預設日常 S／T 仍維持原只讀入口。
 
 S 頁面可 D 更換裝置：COM3 僅接收、COM3 可人工恢復、COM3＋COM4 可人工恢復，或從目前裝置清單互動選一至兩條。R 切換錄製開／關，C 還原完整設定自身的錄製選擇，M 指定進階 Gateway TOML；所有選擇都先顯示摘要，Enter 才啟動。Q 取消，不開啟裝置。監看中的 Q／Ctrl+C 只清理本次 Gateway，返回主畫面。
 
-偏好檔記住設定來源與錄製選擇，工作台重啟後仍可重用；第一次預設 COM3 僅接收、錄製沿用設定（內建預設關閉）。不保存 Token、秘密內容、Capture 或搜尋結果，也不記住裝置已就緒。每次仍重新驗證設定、取得鎖並核對 Ready；從裝置清單選擇時自動建立新的無秘密端點 Profile，有序號者按原規則重新解析目前 COM，條件矛盾或模糊時停止，不能把名稱當作板子身分。參數及保存位置見 [設定規格](configuration.md#工作台操作偏好)。
+偏好檔記住設定來源與錄製選擇，工作台重啟後仍可重用；第一次預設 COM3 僅接收、錄製沿用設定（內建預設關閉）。不保存 Token、秘密內容、Capture 或搜尋結果，也不記住裝置已就緒。每次仍重新驗證設定、取得鎖並核對 Ready；從裝置清單選擇時自動建立新的無秘密端點 Profile，有序號者按原規則重新解析目前 COM；序號條件重複時保留明確選定的原 COM，全部條件仍無法唯一核對時停止，不能把名稱當作板子身分。參數及保存位置見 [設定規格](configuration.md#工作台操作偏好)。
 
 L 的「本次」指本工作台最近一次已收到錄製就緒回報的 Capture，不是目錄排序最新項目。不錄製的監看不會產生新 Capture；啟動失敗不以其他目錄代替。重啟工作台後無本次回報，須用 5 明確選既有錄製。正常關閉仍由原檢查器確認 Footer，L 本身不保證錄製完整。
 
@@ -36,7 +39,7 @@ T 提供根目錄 exports 下的新建議檔名，按 Enter 即匯出；M 可自
 
 ## 設計與範圍（2026-11-06）
 
-使用者要求先開發、回家再測。本輪將既有 CLI 組成 `uart menu` 與薄雙擊入口 `run-workbench.cmd`，使用同步文字選單，所有監控仍經原 CLI／SDK／Launcher，不另外開 Serial 或重新實作協定。對應 Phase 2 的操作體驗切片；完整 TUI 與五至六條容量另行規劃。
+使用者要求先開發、回家再測。本輪將既有 CLI 組成 `uart menu` 與薄雙擊入口 `run-uart.cmd`，使用同步文字選單，所有監控仍經原 CLI／SDK／Launcher，不另外開 Serial 或重新實作協定。對應 Phase 2 的操作體驗切片；完整 TUI 與五至六條容量另行規劃。
 
 工作台提供裝置清單、單／雙通道選擇後監看、選擇並錄製、使用既有端點 Profile，以及錄製目錄瀏覽、資訊、離線回看和文字匯出。`--recordings-dir` 預設 `recordings`，同時作為本次錄製根目錄及離線清單來源；每次重新枚舉，不自動開啟第一個裝置或最新錄製。可在選單中明確保存新 Profile；仍不覆寫既有檔案。
 
@@ -78,7 +81,7 @@ T 提供根目錄 exports 下的新建議檔名，按 Enter 即匯出；M 可自
 
 ## 回家操作
 
-更新 work 分支後，在專案根目錄雙擊 `run-workbench.cmd`，或執行：
+更新 work 分支後，在專案根目錄雙擊 `run-uart.cmd`，或執行：
 
 ```powershell
 .\.venv\Scripts\uart.exe menu
@@ -141,4 +144,4 @@ USB 回到 Windows 枚舉清單，只代表端點再次可見。Gateway 目前�
 
 所選快照的 Instance／Binding Revision／Epoch 必須與新連線、查詢及訂閱回覆一致。不一致時取消訂閱、未顯示 RX，要求 R 更新並重新選擇；新 Token 若已無所選通道的 read 權限，也會拒絕並要求重新查詢。這個保護不能辨識同 Adapter 換接板子但未走 Binding 流程的情況。
 
---remote 與本機的 --recordings-dir 互斥。遠端選單不建立／停止 Gateway，不遠端修改錄製、UART 設定或取得 TX。錄製健康度是 Gateway 已回報的狀態，並非從 Client 啟用錄製。現有 run-workbench.cmd 保留本機入口。Win11 同機與 dxan 操作見 [Windows Quickstart](windows-quickstart.md)。
+--remote 與本機的 --recordings-dir 互斥。遠端選單不建立／停止 Gateway，不遠端修改錄製、UART 設定或取得 TX。錄製健康度是 Gateway 已回報的狀態，並非從 Client 啟用錄製。run-uart.cmd 開啟統一工作台；R 另進入 Windows Gateway／SSH 管理，不等同 menu --remote 的 Client 模式。Win11 同機與 dxan 操作見 [Windows Quickstart](windows-quickstart.md)。

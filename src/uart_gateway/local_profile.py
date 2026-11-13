@@ -6,7 +6,7 @@ from pathlib import Path
 import tomllib
 
 from .protocol.messages import identifier
-from .serial_backend import AdapterSelector, list_adapters, port_key
+from .serial_backend import AdapterSelector, SerialBackendError, list_adapters, port_key
 
 
 @dataclass(frozen=True)
@@ -95,15 +95,23 @@ def load_profile(path: Path) -> tuple[LocalChannel, ...]:
 
 
 def resolve_profile(channels: tuple[LocalChannel, ...]) -> tuple[LocalChannel, ...]:
-    """有序號才允許重找 COM；所有其他已存條件仍取交集。"""
+    """序號條件唯一才重找 COM；重複時保留明確端點與其餘條件。"""
     validate_channels(channels)
     devices = list_adapters()
     resolved = []
     for channel in channels:
         selector = channel.adapter
-        if selector.serial_number:
-            selector = replace(selector, port=None)
         try:
+            if selector.serial_number:
+                without_port = replace(selector, port=None)
+                try:
+                    without_port.resolve(devices)
+                except SerialBackendError as exc:
+                    if exc.code != "AMBIGUOUS_ADAPTER":
+                        raise
+                    # 重複序號不能用來追蹤 COM；仍須唯一符合原端點及全部身分條件。
+                else:
+                    selector = without_port
             actual = selector.resolve(devices)
             # 配置重用必須真的枚舉到；不使用明確端點的 Backend 回退。
             if not any(device.port and port_key(device.port) == port_key(actual.port) for device in devices):

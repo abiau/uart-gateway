@@ -87,6 +87,28 @@ class ProfileTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "相同端點"):
                 resolve_profile(saved)
 
+    def test_duplicate_serial_preserves_explicit_selected_port(self):
+        devices = [AdapterInfo(port=port, vid=0x0403, pid=0x6001, serial_number="6")
+                   for port in ("COM5", "COM6")]
+        for port in ("COM5", "COM6"):
+            saved = (LocalChannel("one", "IPCAM", AdapterSelector(
+                port=port, vid=0x0403, pid=0x6001, serial_number="6")),)
+            with self.subTest(port=port), patch("uart_gateway.local_profile.list_adapters", return_value=devices):
+                resolved = resolve_profile(saved)
+            self.assertEqual(resolved[0].adapter.port, port)
+            self.assertEqual(resolved[0].adapter.serial_number, "6")
+
+    def test_duplicate_serial_never_selects_another_port_or_relaxes_identity(self):
+        saved = (LocalChannel("one", "IPCAM", AdapterSelector(
+            port="COM5", vid=0x0403, pid=0x6001, serial_number="6")),)
+        duplicates = [AdapterInfo(port=port, vid=0x0403, pid=0x6001, serial_number="6")
+                      for port in ("COM6", "COM7")]
+        for devices in (duplicates, duplicates + [AdapterInfo(port="COM5", serial_number="wrong")],
+                        [AdapterInfo(port="COM5", vid=0x0403, pid=0x6001, serial_number="6")] * 2):
+            with patch("uart_gateway.local_profile.list_adapters", return_value=devices):
+                with self.assertRaisesRegex(ValueError, "重新選擇"):
+                    resolve_profile(saved)
+
 
 class GroupMenuTests(unittest.TestCase):
     def test_duplicate_port_and_label_reprompt_then_cancel_is_atomic(self):

@@ -362,19 +362,21 @@ class UARTApp(App[int]):
         except ERRORS as exc:
             self.failure = exc
             message = "本機設定尚無法啟動：" + label(exc) + "\n請修正後重試，或取消離開。"
-        def chosen(value):
-            if value == "devices":
-                self.operation(self.pick_devices)
-            elif value == "record":
-                async def record():
-                    await self.local_record()
-                    await self.prepare_local()
-                self.operation(record)
-            elif value:
-                self.start_local()
-            else:
-                self.action_quit()
-        self.push_screen(ConfirmDialog(message, start=True, local_options=self.local_devices is not None), chosen)
+        self.push_screen(ConfirmDialog(message, start=True, local_options=self.local_devices is not None),
+                         self.choose_local_action)
+
+    def choose_local_action(self, value):
+        if value == "devices":
+            self.operation(self.pick_devices)
+        elif value == "record":
+            async def record():
+                await self.local_record()
+                await self.prepare_local()
+            self.operation(record)
+        elif value:
+            self.start_local()
+        else:
+            self.action_quit()
 
     async def pick_devices(self):
         devices, selected = await self.local_devices()
@@ -412,8 +414,9 @@ class UARTApp(App[int]):
                 self.failure = exc
                 self.note("本次啟動已結束：" + label(exc))
                 if not self._uart_closing:
-                    self.push_screen(ConfirmDialog("Gateway 啟動／接收未完成：" + label(exc) + "\n可確認重試；取消離開後可重新選 UART。", start=True),
-                                     lambda yes: self.start_local() if yes else self.action_quit())
+                    self.push_screen(ConfirmDialog("Gateway 啟動／接收未完成：" + label(exc) +
+                        "\n可重新選 UART、確認重試或取消離開。", start=True,
+                        local_options=self.local_devices is not None), self.choose_local_action)
         self._uart_local_task = asyncio.create_task(launch())
 
     async def cleanup(self):

@@ -39,7 +39,7 @@ $UartTxGateway = Join-Path $env:LOCALAPPDATA 'uart-gateway\connections\tx-bench\
 .\.venv\Scripts\uart.exe tx
 ```
 
-也可雙擊 `run-tx.cmd`，或 `uart menu` 選 X；另一入口為 `uart --access tx tui`。按 1／2 選 UART、F2 開傳送表單、F3 查收據。鍵盤核對目標可空白勾選，再 Tab 到確認；輸入 Enter 進預覽，預覽預設取消，點「送出一次」才傳送。Esc 返回，輸入框 q／y 是內容；Ctrl+C 清理 Client，不保證撤回已開始的寫入。
+也可雙擊 `run-uart.cmd` 選 X，或 `uart menu` 選 X；另一入口為 `uart --access tx tui`。按 1／2 選 UART、F2 開傳送表單、F3 查收據。鍵盤核對目標可空白勾選，再 Tab 到確認；輸入 Enter 進預覽，預覽預設取消，點「送出一次」才傳送。Esc 返回，輸入框 q／y 是內容；Ctrl+C 清理 Client，不保證撤回已開始的寫入。
 
 不必每天處理 Token。新部署有自己的 read／manage／tx 秘密；遠端 Client 改連此部署時須安全安裝對應角色包，舊部署憑證不適用。公司只觀察仍匯入 read；明確授權 TX 才 `auth export --name tx-bench --access tx`，走 [SSH 安裝流程](authentication.md)，在 dxan 用新連線名稱匯入。不會自動提升讀取權限。
 

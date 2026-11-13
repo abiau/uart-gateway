@@ -6,13 +6,13 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 **簡化遠端使用**：Windows 雙擊 `run-remote.cmd`，第一次選 2 設定 Linux SSH 主機／容器及權限；之後選 1 啟動，D 可換選 UART，固定憑證不重生。預設安裝 Go 的 Linux x86_64 獨立執行檔，不需要 Linux Python、pip 或 Go；Linux 日常執行 `uart` 選通道。發行檔由開發端執行 `build-go-client.ps1` 建立，這份工作目錄已備妥。支援範圍與操作見 [Go Client](docs/go-client.md)，設定見 [遠端設定](docs/authentication.md#簡化遠端設定與-client-入口2026-11-12)。
 
-**多窗格監看**：安裝 `python -m pip install -e ".[server,tui]"` 後雙擊 `run-tui.cmd`，選 UART、核對摘要並開始；每路資料與狀態獨立，底部固定操作按鈕。已有 Gateway 使用 `uart tui`，管理模式使用 `uart --access manage tui`，共用 SDK 自動認證。本機最多兩路、遠端最多四路；操作見 [多窗格 TUI](docs/tui.md)，Win11 一般流程與各平台驗收邊界見 [目前狀態](docs/status.md)。
+**多窗格監看**：安裝 `python -m pip install -e ".[server,tui]"` 後雙擊 `run-uart.cmd`，選 T → 本機，再選 UART、核對摘要並開始；每路資料與狀態獨立，底部固定操作按鈕。已有 Gateway 使用 `uart tui`，管理模式使用 `uart --access manage tui`，共用 SDK 自動認證。本機最多兩路、遠端最多四路；操作見 [多窗格 TUI](docs/tui.md)，Win11 一般流程與各平台驗收邊界見 [目前狀態](docs/status.md)。
 
-**TX 工作台**：明確初始化 TX 權限後，日常執行 `uart tx`、雙擊 `run-tx.cmd` 或工作台選 X。F2 核對目標、輸入與預覽後送一次；F3 選收據查詢結果，租約在單次傳送期間管理。原 read／manage 與本機 RX Launcher 不升級，結果不明不自動重送。[TX 設定與實機驗收](docs/tx-workbench.md) 提供操作步驟；Win11 實體 TX 與三主機 Go 入口的證據見 [目前狀態](docs/status.md)。
+**TX 工作台**：明確初始化 TX 權限後，日常執行 `uart tx`、雙擊 `run-uart.cmd` 後選 X。F2 核對目標、輸入與預覽後送一次；F3 選收據查詢結果，租約在單次傳送期間管理。原 read／manage 與本機 RX Launcher 不升級，結果不明不自動重送。[TX 設定與實機驗收](docs/tx-workbench.md) 提供操作步驟；Win11 實體 TX 與三主機 Go 入口的證據見 [目前狀態](docs/status.md)。
 
 **Container／Codex 執行命令**：人先用 `uart shell-ready ch_uart_1 --newline lf` 核對已登入的 Shell，之後 `uart exec ch_uart_1 'uname -a'` 回傳 JSON、輸出及 exit code；`uart exec-status <execution_id>` 只查原操作。共用固定 TX 憑證與 SDK，租約涵蓋命令等待，逾時不重送。[Shell 操作說明](docs/shell-exec.md) 包含設定與結果；Win11 同機及三主機實體 IPCAM 驗收見 [目前狀態](docs/status.md)。LF 是語法範例，實測換行依目標核對。
 
-日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)，Win11 一般流程與自動化證據見 [目前狀態](docs/status.md)。
+日常操作可雙擊 `run-uart.cmd` 或執行 `uart menu`。**T** 開多窗格、**X** 開 TX 工作台、**R** 管理遠端 Gateway／SSH（亦可直接執行 `run-remote.cmd`）。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)，Win11 一般流程與自動化證據見 [目前狀態](docs/status.md)。
 
 遠端現在可一次初始化後，直接執行 `uart menu --remote`，由 SDK 載入固定受保護憑證；管理使用 `uart --access manage menu --remote`。CLI、Workbench 與 Codex 的 Python 工具共用相同 SDK 來源，不必日常產生或貼上 Token。[自動認證與初始化](docs/authentication.md) 包含 Win11 建立、SSH 安裝到 dxan 及 SDK 範例。既有明確 Token 參照仍相容；Windows 原生 ACL 與三主機固定來源的驗收見 [目前狀態](docs/status.md)。
 
@@ -31,11 +31,11 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 - 主協定採 TCP、JSON Lines 與 Base64，保留任意 UART bytes。
 - 不直接對公司網路暴露 Gateway；SSH Tunnel 之外仍有應用層認證與授權。
 
-目前已提供 **Fake Serial、pySerial Backend、Gateway、SDK、CLI 與本機一鍵啟動器**。安裝後可雙擊根目錄的 `run-com3.cmd`，自動等待 COM3 就緒並監控 RX；Ctrl+C 只清理本次 Gateway。也可執行 `uart local --port COM3 --read-only --watch`，不需手動提供 Token。[Win11 COM3 接收步驟](docs/windows-quickstart.md) 包含安裝、錯誤排除與實機驗收清單。
+目前已提供 **Fake Serial、pySerial Backend、Gateway、SDK、CLI 與本機一鍵啟動器**。安裝後可雙擊根目錄的 `run-uart.cmd`，選 S，核對裝置後監控 RX；Ctrl+C 只清理本次 Gateway。也可執行 `uart local --port COM3 --read-only --watch`，不需手動提供 Token。[Win11 COM3 接收步驟](docs/windows-quickstart.md) 包含安裝、錯誤排除與實機驗收清單。
 
-本機端點可用 `uart ports` 只讀列出；雙擊 `run-uart.cmd` 或執行 `uart local --select --read-only --watch` 可互動選擇，再沿用既有只讀啟動流程。支援重新整理與取消，不會預設開啟第一個裝置。中斷後的恢復選單可按 Enter 重新整理，輸入 Q 或按 Ctrl+C 離開；輸入結束會另行明示 EOF。這一輪已完成 Mock／PTY 測試；使用者亦已回報居家 USB-UART／IPCAM 接收成功、`--terminal` 顏色正確。使用者另回報 USB 拔插會中斷監控、IPCAM 重新上電仍可顯示；本輪新增中斷清理後回到選單、由使用者重新選擇的流程，完整 Windows 插拔恢復仍待驗證。
+本機端點可用 `uart ports` 只讀列出；雙擊 `run-uart.cmd` 選 S → D → 4，或執行 `uart local --select --read-only --watch` 可互動選擇，再沿用既有只讀啟動流程。支援重新整理與取消，不會預設開啟第一個裝置。中斷後的恢復選單可按 Enter 重新整理，輸入 Q 或按 Ctrl+C 離開；輸入結束會另行明示 EOF。這一輪已完成 Mock／PTY 測試；使用者亦已回報居家 USB-UART／IPCAM 接收成功、`--terminal` 顏色正確。使用者另回報 USB 拔插會中斷監控、IPCAM 重新上電仍可顯示；本輪新增中斷清理後回到選單、由使用者重新選擇的流程，完整 Windows 插拔恢復仍待驗證。
 
-使用者後續已確認 USB 拔除後能返回並停留於恢復選單。最新切片新增 `uart local --select --count 2 --read-only --watch --terminal` 與 `run-dual-uart.cmd`，以**一個 Gateway** 同時接收兩條 UART，畫面標明 Channel／名稱；一路遺失時另一路繼續。可用 `--save-profile bench.local.toml` 保存名稱與裝置條件，下次以 `--profile bench.local.toml` 重新核對後啟動。多通道畫面顏色獨立，CR／退格採跳脫顯示；完整步驟見 [Windows Quickstart](docs/windows-quickstart.md)。已有 Mock／雙 PTY 自動化證據；Win11 手動雙通道 Gateway 的單路恢復隔離已由使用者回報通過，雙擊及 Profile 的雙實體操作仍需個別驗證。
+使用者後續已確認 USB 拔除後能返回並停留於恢復選單。最新切片新增 `uart local --select --count 2 --read-only --watch --terminal` ；統一工作台可用 S → D → 4 選兩路，以**一個 Gateway** 同時接收兩條 UART，畫面標明 Channel／名稱；一路遺失時另一路繼續。可用 `--save-profile bench.local.toml` 保存名稱與裝置條件，下次以 `--profile bench.local.toml` 重新核對後啟動。多通道畫面顏色獨立，CR／退格採跳脫顯示；完整步驟見 [Windows Quickstart](docs/windows-quickstart.md)。已有 Mock／雙 PTY 自動化證據；Win11 手動雙通道 Gateway 的單路恢復隔離已由使用者回報通過，雙擊及 Profile 的雙實體操作仍需個別驗證。
 
 Linux 虛擬端點已測試啟動器完整程序流程；使用者先前的 Win11 手動 watch 已讀到 IPCAM 開機訊息。使用者亦已回報新 Quickstart、關閉後重啟、重複啟動及 MobaXterm 占用交叉測試通過。
 

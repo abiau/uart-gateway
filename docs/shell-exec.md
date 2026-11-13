@@ -16,7 +16,7 @@ RX 每筆核對世代與位移、記憶體／輸出有界。只回報「標記�
 
 ## 第一次設定
 
-1. Windows 依 [TX 初始化](tx-workbench.md) 用新名稱建立明確啟用 TX 的 Gateway，僅授權需要的 Channel；先關閉占用相同 COM 的舊程序，再啟動這份獨立 Gateway。只讀 run-com3.cmd／local 不提供 TX。
+1. Windows 依 [TX 初始化](tx-workbench.md) 用新名稱建立明確啟用 TX 的 Gateway，僅授權需要的 Channel；先關閉占用相同 COM 的舊程序，再啟動這份獨立 Gateway。只讀 local Launcher 不提供 TX；統一工作台的 X 另使用獨立 TX 憑證。
 2. Container 安裝本版 CLI：`.venv/bin/python -m pip install -e .`，不需要 Windows、pySerial、Textual 或 GUI。沿用既有 SSH Tunnel 到 Windows Loopback；家庭同機 Client 也可走 Loopback。
 3. 依 [固定認證安裝](authentication.md) 安全匯出並匯入 **tx** 角色包，選定連線，例如 `.venv/bin/uart auth use company`。原 read 包不能用來傳送；不要每天重建秘密或把 Token 放在 argv。`--connection company` 也可在子命令之前明確指定連線。
 4. 人工核對 USB-UART／板子接線，確認 IPCAM 已登入可用的 POSIX sh／BusyBox ash，沒有尚在執行的命令，並先確認目標接受的換行。接著在互動終端執行：
