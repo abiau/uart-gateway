@@ -74,6 +74,7 @@ class Transport:
         self.tx_changed.set()
 
     async def _receive(self) -> None:
+        frames = received = 0
         try:
             while True:
                 message, size = await read_sized_frame(self.reader, self.maximum, self.depth)
@@ -111,10 +112,14 @@ class Transport:
                     if message["event"] == "tx_result":
                         self.tx_changed.set()
                         self.tx_changed = asyncio.Event()
-                    # 已緩衝的重播也讓消費者取得執行機會，不放大有界佇列。
-                    await asyncio.sleep(0)
                 else:
                     raise ProtocolError("INVALID_FRAME", "Server 傳送了不合法訊息。")
+                frames += 1
+                received += size
+                if frames >= 8 or received >= 16384 or self.events.qsize() >= 8:
+                    frames = received = 0
+                    # 小框批次交接；已有積壓時逐框讓出，維持與逐筆處理畫面的公平性。
+                    await asyncio.sleep(0)
         except asyncio.CancelledError:
             raise
         except (EOFError, OSError, ProtocolError, ValueError) as exc:

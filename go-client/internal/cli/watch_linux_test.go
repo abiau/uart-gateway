@@ -6,10 +6,46 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 	"uart-gateway/go-client/client"
 )
+
+func TestBurstOutputLetsReadyWriterRunBeforeQueueOverflows(t *testing.T) {
+	previous := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previous)
+	writer, e := os.CreateTemp(t.TempDir(), "output-")
+	if e != nil {
+		t.Fatal(e)
+	}
+	original := os.Stdout
+	os.Stdout = writer
+	s := newSink()
+	closed := false
+	defer func() {
+		if !closed {
+			s.close()
+		}
+		writer.Close()
+		os.Stdout = original
+	}()
+	payload := bytes.Repeat([]byte("x"), 2048)
+	for i := 0; i < 512; i++ {
+		if e := s.put(payload, false); e != nil {
+			t.Fatalf("可持續消費的 Writer 尚未取得執行機會即溢位：%v", e)
+		}
+	}
+	s.close()
+	closed = true
+	info, e := writer.Stat()
+	if e != nil {
+		t.Fatal(e)
+	}
+	if info.Size() != int64(len(payload)*512) || s.failure != nil {
+		t.Fatalf("輸出不完整：%d bytes，%v", info.Size(), s.failure)
+	}
+}
 
 func TestBlockedOutputHasBoundedShutdown(t *testing.T) {
 	reader, writer, e := os.Pipe()

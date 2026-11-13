@@ -341,6 +341,29 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(slow.next_event(), 1)
         self.assertEqual((await healthy.get_channel("b"))["state"], "ready")
 
+    async def test_replay_yielding_consumer_preserves_bytes_and_rpc_without_overflow(self):
+        payload = bytes(range(256)) * 16
+        for _ in range(192):
+            self.gateway.channels["a"].ingest(payload)
+        client = await self.client(True)
+        channel = await client.get_channel("a")
+        sub = await client.subscribe("a", epoch=channel["stream_epoch"], offset="0")
+        received = bytearray()
+        query = None
+        async with asyncio.timeout(5):
+            for index in range(192):
+                event = await self.rx(client, sub["subscription_id"])
+                self.assertEqual(event["data"]["offset"], str(len(received)))
+                received.extend(binary_decode(event["data"]["data_b64"]))
+                if index == 96:
+                    query = asyncio.create_task(client.get_channel("a"))
+                # 模擬畫面處理每筆之後交回事件迴圈。
+                await asyncio.sleep(0)
+            self.assertEqual((await query)["state"], "ready")
+        self.assertEqual(bytes(received), payload * 192)
+        self.assertIsNone(client.transport.failure)
+        self.assertLessEqual(client.transport.event_used, client.transport.event_bytes)
+
     async def test_event_count_limit_still_rejects_a_consumer_that_never_reads(self):
         slow, healthy = await self.client(), await self.client()
         await slow.subscribe("a")

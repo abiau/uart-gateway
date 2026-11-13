@@ -4,6 +4,37 @@
 
 更新日期：2026-11-13（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## COM3／COM5 與三主機完整驗收（2026-11-13，接續）
+
+使用者指定目前接上的 IPCAM 為 COM3／COM5，三個 SSH 別名均可免密登入，要求建立 Gateway／Tunnel、完整測試並直接修正程式，排除 USB 插拔。後續明確核准 CR、必要時每路一次 UART Ctrl+C，以及觀察到已登入 Shell 後代做本輪 shell-ready、uname、子 Shell exit 7、短暫 sleep 與固定終點的輸出。實際兩路各送一次 CR 即出現可用提示，沒有送 UART Ctrl+C、登入、操作電源或韌體。
+
+**Implemented**：修正 Python 3.13 匯入錄製保留工具時不存在的 `stat.stat_result` 型別註記，改用 `os.stat_result`。SSH 存活檢查的未回應次數依允許登入時間計算，避免原 15 秒×3 次提前截斷慢登入。Python SDK 小框接收以八框／16 KiB 有界批次交接，已有八筆事件積壓時逐框讓出，保留原容量與失效檢查；遠端工作台有上次選擇時維持「Channel 編號」一致提示。Go SDK／顯示也加入有界交接；歷史重播暫滿最多等一秒排空，顯示最多兩秒，持續無消費、即時超限或輸出故障仍停止，不擴大佇列或重送。參數以 configuration 為準，沒有修改 Protocol／Gateway 核心或 UART 控制線政策。
+
+**Tested**：Windows／Python 3.13.17／UTF-8 模式直接在本工作樹執行完整 **502 項，418 通過、84 平台略過**，209.272 秒。WSL／Python 3.14.8 在 Linux 原生檔案系統的來源副本執行完整 **502 項，499 通過、3 明確選用測試略過**，177.878 秒；逐檔 SHA-256 核對 src／tests 與工作樹相同。包含最終 ELF 的 18 項 Go／真 Gateway／TCP／PTY 整合。Go vet 通過，Linux 單元 20 項在 WSL 與三台真主機均通過；Windows 原生測試執行檔的 12 項 SDK 測試通過。新增小框雙路檔案重播、並行消費／RPC、公平排程與不消費時有界失敗回歸。舊版可重現單 CPU 突發輸出溢位、較慢消費的重播失敗，修正版通過，原阻塞管線測試仍通過。Go race 未執行：此 WSL 無 C 編譯器。
+
+**Verified／現場條件**：新建獨立受保護的驗收部署，不覆寫原部署或秘密；COM3 為 CP210x，COM5 為 FTDI，均 115200／8N1、CR、無流控、DTR／RTS=false。單一 Windows Gateway 啟用 RX 錄製及 SQLite 稽核，各主機分別建立 Loopback 18081 反向 SSH。d3s1 為 Ubuntu 22.04.5／核心 5.15；rd-192 與 rd1-4 為不同主機的 Ubuntu 16.04.6／核心 4.4.0-210，均 x86_64。三台使用相同原生 ELF，沒有安裝遠端 Python／Go 套件或修改 Shell 啟動檔。
+
+| 情境 | 已取得的實機證據 |
+| --- | --- |
+| 認證／權限／管理 | 三台均可使用獨立 read／manage／tx 來源；read 的 Lease／重開、manage 的 Lease 被拒絕。單路 read timeout 20→25→20 ms 約 71～84 ms，新 Epoch 且未 Confirm，另一路 Epoch 不變；舊快照拒絕、Rebind／reopen 通過，零 UART bytes |
+| 租約 | 兩路獨立持有、超過初始 15 秒仍續約、第二 Owner 得 LEASE_BUSY，結束與 Client TCP 失聯後回 idle；此組零 UART bytes |
+| 互動操作 | 三台真 POSIX PTY 均完成雙路選擇、Client SIGINT 返回、Enter 再監看兩輪與 Q 退出；shell-ready 取消／確認及 CR；最終版 Raw TX 預覽取消、每路一次 9-byte uname＋CR，以及原收據查詢通過 |
+| Shell | 三台分別對兩路完成 uname／exit 7、短逾時 unknown、未結案拒絕新 exec、原 ID 查詢結案與 16-byte 輸出截斷。Windows Python SDK 兩路的正常／非零／逾時查詢亦通過。實際目標分別回傳 aarch64／Linux 5.15.180 與 armv7l／Linux 4.9.84 |
+| 真 SSH 中斷 | 三條本次 Tunnel 中斷後 watch 回 2，再明確重建並訂閱。另建 28081 測試 Tunnel，在三台各一次實體 sleep 命令已開始後立即終止它，Client 回 unknown，重建後以原 ID 查到 completed／exit 0，沒有重送；主監看與 Gateway Instance 保持 |
+| 最終版 bytes 核對 | 三台各一輪雙路歷史＋即時快照，六個同 Epoch／位移範圍均逐 byte／SHA-256 與 Windows SDK 一致，範圍約每路 262～265 KB；來源仍持續輸出，不推論電氣層零遺失 |
+| 密集輸出／長時間 | 雙路各 4096 行密集輸出命令約 18.24／18.32 秒完成；另各收到 0000～1800 共 1801 行、無缺號／重複與結束標記，首末觀測相隔 1804.378／1817.522 秒。三台各路完整範圍 bytes／SHA-256 均一致，與 Windows 錄製核對相符 |
+| 錄製／輪替／重啟 | 指定已停止 Capture b0533724273346a7b5f5ad6732065e50：COM3 為 17 段、2647 區塊／288790 bytes；COM5 為 15 段、2052 區塊／286602 bytes，雜湊／位移／序號／收尾均通過，no_known_gap。之後 Gateway 重啟產生新 Instance，三台六個舊 Shell 核對均拒絕且新 Instance 零 TX；各查三份舊收據仍保留 completed，沒有恢復 Lease 或重送 |
+
+**驗收腳本與限制**：早期協調腳本將租約互斥測試與 Shell 同時排入，被 LEASE_BUSY 正確拒絕；後續已串行完成，沒有把拒絕當命令成功。長測解析器曾把 Shell 提示前綴誤判為缺號，修正解析後重讀原歷史，原命令未重送。舊 Go 版的重播／顯示佇列失敗均保留，不以模擬或重跑掩蓋；長測期間更換不可變 Client 版本，必須區分各次接收版本及 Replay／Live，不宣稱最終版已連續即時接收整個 30 分鐘。未測 USB 插拔、實體換板／COM 重編、電氣層獨立來源零遺失、真正磁碟滿、隔離網路容器第二段轉送、其他換行或韌體操作。
+
+最終原生 ELF SHA-256：`afe03d6facfc30a57df77302d50c4ca10144c91971114fef99996d337a49158a`。本輪私人資料在 `%LOCALAPPDATA%/uart-gateway/acceptance/20261113-121028`，腳本／工具鏈及執行檔位於忽略的 build／dist；不加入版本庫。使用者已授權提交並推送本輪修正、測試與文件至 `origin/work`，交付版本以 Git 紀錄為準。
+
+兩路共同完整範圍雜湊分別為 `9e94dee175a293cc02e0d9e985b8c1d8babaa2b47004f5eb95da5e290f6d7a0d` 與 `b20a9070ee5f4ad3ecaa173d8b42916c4f876e152077903448c5b1b52c039338`，包含同世代的 Shell／密集／長測輸出。三台重播後接即時的穩定接收輪約 1332 秒，涵蓋完整 30 分鐘來源資料；期間接收版本為 7162a156，最終版 afe03d6f 另有三台逐 byte 快照、單元與整合證據，不混稱為最終版連續即時 30 分鐘。最初的零 RX 狀態已由本輪 CR、實際命令結果及已知輸出解決，不再沿用「COM3 零 RX／Shell 未確認」作為現行結論。
+
+**交接時狀態**：Gateway 新 Instance 為 `610e735519074735bde2bc7cdcc8a493`，COM3／COM5 ready、read timeout 已還原 20 ms、TX idle。三條本輪反向 Tunnel 保留；依本輪授權重新核對 CR 提示及 shell-ready 後，三台均可查詢新通道。各台 SSH 登入後使用 `~/.local/bin/uart-acceptance-20261113-121028`，預設 read；Windows 可執行私人驗收目錄的 watch.cmd。沒有改原本 uart 入口、預設連線或建立系統服務，驗收控制器同時保留三條 Tunnel 不代表精靈新增多目的地管理。
+
+無秘密的現場參照保存在 `%LOCALAPPDATA%/uart-gateway/acceptance-active.json`，包含本輪根目錄、入口與正常停止控制檔。目前新 Capture 仍在錄製；上述 30 分鐘驗證必須選已停止的 b0533724273346a7b5f5ad6732065e50，不能以最新目錄代替。205 個 Markdown 相對檔案連結與 git diff --check 通過；私人憑證、錄製與執行檔未加入 Git。
+
 ## 實體 UART／原生 Client 自動驗收與操作改善（2026-11-13）
 
 使用者要求自動測試實體 UART、改善必要的 UI／效能／操作步驟並建立 SSH Tunnel，排除 USB 插拔；確認 COM3／COM4、CR 及提供必要登入資訊。**Implemented**：Python TUI 人工重開成功後立即同步該窗格的新世代，解除舊暫停快照，不再等待下一次 100 ms 畫面計時器。Go 文字工作台在使用者 Ctrl+C 返回時查詢新清單，保留選擇，Enter 可再次監看；自然故障仍等待 R，不自動重連或開始 RX。多路 watch 的單路故障保持另一路接收，結束時回 2，避免部分失敗回成功；初次握手尚未完成也能 Ctrl+C 取消，回 130。Protocol／Gateway 核心、TX 不重送與角色規則不變。
@@ -260,13 +291,14 @@ SDK ShellRunner 將 Lease 保持到整次命令等待結束；單次 POSIX 包�
 
 | 項目 | 狀態 | 證據與限制 |
 | --- | --- | --- |
-| TX 工作台／獨立角色／操作收據 | Implemented／自動化 Tested | F2 目標／輸入／預覽／單次租約，F3 原操作查詢，不明不重送；421 項全套＋24 項補驗，實體 TX／Win11 新流程尚待測 |
-| 多窗格 TUI | Implemented／自動化 Tested | 固定資料／狀態／操作區、本機一至兩路與遠端最多四路；Win11 新介面尚待實測，393 項全套通過 |
-| SDK 自動認證／一次性初始化 | Implemented／自動化 Tested | 固定受保護來源、預設 read／明確 manage、無 Token 參數日常 CLI／Workbench／SDK；Win11 ACL／公司 SSH 尚待實測 |
-| 日常操作簡化 | Implemented／自動化 Tested | S 統一啟動／偏好、L 本次錄製、Capture 分組、命中編號回看匯出、資料流編號／相對分鐘及自動新檔名；Win11 新流程尚待驗證 |
-| 配置一鍵啟動整合（候選 1） | Implemented／自動化 Tested | 工作台選 6／uart start --config；完整 Gateway TOML、錄製覆寫、全部 Ready、原端點鎖與只清理本次程序；一至兩路 RX，configure 可人工重開，拒絕 tx。Win11 新入口待驗證 |
-| 錄製清單與明確選檔（候選 3） | Implemented／自動化 Tested | 時間／來源／收尾標記／Epoch 有界預覽，A／C／U 篩選、未收尾提示；預覽不代表 SHA-256 驗證。Win11 新清單操作待驗證 |
-| 關鍵字搜尋與區段回看匯出（候選 4） | Implemented／自動化 Tested | recording-search，工作台 S／F；UTF-8 跨連續區塊字面比對、時間／Epoch RX 篩選，全檔完整性仍掃描。Win11 新 S／F 操作待驗證 |
+| Linux Go Client／三主機 | Verified（限定本輪條件） | d3s1、rd-192、rd1-4 真主機的認證、雙路工作台、管理、TX／Shell、故障原操作查詢及最終版 bytes 快照通過；長測結果見最新紀錄 |
+| TX 工作台／獨立角色／操作收據 | Verified（分入口記錄） | 2026-11-08 Win11 實體 F2／F3 與 Shell、2026-11-13 三主機 Go 預覽取消／單次傳送／收據查詢通過；各異常情境仍以具體證據為準 |
+| 多窗格 TUI | Verified（Win11 一般流程）／自動化 Tested | 2026-11-08 真主控台雙窗格、暫停／回最新、滑鼠／縮放／退出已有證據；本輪完整回歸包含大量重播與公平排程，不推論所有實體終端情境 |
+| SDK 自動認證／一次性初始化 | Verified（限定本輪條件） | Win11 原生 NTFS ACL、固定角色與三主機受保護安裝／SDK 認證通過；預設 read，manage 不取得 tx |
+| 日常操作簡化 | Verified（Win11 一般流程） | 2026-11-08 已驗 S／L、跨啟動錄製偏好、Capture 分組、命中回看／自動新檔名與資料流／相對分鐘；不推論全部負向情境 |
+| 配置一鍵啟動整合（候選 1） | Verified（Win11 一般流程） | 2026-11-08 雙路 TOML、錄製、選項 6、Ctrl+C 清理及 PORT_BUSY 收斂通過，既有配置／程序保護保留 |
+| 錄製清單與明確選檔（候選 3） | Verified（Win11 一般流程） | 2026-11-08 實機 Capture 的雙路分組選檔與完整性檢查通過；預覽仍不代表 SHA-256 驗證 |
+| 關鍵字搜尋與區段回看匯出（候選 4） | Verified（Win11 一般流程） | 2026-11-08 搜尋命中回看、重複匯出新檔名／雜湊一致、資料流與相對分鐘篩選通過；全檔完整性檢查仍保留 |
 | d3s1／dxan 遠端持續接收 30 分鐘 | Verified（使用者執行並回報） | IPCAM 每秒輸出 ps 資訊，dxan 資料正常；未量測逐 byte 完整性 |
 | Win11 錄製文字匯出與查看 | Verified（使用者執行並回報） | `262f702` 後回報可看到文字、此測項 OK；不據此推論零遺失、異常路徑或全部錄製情境通過 |
 | 本機 Repository（版本庫） | 已建立 | 分支 `work`；Phase 0 提交 `33eedba`、Phase 1 提交 `496ab13`；本次啟動器變更依使用者授權提交並推送，版本以 Git 紀錄為準 |
@@ -274,12 +306,12 @@ SDK ShellRunner 將 Lease 保持到整次命令等待結束；單次 POSIX 包�
 | Phase 0 正式文件集合 | 已建立並完成文件檢查 | 指定 16 份 Markdown 均有實質內容；此狀態不等於使用者已核准或產品已實作 |
 | Phase 0 正式核准 | 已核准，Phase 0 完成 | 2026-11-03 使用者接受全部建議答案；七份 ADR 為 Accepted |
 | Gateway／Protocol／SDK／CLI 原始碼 | Implemented／Tested | Fake Serial 與 pySerial 通路可用；Win11 本機 RX 已由使用者實際執行確認，完整 Phase 1 尚未完成 |
-| 單元／整合測試 | Tested | Linux／Python 3.12.14／pySerial 3.5／Textual 6.12.0／pyte 0.8.2：421 項全套通過、無略過，最後另補驗 24 項；包含 TX 角色／收據／工作台、真 TCP／PTY、既有 RX／錄製／回看與多窗格 |
+| 單元／整合測試 | Tested | 2026-11-13 Python 全套各 502 項：Win11／3.13.17 為 418 通過、84 平台略過；WSL／3.14.8 相同來源副本為 499 通過、3 明確選用略過。Go Linux 單元 20 項、Windows SDK 12 項及原生整合 18 項通過 |
 | Win11／IPCAM 本機 RX | Verified（使用者執行並回報） | Gateway 成功啟動，uart.exe watch 可讀到 COM3 所接 IPCAM 的開機訊息 |
 | 本機一鍵啟動器 | Verified（使用者執行並回報） | Win11 Quickstart、Ctrl+C 後重啟、重複啟動保護及 MobaXterm 占用交叉測試全部通過；另有 77 項自動化測試 |
-| 本機端點列出／選擇 | Implemented／自動化 Tested | `uart ports`、`local --select` 與 `run-uart.cmd`；Mock／PTY 通過，居家實體接收與終端顏色已回報，選單邊界待測 |
+| 本機端點列出／選擇 | Verified（Win11 一般流程） | `uart ports`、`local --select` 與 run-uart.cmd；2026-11-08 已驗重新整理、無效編號、重複端點與實體選兩路。COM 重編仍另測 |
 | USB 遺失後回到選單並停留 | Verified（使用者執行並回報） | `34842cd` 後使用者回報正常；不推論所有 EOF 情境或重新插回接收皆通過 |
-| 兩條只讀 UART 啟動與配置 | Verified（Win11 CLI 錄製／拔除隔離，使用者回報） | 雙路選擇錄製、一路遺失另一路持續及兩路正常收尾已回報；Profile 重用／重編 COM、雙擊與整組占用清理仍待個別驗證 |
+| 兩條只讀 UART 啟動與配置 | Verified（Win11 一般流程） | 原錄製／拔除隔離證據保留；2026-11-08 另驗實體 Profile 保存／重用、部分占用清理與四個 CMD 真主控台入口，COM 重編仍另測 |
 | Win11 雙 UART 故障與恢復隔離 | Verified（使用者執行並回報） | COM3／COM4 各接一台持續輸出的 IPCAM；COM3 拔除與手動重開期間，COM4 未曾中斷。反向故障、雙路錄製完整性及 dxan 新操作不據此推論通過 |
 | Gateway RX 錄製及離線檢查 | Verified（一般流程，使用者回報） | 原第 2～3 項本機錄製與離線操作通過；故障／容量等情境仍以自動化證據及個別實測為準 |
 | 雙路錄製單路遺失隔離 | Verified（Win11，使用者提供 Log／檢查摘要） | COM3 拔除後正常收尾且連續性未知；COM4 持續接收、正常收尾且對已觀測資料無已知缺口。雙路皆健康的一輪、長時間／輪替／磁碟錯誤與逐 byte 完整性不據此推論 |
@@ -292,7 +324,7 @@ SDK ShellRunner 將 Lease 保持到整次命令等待結束；單次 POSIX 包�
 | 初期 MobaXterm 連線 | 歷史背景 | 與本次 Gateway／CLI 成功接收的證據分開記錄 |
 | SSH／Podman 遠端路徑 | Verified（使用者執行並回報） | dxan 遠端 RX、Tunnel 中斷提示及重建後手動重連／重播成功；Gateway 未受影響。持續輸出 30 分鐘已回報正常；逐 byte 完整性仍待量測 |
 | dxan 歷史重播與終端顯示 | Verified（使用者執行並回報） | 新版重播、顏色／換行與重新執行監控成功；未量測零遺失或所有終端序列 |
-| Commit／Push（提交／推送） | 前輪已保存 | 多窗格 TUI 已保存為 `ad60746`；本輪 TX 尚未 commit／push |
+| Commit／Push（提交／推送） | 使用者已授權本輪保存 | 本輪修正、測試及驗收文件依使用者指示提交並推送至 `origin/work`；實際交付版本以 Git 紀錄為準 |
 
 狀態語意：`Planned` 為預計開發；`In Progress` 為正在進行；`Implemented` 為已有實作；`Tested` 為已執行具體測試並有結果；`Verified` 為在聲稱的真實條件下實際驗證。不可因 Implemented 就改成 Tested，也不能以模擬測試把 Windows 硬體標為 Verified。文件可標示「已建立／已檢查」，但不讓這些詞代表產品已實作。
 

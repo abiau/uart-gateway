@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -30,6 +31,7 @@ type Transport struct {
 	counter      uint64
 	failure      error
 	events       chan queuedEvent
+	space        chan struct{}
 	done         chan struct{}
 	used         int
 	maximum      atomic.Int64
@@ -39,7 +41,7 @@ type Transport struct {
 }
 
 func newTransport(conn net.Conn) *Transport {
-	t := &Transport{conn: conn, pending: map[string]chan response{}, events: make(chan queuedEvent, 256), done: make(chan struct{})}
+	t := &Transport{conn: conn, pending: map[string]chan response{}, events: make(chan queuedEvent, 256), space: make(chan struct{}, 1), done: make(chan struct{})}
 	t.maximum.Store(65536)
 	t.depth.Store(16)
 	t.pendingLimit.Store(32)
@@ -126,6 +128,7 @@ func (t *Transport) Request(ctx context.Context, method string, params any) (Obj
 func (t *Transport) receive() {
 	defer t.workers.Done()
 	reader := bufio.NewReaderSize(t.conn, 65536)
+	frames, received := 0, 0
 	for {
 		raw, e := reader.ReadSlice('\n')
 		if e != nil {
@@ -203,25 +206,58 @@ func (t *Transport) receive() {
 				}
 			}
 			item := queuedEvent{Event{kind, cid, rev, m["stream_epoch"], data, m}, len(raw)}
-			t.mu.Lock()
-			over := t.used+item.size > 262144 || len(t.events) == cap(t.events)
-			if !over {
-				t.used += item.size
-			}
-			t.mu.Unlock()
-			if over {
-				t.fail(errors.New("SDK 事件佇列已滿，資料連續性中斷"))
-				return
-			}
-			select {
-			case t.events <- item:
-			default:
-				t.fail(errors.New("SDK 事件佇列已滿"))
+			if !t.enqueue(item) {
 				return
 			}
 		default:
 			t.fail(invalid())
 			return
+		}
+		frames++
+		received += len(raw)
+		if frames >= 8 || received >= 16384 || len(t.events) >= 8 {
+			frames, received = 0, 0
+			// 已緩衝的重播也交回排程；不放大事件佇列或略過溢位檢查。
+			runtime.Gosched()
+		}
+	}
+}
+func (t *Transport) enqueue(item queuedEvent) bool {
+	replay := item.event.Kind == "rx" && String(item.event.Data, "delivery") == "replay"
+	var deadline *time.Timer
+	defer func() {
+		if deadline != nil {
+			deadline.Stop()
+		}
+	}()
+	for {
+		t.mu.Lock()
+		if t.failure != nil {
+			t.mu.Unlock()
+			return false
+		}
+		if t.used+item.size <= 262144 && len(t.events) < cap(t.events) {
+			t.used += item.size
+			t.events <- item
+			t.mu.Unlock()
+			return true
+		}
+		t.mu.Unlock()
+		if !replay {
+			t.fail(errors.New("SDK 事件佇列已滿，資料連續性中斷"))
+			return false
+		}
+		// 歷史突發先由 TCP 背壓等待消費者；即時資料及容量規則不放寬。
+		if deadline == nil {
+			deadline = time.NewTimer(time.Second)
+		}
+		select {
+		case <-t.space:
+		case <-t.done:
+			return false
+		case <-deadline.C:
+			t.fail(errors.New("SDK 重播佇列持續無法排空，資料連續性中斷"))
+			return false
 		}
 	}
 }
@@ -234,6 +270,10 @@ func (t *Transport) Next(ctx context.Context) (Event, error) {
 		t.mu.Lock()
 		t.used -= q.size
 		t.mu.Unlock()
+		select {
+		case t.space <- struct{}{}:
+		default:
+		}
 		if e := t.Err(); e != nil {
 			return Event{}, e
 		}

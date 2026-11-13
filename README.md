@@ -6,15 +6,15 @@ UART Gateway 是面向嵌入式韌體開發的 UART 通訊工具。Windows 11 �
 
 **簡化遠端使用**：Windows 雙擊 `run-remote.cmd`，第一次選 2 設定 Linux SSH 主機／容器及權限；之後選 1 啟動，D 可換選 UART，固定憑證不重生。預設安裝 Go 的 Linux x86_64 獨立執行檔，不需要 Linux Python、pip 或 Go；Linux 日常執行 `uart` 選通道。發行檔由開發端執行 `build-go-client.ps1` 建立，這份工作目錄已備妥。支援範圍與操作見 [Go Client](docs/go-client.md)，設定見 [遠端設定](docs/authentication.md#簡化遠端設定與-client-入口2026-11-12)。
 
-**多窗格監看**：安裝 `python -m pip install -e ".[server,tui]"` 後雙擊 `run-tui.cmd`，選 UART、核對摘要並開始；每路資料與狀態獨立，底部固定操作按鈕。已有 Gateway 使用 `uart tui`，管理模式使用 `uart --access manage tui`，共用 SDK 自動認證。本機最多兩路、遠端最多四路；操作與驗證界線見 [多窗格 TUI](docs/tui.md)，Win11 新介面尚待實測。
+**多窗格監看**：安裝 `python -m pip install -e ".[server,tui]"` 後雙擊 `run-tui.cmd`，選 UART、核對摘要並開始；每路資料與狀態獨立，底部固定操作按鈕。已有 Gateway 使用 `uart tui`，管理模式使用 `uart --access manage tui`，共用 SDK 自動認證。本機最多兩路、遠端最多四路；操作見 [多窗格 TUI](docs/tui.md)，Win11 一般流程與各平台驗收邊界見 [目前狀態](docs/status.md)。
 
-**TX 工作台**：明確初始化 TX 權限後，日常執行 `uart tx`、雙擊 `run-tx.cmd` 或工作台選 X。F2 核對目標、輸入與預覽後送一次；F3 選收據查詢結果，租約在單次傳送期間管理。原 read／manage 與本機 RX Launcher 不升級，結果不明不自動重送。[TX 設定與實機驗收](docs/tx-workbench.md) 提供操作步驟；目前實體 TX 尚待使用者驗證。
+**TX 工作台**：明確初始化 TX 權限後，日常執行 `uart tx`、雙擊 `run-tx.cmd` 或工作台選 X。F2 核對目標、輸入與預覽後送一次；F3 選收據查詢結果，租約在單次傳送期間管理。原 read／manage 與本機 RX Launcher 不升級，結果不明不自動重送。[TX 設定與實機驗收](docs/tx-workbench.md) 提供操作步驟；Win11 實體 TX 與三主機 Go 入口的證據見 [目前狀態](docs/status.md)。
 
-**Container／Codex 執行命令**：人先用 `uart shell-ready ch_uart_1 --newline lf` 核對已登入的 Shell，之後 `uart exec ch_uart_1 'uname -a'` 回傳 JSON、輸出及 exit code；`uart exec-status <execution_id>` 只查原操作。共用固定 TX 憑證與 SDK，租約涵蓋命令等待，逾時不重送。[Shell 操作說明](docs/shell-exec.md) 包含設定、結果與實機驗收；實體 IPCAM／公司 SSH 尚待測試。
+**Container／Codex 執行命令**：人先用 `uart shell-ready ch_uart_1 --newline lf` 核對已登入的 Shell，之後 `uart exec ch_uart_1 'uname -a'` 回傳 JSON、輸出及 exit code；`uart exec-status <execution_id>` 只查原操作。共用固定 TX 憑證與 SDK，租約涵蓋命令等待，逾時不重送。[Shell 操作說明](docs/shell-exec.md) 包含設定與結果；Win11 同機及三主機實體 IPCAM 驗收見 [目前狀態](docs/status.md)。LF 是語法範例，實測換行依目標核對。
 
-日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)；本輪簡化流程已有自動化證據，尚待 Win11 實機驗證。
+日常操作可雙擊 `run-workbench.cmd` 或執行 `uart menu`。按 **S 開始監看**，確認裝置與錄製摘要後按 Enter；結束後用 **L 查看本次錄製**。按 **5 瀏覽錄製**可依日期與通道選檔，搜尋結果輸入編號即可回看／匯出附近片段；一般啟動會記住上次選擇，進階工具移至 A。步驟見 [工作台說明](docs/workbench.md)，Win11 一般流程與自動化證據見 [目前狀態](docs/status.md)。
 
-遠端現在可一次初始化後，直接執行 `uart menu --remote`，由 SDK 載入固定受保護憑證；管理使用 `uart --access manage menu --remote`。CLI、Workbench 與 Codex 的 Python 工具共用相同 SDK 來源，不必日常產生或貼上 Token。[自動認證與初始化](docs/authentication.md) 包含 Win11 建立、SSH 安裝到 dxan 及 SDK 範例。既有明確 Token 參照仍相容；新 Windows ACL／公司 SSH 流程尚待實測。
+遠端現在可一次初始化後，直接執行 `uart menu --remote`，由 SDK 載入固定受保護憑證；管理使用 `uart --access manage menu --remote`。CLI、Workbench 與 Codex 的 Python 工具共用相同 SDK 來源，不必日常產生或貼上 Token。[自動認證與初始化](docs/authentication.md) 包含 Win11 建立、SSH 安裝到 dxan 及 SDK 範例。既有明確 Token 參照仍相容；Windows 原生 ACL 與三主機固定來源的驗收見 [目前狀態](docs/status.md)。
 
 新版遠端選單可輸入 `1,2` 同時監看兩條 Channel，在同一畫面以 R 查詢、O 1／O 2 加 Y 手動重開故障通道；另一路持續接收。每行標明來源、顏色各自保存，CR／退格跳脫顯示；Q／Ctrl+C 清理 Client 後返回清單。重開需原 configure 權限，監看仍只讀，不新增 API 或 TX。此新入口已有自動化證據，Win11 雙路一般操作及重播修正已由使用者回報正常，公司 dxan 新操作仍待測，詳見 [工作台說明](docs/workbench.md)。
 

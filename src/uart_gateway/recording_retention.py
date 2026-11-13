@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from itertools import islice
 import json
+from os import stat_result
 from pathlib import Path
 import re
 import stat
@@ -36,7 +37,7 @@ def entries(path: Path, limit: int) -> list[Path]:
     return sorted(found)
 
 
-def plain(info: stat.stat_result, expected) -> bool:
+def plain(info: stat_result, expected) -> bool:
     return expected(info.st_mode) and not (
         getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
 

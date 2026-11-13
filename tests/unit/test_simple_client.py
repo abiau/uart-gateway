@@ -157,6 +157,15 @@ class RemoteSetupTests(unittest.TestCase):
         path.write_text(json.dumps(old))
         self.assertEqual(load_target(path), target)
 
+    def test_ssh_keepalive_does_not_cut_off_allowed_slow_login(self):
+        for timeout, count in ((30, 3), (70, 5), (180, 12), (600, 40)):
+            with self.subTest(timeout=timeout):
+                args = ssh_arguments(RemoteTarget("user@host", connect_timeout=timeout))
+                self.assertIn("ServerAliveInterval=15", args)
+                self.assertIn(f"ServerAliveCountMax={count}", args)
+                self.assertGreaterEqual(15 * count, timeout)
+                self.assertIn("StrictHostKeyChecking=yes", args)
+
     def test_binary_preflight_rejects_dynamic_elf_and_wrong_architecture(self):
         binary = bytearray(120); binary[:6] = b"\x7fELF\x02\x01"
         struct.pack_into("<HH", binary, 16, 2, 62)

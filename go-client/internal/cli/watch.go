@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -26,10 +27,11 @@ type sink struct {
 	done     chan struct{}
 	failure  error
 	finished chan struct{}
+	space    chan struct{}
 }
 
 func newSink() *sink {
-	s := &sink{queue: make(chan display, 256), done: make(chan struct{}), finished: make(chan struct{})}
+	s := &sink{queue: make(chan display, 256), done: make(chan struct{}), finished: make(chan struct{}), space: make(chan struct{}, 1)}
 	go func() {
 		defer close(s.finished)
 		for {
@@ -54,6 +56,10 @@ func newSink() *sink {
 					close(s.done)
 				}
 				s.mu.Unlock()
+				select {
+				case s.space <- struct{}{}:
+				default:
+				}
 				if e != nil {
 					return
 				}
@@ -63,19 +69,48 @@ func newSink() *sink {
 	return s
 }
 func (s *sink) put(b []byte, diagnostic bool) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.failure != nil {
-		return s.failure
+	var deadline *time.Timer
+	defer func() {
+		if deadline != nil {
+			deadline.Stop()
+		}
+	}()
+	for {
+		s.mu.Lock()
+		if s.failure != nil {
+			e := s.failure
+			s.mu.Unlock()
+			return e
+		}
+		if len(s.queue) < cap(s.queue) && s.used+len(b) <= 262144 {
+			s.used += len(b)
+			s.queue <- display{append([]byte{}, b...), diagnostic}
+			yield := len(s.queue) >= 8 || s.used >= 16384
+			s.mu.Unlock()
+			if yield {
+				runtime.Gosched()
+			}
+			return nil
+		}
+		s.mu.Unlock()
+		// 突發重播給 Writer 有界的排空時間；不擴大容量，也不持鎖等待 I/O。
+		if deadline == nil {
+			deadline = time.NewTimer(2 * time.Second)
+		}
+		select {
+		case <-s.space:
+		case <-s.done:
+		case <-deadline.C:
+			s.mu.Lock()
+			if s.failure == nil {
+				s.failure = errors.New("終端顯示佇列持續跟不上接收，資料連續性中斷")
+				close(s.done)
+			}
+			e := s.failure
+			s.mu.Unlock()
+			return e
+		}
 	}
-	if len(s.queue) == cap(s.queue) || s.used+len(b) > 262144 {
-		s.failure = errors.New("終端顯示佇列已滿，資料連續性中斷")
-		close(s.done)
-		return s.failure
-	}
-	s.used += len(b)
-	s.queue <- display{append([]byte{}, b...), diagnostic}
-	return nil
 }
 func (s *sink) close() { close(s.queue); <-s.finished }
 func (a *app) watchCommand(ctx context.Context, s client.Settings, args []string) (int, error) {

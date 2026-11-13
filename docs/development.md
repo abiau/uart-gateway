@@ -2,6 +2,8 @@
 
 ## Go Linux Client 測試（2026-11-13）
 
+突發輸出回歸限制單一 Go 執行 CPU，連續送出 1 MiB 到檔案，確認可執行的 Writer 不會因尚未取得排程就被判定溢位；原阻塞管線的兩秒失敗情境仍保留。真 Gateway 整合以雙路各 2048 個小框核對 JSON 檔案的原始 bytes，與實機重播／長時間接收分別記錄。
+
 在 go-client 執行 `go vet ./...`、`go test ./...`；Linux 專屬檔案權限／flock／慢管線測試需在 Linux 執行，Windows 通過不能替代。可在 Windows 設 GOOS=linux、GOARCH=amd64、CGO_ENABLED=0，以 go test -c 分別產生 client 與 internal/cli 的測試執行檔，再於 WSL 2 執行。
 
 Go 單元涵蓋重複 JSON Key／Unicode／深度／U64／Base64、亂序回覆、角色錯配、事件溢位、逾時不重試、RX 脈絡、控制碼／標記解析、Linux 私有來源與衝突、flock、收據終態及保留時間遞減、損壞偏好與慢輸出有界停止。建置方式見 [Go Client](go-client.md)。
@@ -237,7 +239,9 @@ CD（持續交付）與發布流程留待可用版本形成後設計；目前不
 
 ## CLI 文字重播與取消
 
-SDK 每次排入事件後讓出執行機會，避免已緩衝的歷史重播長時間占住 Reader。事件數量與位元組上限不變；完全不消費或輸出持續過慢時，仍回報 `LocalDataLoss`，不默默刪除資料或擴大容量。
+SDK 接收至多八框或 16 KiB 後讓出執行機會；事件佇列已有八筆積壓時改為逐框讓出，讓逐筆更新畫面的消費者保持公平。小區塊重播減少排程交接，較大的雙窗格重播仍須驗證完整 bytes、即時資料及並行 RPC。事件數量與位元組上限不變；完全不消費或輸出持續過慢時，仍回報 `LocalDataLoss`，不默默刪除資料或擴大容量。
+
+Python 3.12／3.13 的 Windows 測試使用 UTF-8 模式，例如 PowerShell 先設定 `$env:PYTHONUTF8='1'`，再執行完整 unittest；記錄 Python 版本、實際工作目錄及略過項目。若在 WSL 複製來源至 Linux 原生檔案系統驗證，須保留相同來源、範例與測試，另標明該執行位置，不能冒稱原工作樹測試通過。
 
 `watch --text` 以 20 ms 為刷新目標，或累積達 16 Ki 字元時排入顯示佇列。組合批次的暫存上限為門檻加一個合法 RX 區塊；控制字元跳脫後仍有界。20 ms 不是系統即時性保證，會受排程與終端速度影響。跨區塊 UTF-8、沒有換行的文字、Replay／Live 標示與訂閱終止均需測試。
 

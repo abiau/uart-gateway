@@ -119,6 +119,48 @@ class GoClientTests(console_fixture.WorkbenchProcessTests):
         self.assertEqual(rx[-1]["data"]["next_offset"], str(len(raw) * 192))
         self.assertEqual(self.device.write_count, 0)
 
+    async def test_dual_small_frame_replay_to_file_preserves_all_bytes(self):
+        payload = (b"boot\x00\xff\r\n" + b"x" * 137)
+        count = 2048
+        for cid in ("a", "b"):
+            for _ in range(count):
+                self.gateway.channels[cid].ingest(payload)
+        path = self.root / "dual-replay.jsonl"
+        with path.open("wb") as output:
+            process = await asyncio.create_subprocess_exec(*self.command("watch", "a", "b", "--replay"),
+                stdout=output, stderr=asyncio.subprocess.PIPE)
+            pending = bytearray()
+            offsets = {"a": 0, "b": 0}
+            content = {"a": bytearray(), "b": bytearray()}
+            try:
+                with path.open("rb") as reader:
+                    async with asyncio.timeout(15):
+                        while any(value < len(payload) * count for value in offsets.values()):
+                            pending.extend(reader.read(65536))
+                            while b"\n" in pending:
+                                raw, _, tail = pending.partition(b"\n")
+                                pending = bytearray(tail)
+                                event = json.loads(raw)
+                                if event.get("event") != "rx":
+                                    continue
+                                cid, data = event["channel_id"], event["data"]
+                                self.assertEqual(int(data["offset"]), offsets[cid])
+                                decoded = base64.b64decode(data["data_b64"])
+                                content[cid].extend(decoded)
+                                offsets[cid] += len(decoded)
+                            if process.returncode is not None:
+                                self.fail((await process.stderr.read()).decode(errors="replace"))
+                            await asyncio.sleep(0.01)
+                process.send_signal(signal.SIGINT)
+                self.assertEqual(await asyncio.wait_for(process.wait(), 5), 130)
+            finally:
+                if process.returncode is None:
+                    process.kill()
+                    await process.wait()
+            for data in content.values():
+                self.assertEqual(bytes(data), payload * count)
+        self.assertEqual(self.device.write_count + self.peer.write_count, 0)
+
     async def test_timeout_blocks_new_command_then_query_recovers_without_tx(self):
         await self.ready(); self.device.mode = "begin"
         code, out, err = await self.cli("exec", "a", "slow", "--timeout", "0.1")

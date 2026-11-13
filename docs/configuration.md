@@ -45,6 +45,8 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 
 此設定是本機部署工具資料，不新增線上欄位。互動步驟與 PATH／容器重建前提見 [認證流程](authentication.md)。
 
+SSH 存活檢查每 15 秒一次，未回應次數採 `max(3, ceil(connect_timeout / 15))`，預設 12 次。部分主機在較慢的登入期間也不回應存活檢查，因此不能沿用三次、約 45 秒的固定門檻，提前截斷已允許的登入時間。就緒總期限與 Gateway 應用層心跳仍各自生效，不自動重建 Tunnel。
+
 ### Go Client 本機資料與界限（2026-11-13）
 
 固定來源與 client.json 沿用下節；預設 read，明確 TX 命令選 tx，不從 read／manage 提權或失敗降級。私有檔須為目前 UID、普通檔且無群組／其他人權限，拒絕末端符號連結與 FIFO。新目錄 0700、新檔 0600，執行檔／入口 0700；既有目錄不得允許群組／其他人寫入。
@@ -52,12 +54,14 @@ Gateway 命令入口預設以 INFO 等級將時間與 Channel 狀態日誌寫到
 | 參數／資料 | Go 實作界限 |
 | --- | --- |
 | RPC／連線 | TCP 建立與單次 RPC 各最多 5 秒；hello＋auth 共用 5 秒；依 Hello 啟動心跳，不自動重連 |
-| SDK／顯示佇列 | 各 256 筆／262144 bytes；超限明示連續性失效並停止，慢輸出管線寫入期限 2 秒 |
+| SDK／顯示佇列 | 各 256 筆／262144 bytes；SDK 歷史重播暫滿最多等待 1 秒釋放額度，即時／其他事件超限或重播持續無消費時明示失效。顯示暫滿最多等待 2 秒，持續跟不上或輸出寫入逾時仍失敗；容量包含寫入中資料 |
 | watch | 一至四路，每路獨立連線；duration=0 持續，有限值最大 86400 秒；JSON 保留原始 Base64，--text 跳脫控制字元，--terminal 僅允許安全顏色及單路 CR／退格。單路故障隔離，結束時任何路徑失敗回 2；Go 工作台 Ctrl+C 返回時查詢新清單，Enter 仍需明確開始 |
 | go-receipts/<連線名>/<ID>.json | Go 收據最多 256 份、每份 16 KiB；傳送前保存，結果不明只查原 ID。無固定名稱時為 direct，與 Python 收據分開 |
 | go-shell-targets/<連線名>/<Channel>.json | 人工 shell-ready 核對，最多 8192 bytes，含本次目標／Instance／Principal／核對世代／換行；不自動登入或 Confirm |
 | go-locks/<連線名>/<Channel>.lock | 同一 Go Client 設定來源的跨程序 flock，拒絕同路重疊操作；Server Lease 仍負責跨來源／實作互斥 |
 | exec／exec-status | timeout 預設 10 秒、0.1～300 秒；wait 預設 0（僅原 Cursor 重播，最多等待 10 秒），明確 wait 最大 300 秒；max-output 預設 65536、1～1048576 bytes。單次 TX 含包裝／換行仍最多 4096 bytes；超限拒絕，不拆送 |
+
+Go SDK 每八框或 16 KiB 交回排程，事件已有八筆積壓時逐框交接；重播暫滿時以 TCP 背壓等待有界的消費進度，不新增應用層重送。顯示也讓 Writer 取得執行機會，暫滿時不持鎖等待；Gateway 的 UART Reader 與其他 Client 不依賴此連線的顯示 Writer。沒有擴大佇列、丟棄未告警資料或自動重連。
 
 
 本機 `local`／`start` 沿用原本的臨時或明確設定來源。本節是遠端固定連線：Server 的 auth.authenticate、權限欄位、Confirm／Lease／TX 及線上版本不變。完整操作見 [認證初始化](authentication.md)。

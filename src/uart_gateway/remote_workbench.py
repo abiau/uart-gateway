@@ -126,7 +126,7 @@ def run_remote_workbench(connect: Callable[[], Awaitable[Client]], monitor: Call
                            and len(suggested) <= (2 if monitor_group else 1)
                            and all(c["state"] == "ready" for c in channels if c["channel_id"] in preferred_channels))
             if can_suggest:
-                prompt = "輸入編號；Enter 使用上次選擇 " + ",".join(suggested) + "；R 更新；Q 離開："
+                prompt = "輸入 Channel 編號；Enter 使用上次選擇 " + ",".join(suggested) + "；R 更新；Q 離開："
             choice = ask(prompt)
             if not choice and can_suggest:
                 choice = ",".join(suggested)

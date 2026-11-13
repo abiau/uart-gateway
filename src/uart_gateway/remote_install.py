@@ -140,8 +140,10 @@ def install_payload(target: RemoteTarget, *, name: str, root: Path, hold: bool) 
 
 
 def ssh_arguments(target: RemoteTarget, *, trust=False, forward: int | None = None) -> list[str]:
+    # 部分主機登入期間也不回應存活檢查，不能早於允許的登入期限結束。
+    alive_count = max(3, (target.connect_timeout + 14) // 15)
     result = ["ssh", "-T", "-p", str(target.ssh_port), "-o", "StrictHostKeyChecking=" + ("ask" if trust else "yes"),
-              "-o", f"ConnectTimeout={target.connect_timeout}", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3"]
+              "-o", f"ConnectTimeout={target.connect_timeout}", "-o", "ServerAliveInterval=15", "-o", f"ServerAliveCountMax={alive_count}"]
     if forward is not None:
         endpoint("127.0.0.1", forward)
         result += ["-o", "ExitOnForwardFailure=yes", "-R", f"127.0.0.1:{target.port}:127.0.0.1:{forward}"]

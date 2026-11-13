@@ -207,3 +207,48 @@ func TestRequestTimeoutIsNotRetried(t *testing.T) {
 		t.Fatal("逾時後自動重送")
 	}
 }
+
+func TestReplayBurstWaitsWithinBudgetAndStopsWithoutConsumer(t *testing.T) {
+	for _, consume := range []bool{true, false} {
+		t.Run(fmt.Sprint(consume), func(t *testing.T) {
+			c, e := connectFixture(t, []string{"read"}, func(conn net.Conn, r *bufio.Reader) {
+				enc := json.NewEncoder(conn)
+				for i := 0; i < 1000; i++ {
+					if e := enc.Encode(Object{"type": "event", "event": "rx", "channel_id": "a", "binding_revision": "1", "stream_epoch": "epoch", "timestamp_utc": "2026-11-13T00:00:00.000Z", "data": Object{"delivery": "replay", "offset": fmt.Sprint(i)}}); e != nil {
+						return
+					}
+				}
+				r.ReadByte()
+			})
+			if e != nil {
+				t.Fatal(e)
+			}
+			defer c.Close()
+			if !consume {
+				deadline := time.Now().Add(2 * time.Second)
+				for c.T.Err() == nil && time.Now().Before(deadline) {
+					time.Sleep(time.Millisecond)
+				}
+				if c.T.Err() == nil {
+					t.Fatal("重播消費者未讀取時沒有有界停止")
+				}
+				return
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			for i := 0; i < 1000; i++ {
+				event, e := c.T.Next(ctx)
+				if e != nil || String(event.Data, "offset") != fmt.Sprint(i) {
+					t.Fatalf("重播順序或接收失敗：%d，%v", i, e)
+				}
+				c.T.mu.Lock()
+				used := c.T.used
+				c.T.mu.Unlock()
+				if used > 262144 || len(c.T.events) > 256 {
+					t.Fatal("重播擴大了事件配額")
+				}
+				time.Sleep(time.Millisecond)
+			}
+		})
+	}
+}
