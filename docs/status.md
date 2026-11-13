@@ -4,6 +4,33 @@
 
 更新日期：2026-11-13（Asia/Taipei）。本文件是實際進度、未決事項及驗證證據的唯一來源，不取代架構、設定或線上格式規格。
 
+## 實體 UART／原生 Client 自動驗收與操作改善（2026-11-13）
+
+使用者要求自動測試實體 UART、改善必要的 UI／效能／操作步驟並建立 SSH Tunnel，排除 USB 插拔；確認 COM3／COM4、CR 及提供必要登入資訊。**Implemented**：Python TUI 人工重開成功後立即同步該窗格的新世代，解除舊暫停快照，不再等待下一次 100 ms 畫面計時器。Go 文字工作台在使用者 Ctrl+C 返回時查詢新清單，保留選擇，Enter 可再次監看；自然故障仍等待 R，不自動重連或開始 RX。多路 watch 的單路故障保持另一路接收，結束時回 2，避免部分失敗回成功；初次握手尚未完成也能 Ctrl+C 取消，回 130。Protocol／Gateway 核心、TX 不重送與角色規則不變。
+
+**Tested**：Windows／Python 3.15.0 首輪完整 496 項為 415 通過、80 平台略過、1 失敗，重現既有 test_reopen_confirmation_and_slow_driver_keep_peer_alive 的暫停快照未即時解除。修正產品的世代畫面同步後，該案例通過，完整同組 496 項為 416 通過、80 略過，未以延長測試等待修復。後續 Go 專用新案例另於 WSL／Python 3.14.8 對最終原生 ELF 執行完整 17 項，全數通過，含真 TCP／Fake Serial／POSIX PTY、連續兩輪 Enter 再監看、故障不自動查詢、單路故障仍收到同伴資料／回 2，以及初次 hello 不回覆時在兩秒內取消／回 130。Go vet、Go 單元與 git diff --check 通過。既有模擬裝置失效案例仍屬回歸；未做實體 USB 插拔。
+
+**Verified（限定下列現場條件）**：使用原 tx-bench 的固定秘密與部署 ID，在使用者私有目錄建立本次 Gateway 副本，以兩個 CP210x、115200／8N1、CR、無流控、DTR／RTS=false 開啟 COM3／COM4。原 gateway.toml、固定角色範圍與秘密檔未改寫；本次測試副本授權兩路，沒有以管理憑證代替 TX。自動建立 Windows Loopback 18081 → d3s1 主機 Loopback 18081 的反向 SSH，安裝／認證原生 Client；不是 dxan 容器驗收。只中斷自己建立的 Tunnel／程序，原三條 SSH 分頁保留。
+
+| 項目 | 本輪結果與證據 |
+| --- | --- |
+| COM3 枚舉／開啟 | 端點與序號一致、ready、可獨占開啟；一次 CR 的 Driver 接受成功，但全程零 RX，不能視為板子通訊成功 |
+| COM4 RX／回顯 | 持續收到每秒時間；CR 與一次 uname -a 有回顯，但沒有 Linux 結果或可用 Shell 提示，不宣稱命令完成 |
+| 角色／舊脈絡 | 真 Gateway 的 read 角色對 lease.acquire、channel.reopen_rx 均回 PERMISSION_DENIED；舊管理快照回 STALE_BINDING，未重送 |
+| 單路軟體重開 | 經 SDK 對 COM3 Rebind／reopen，新 Epoch、未 Confirm；一次 reopen 約 11.84 ms。COM4 Epoch 不變且 RX 繼續。這不是 USB 插拔驗收 |
+| 租約 | 兩個實體通道零 UART bytes 的互斥／獨立持有、超過初始 15 秒 TTL 仍續約、第二 Owner 得 LEASE_BUSY、結束回 idle 通過 |
+| 真 SSH 故障／恢復 | Go watch 回 2；Gateway Instance、COM4 Epoch 保持且 RX 繼續；由測試控制器明確重建本次 Tunnel，重新訂閱及重播恢復。重播＋即時兩組分別 4454、4930 bytes，另有中斷前 204 bytes，均與 Windows SDK 原位移範圍逐 byte／SHA-256 相符 |
+| 真 Linux 終端 | 在 d3s1 的 POSIX PTY，以 COM4 實體資料完成兩輪選通道／接收／Client SIGINT／直接 Enter 再監看／Q，退出 0；最終執行檔再驗同流程通過。SIGINT 只送 Client，不是 UART Ctrl+C |
+| 五分鐘接收 | 兩輪各約 300 秒，COM4 位移連續；第二輪從該 Epoch 位移 0 至 11526，380 個 RX 訊框，原生 Go／Windows SDK／錄製的同範圍 bytes 與 SHA-256 一致。不是電氣層零遺失、雙板持續接收或新版 30 分鐘驗收 |
+| 完整錄製／輪替 | 第二輪以正常 Gateway 啟動順序先啟用錄製。COM4 最終三分段、535 個 RX 區塊、16320 bytes，全部雜湊／序號／位移／正常收尾通過，no_known_gap；其中上述 11526 bytes 與 Go 相符。COM3 一分段且零 RX，檔案正常不代表板子有資料 |
+| 中途錄製的缺口 | 前一份協調腳本在接收開始後才掛錄製器，檔案正確回 incomplete；未當作完整通過。另一次先切換世代才嘗試舊 Ring 比對，收到世代拒絕；已以上述正常啟動錄製的新一輪完成完整核對 |
+
+**效能量測**：d3s1 的 Go 列通道（程序啟動、固定憑證認證與查詢）15 次，中位數 38.63 ms、P95 68.89 ms，不含 SSH 登入等待。雙路訂閱但只有 COM4 持續輸出的五分鐘監看，兩輪實際 Go 程序 VmHWM 峰值分別約 9500、9296 KiB；負載為現場約每秒一行，未量測 UART 滿速／高密度上限。原生接收未見需要大幅改寫的效能瓶頸，本輪改進集中於 TUI 管理完成後的立即畫面同步與減少返回選單的步驟。
+
+**產物／現場狀態**：最終 dist/uart-linux-amd64 SHA-256 為 `25259739d0459a2903859620706c98702eb96ff6b74e6149024ae1bd05c9bf8e`。五分鐘接收輪使用此前的介面修正版；後續只收斂選單故障／取消路徑，接收 SDK 未變，最終版已過 17 項整合並在現場真 PTY 再驗。測試紀錄及錄製留在使用者私有的 %LOCALAPPDATA%/uart-gateway/acceptance，完整錄製輪為 20261113-055002，原始驗收協調程式在忽略的 build 下。最後另開可由人以 R／Q 控制的 Gateway 視窗，兩路開啟、d3s1 Tunnel 維持連線，Linux 可執行 uart。其狀態參照為私有 acceptance-active.json；這是本次測試程序，不改原啟動器的程序所有權，也未建立系統服務。
+
+**尚未完成／待現場資訊**：COM3 上電／TX／RX／GND 是否就緒待使用者回覆。COM4 目前疑似前景程式持續輸出，詢問是否允許一次 UART Ctrl+C 尚未收到回答，因此沒有送 Ctrl+C、嘗試登入或再次排入 uname。未執行本輪實體 Shell 完成／非零／短逾時查詢、雙板同時 RX 或高密度輸出；對應功能的模擬／PTY 測試通過，不擴大為實機成功。未操作 USB、電源、韌體或系統性指令，登入資訊未寫入版本庫或一般日誌。rd1-4／rd-192 的既有 Terminal 分頁仍未能由控制工具存取，未聲稱兩台實機通過；舊版 Ubuntu 容器證據沿用前節。使用者後續以「commit/push」授權本輪修正、測試與文件提交並推送至 origin/work；交付版本以 Git 紀錄為準。本次保存沿用上述測試證據，未重跑測試或新增硬體操作；原備份檔、私人驗收資料、執行檔與錄製均不納入提交。
+
 ## Linux Go 獨立 Client（2026-11-13）
 
 **Implemented**：依使用者「開始實作並測試」授權新增 Go 共用 SDK、CLI 與文字工作台。Windows Python Gateway／Serial／Recorder、原 SDK／TUI 與 Protocol V1 保留。原生端涵蓋固定憑證／角色、channels、RX／重播／最多四路來源顯示、人工管理、TX 精確預覽／收據與查詢、人工 shell-ready、單次 exec／exec-status。維持 Instance／Revision／Epoch 核對、Confirm／Lease／Fencing、傳送前保存收據、未知不重送；沒有自動登入、Ctrl+C UART bytes 或韌體操作。Go 收據及 Shell 核對獨立保存，不把 Python 的舊操作資格帶入新實作。

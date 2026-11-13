@@ -183,9 +183,66 @@ class GoClientTests(console_fixture.WorkbenchProcessTests):
         await self.expect("menu-RX")
         self.process.send_signal(signal.SIGINT)
         await self.expect("監看已停止")
+        await self.expect("Enter 沿用本次清單中的上次選擇 1")
+        self.answer("")
+        await self.expect("訂閱已就緒")
+        self.device.inject(b"menu-RX-again\n")
+        await self.expect("menu-RX-again")
+        self.process.send_signal(signal.SIGINT)
+        await self.expect("監看已停止")
         await self.finish()
         await eventually(lambda: not self.gateway.sessions)
         self.assertTrue(self.gateway.listener.is_serving())
+
+    async def test_one_failed_channel_keeps_peer_receiving_and_returns_incomplete(self):
+        task = asyncio.create_task(self.cli("watch", "a", "b", "--duration", "1.5", "--text"))
+        await eventually(lambda: all(self.gateway.channels[c].subscriptions for c in ("a", "b")))
+        self.device.close()
+        await eventually(lambda: self.gateway.channels["a"].state == "lost")
+        self.peer.inject(b"healthy-peer-after-failure\n")
+        code, out, err = await task
+        self.assertEqual(code, 2, err)
+        self.assertIn(b"healthy-peer-after-failure", out)
+        self.assertTrue(self.peer.opened)
+        self.assertEqual(self.peer.write_count, 0)
+
+    async def test_menu_fault_waits_for_explicit_refresh_instead_of_reconnecting(self):
+        self.start(self.command())
+        await self.expect("輸入一至四個不同編號")
+        self.answer("1")
+        await self.expect("訂閱已就緒")
+        self.device.close()
+        await self.expect("R 重新查詢後再選擇")
+        await eventually(lambda: not self.gateway.sessions)
+        self.answer("1")
+        await self.expect("請選擇目前清單中的不同編號")
+        self.assertFalse(self.gateway.sessions)
+        await self.finish()
+
+    async def test_watch_can_cancel_while_initial_handshake_is_stalled(self):
+        entered = asyncio.Event()
+        async def stalled(reader, writer):
+            try:
+                await reader.readline()
+                entered.set()
+                await reader.read()
+            finally:
+                writer.close()
+                await writer.wait_closed()
+        server = await asyncio.start_server(stalled, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        p = await asyncio.create_subprocess_exec(*self.command("--port", str(port), "watch", "a"),
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            await asyncio.wait_for(entered.wait(), 3)
+            p.send_signal(signal.SIGINT)
+            await asyncio.wait_for(p.communicate(), 2)
+            self.assertEqual(p.returncode, 130)
+            self.assertEqual(self.device.write_count, 0)
+        finally:
+            if p.returncode is None: p.kill(); await p.wait()
+            server.close()
+            await server.wait_closed()
 
     async def test_binary_send_preview_status_and_partial_write_never_report_success(self):
         for partial in (False, True):

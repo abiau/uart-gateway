@@ -79,6 +79,16 @@ func (s *sink) put(b []byte, diagnostic bool) error {
 }
 func (s *sink) close() { close(s.queue); <-s.finished }
 func (a *app) watchCommand(ctx context.Context, s client.Settings, args []string) (int, error) {
+	operation, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-a.interrupt:
+			cancel()
+		case <-operation.Done():
+		}
+	}()
+	ctx = operation
 	f := flags("watch")
 	duration := f.Float64("duration", 0, "")
 	replay := f.Bool("replay", false, "")
@@ -96,6 +106,9 @@ func (a *app) watchCommand(ctx context.Context, s client.Settings, args []string
 	}
 	c, e := s.Connect(ctx)
 	if e != nil {
+		if ctx.Err() != nil {
+			return 130, ctx.Err()
+		}
 		return 1, e
 	}
 	channels := []client.Channel{}
@@ -152,15 +165,19 @@ func (a *app) watch(ctx context.Context, s client.Settings, channels []client.Ch
 			diagnostic := func(message string) { _ = sink.put([]byte(prefix+message+"\n"), true) }
 			c, e := s.Connect(run)
 			if e != nil {
-				diagnostic(e.Error())
-				failures <- e
+				if run.Err() == nil {
+					diagnostic(e.Error())
+					failures <- e
+				}
 				return
 			}
 			defer c.Close()
 			sub, e := c.Subscribe(run, ch, instance, replay, "")
 			if e != nil {
-				diagnostic(e.Error())
-				failures <- e
+				if run.Err() == nil {
+					diagnostic(e.Error())
+					failures <- e
+				}
 				return
 			}
 			cursor, e := client.NewCursor(sub, c.Limits["max_rx_chunk_bytes"])
@@ -254,6 +271,9 @@ func (a *app) watch(ctx context.Context, s client.Settings, channels []client.Ch
 	if term {
 		fmt.Fprint(os.Stdout, "\x1b[0m")
 	}
+	if len(failures) > 0 {
+		return 2, nil
+	}
 	if run.Err() != nil {
 		if ctx.Err() != nil {
 			return 130, ctx.Err()
@@ -262,9 +282,6 @@ func (a *app) watch(ctx context.Context, s client.Settings, channels []client.Ch
 			return 0, nil
 		}
 		return 130, nil
-	}
-	if len(failures) == len(channels) {
-		return 2, nil
 	}
 	return 0, nil
 }
@@ -375,13 +392,18 @@ func (a *app) menu(ctx context.Context, s client.Settings) (int, error) {
 			}
 		}
 		fmt.Fprintln(os.Stderr, "開始歷史＋即時監看；Ctrl+C 返回清單。畫面有界，長期資料請由 Gateway 錄製。")
-		_, e = a.watch(ctx, s, selected, instance, true, true, true, 0)
+		code, e := a.watch(ctx, s, selected, instance, true, true, true, 0)
 		if e != nil && ctx.Err() != nil {
 			return 130, e
 		}
-		fmt.Fprintln(os.Stderr, "監看已停止，Gateway 繼續執行；R 重新查詢後再選擇。")
-		channels = nil
-		last = nil
+		if code == 130 {
+			fmt.Fprintln(os.Stderr, "監看已停止，Gateway 繼續執行；正在更新目前通道清單。")
+			refresh = true
+		} else {
+			fmt.Fprintln(os.Stderr, "資料流已停止，Gateway 繼續執行；R 重新查詢後再選擇。")
+			channels = nil
+			last = nil
+		}
 	}
 }
 func filepathPreference(s client.Settings) string {

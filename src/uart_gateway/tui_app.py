@@ -271,6 +271,10 @@ class UARTApp(App[int]):
             async def reopen():
                 self.note("正在重開 " + label(port) + " 的 RX；其他窗格繼續接收。")
                 await self.controller.reopen(cid, selected)
+                # 新世代啟動後立即解除該窗格的暫停快照，不等下一次畫面計時器。
+                for widget in self.query(UARTPane):
+                    if widget.cid == cid:
+                        widget.sync(widget.number - 1 == self.selected)
             def confirm(accepted):
                 if accepted:
                     self.operation(reopen)

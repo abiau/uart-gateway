@@ -49,6 +49,8 @@ RX 錄製切片已加入 Gateway 端有界 Queue、分段、每 Capture 容量�
 
 ## Phase 2：多設備與互動工具
 
+2026-11-13 使用者另授權實體 UART 自動驗收、UI／效能／步驟改善與自動建立 SSH Tunnel，排除 USB 插拔。驗收包含固定角色、兩路隔離、重播／錄製與完整性、租約、已知 Shell 的單次命令、只中斷本次 Tunnel 的故障／恢復、真終端返回及效能量測；無資料、無有效 Shell 或未確認的控制操作不得記為通過。已修正 Python TUI 新世代暫停畫面延後解除，Go 返回清單可直接 Enter 再監看，單路失敗會保留部分接收退出碼。現場尚未完成項目以 status 為準。
+
 2026-11-13 使用者授權 Linux 獨立 Client 實作及測試：Go 共用 SDK／CLI／文字工作台、固定來源相容、RX／重播／管理及原 TX／Shell 保護，Windows 預設安裝無 Linux Python 依賴的 ELF。驗收分為 Go 單元、真 Python Gateway／POSIX 終端、Ubuntu 14.04／16.04 使用者環境容器，以及 d3s1／rd1-4／rd-192 真主機；容器不代表舊核心通過。rd1-4 為使用者更正的 Ubuntu 16.04，其他版本以實際查詢為準。Textual 多窗格／離線工具移植、ARM／32 位、三目的地同時管理及實體 UART TX 不屬本輪完成聲明，證據見 status。
 
 2026-11-12 使用者授權進一步簡化 Windows／Linux 操作。切片包括 Linux `uart` 單一入口、依現場清單預選上次通道、首次設定與連線錯誤引導，以及 Windows 固定憑證精靈、選 UART 與 Gateway／SSH 啟動。驗收：取消不傳憑證／不開 Serial；換 COM／新增第二路不生新 Token，TX 範圍保留；安裝角色明確、衝突不覆蓋、秘密不進 argv／Log；Linux 無虛擬環境仍能認證監看；舊偏好不跳過目前脈絡核對；SSH 中斷時 RX 保持、人工 R 恢復及 Q 清理本次資源。Python／PATH、既有入口與容器 host 網路前提需明示。模擬 SSH／真本機 TCP 與公司 SSH／實體 UART 分開驗收，不擴充 Protocol、匿名、容器網路或 TX 自動化。

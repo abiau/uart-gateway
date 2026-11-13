@@ -14,7 +14,7 @@ uart
 ~/.local/bin/uart
 ```
 
-輸入通道編號，例如 `1` 或 `1,2`，核對本次清單後開始歷史＋即時監看。Ctrl+C 返回選單；R 重新查詢連線與目標；Q 離開 Client。Client 不會自動重連或重開 UART，退出不停止 Windows Gateway。
+輸入通道編號，例如 `1` 或 `1,2`，核對本次清單後開始歷史＋即時監看。Ctrl+C 返回後立即查詢目前通道，Enter 可沿用本次清單中仍就緒的上次選擇，不必再先按 R。R 可重新查詢失敗的連線與目標；Q 離開 Client。更新清單不自動開始 RX 或重開 UART，開始前仍使用新快照核對，退出不停止 Windows Gateway。
 
 ## 腳本及 Agent
 
@@ -26,6 +26,8 @@ uart --access manage reopen ch_uart_1
 ```
 
 預設 watch 輸出 Protocol 事件 JSON，RX 的 data_b64 保留精確 bytes。文字模式適合閱讀，無法取代原始 bytes；原生終端模式須在 TTY 明確使用 --terminal。多路文字依來源加標記，CR／退格跳脫，不提供 Python 多窗格的獨立終端模擬。資料缺口、Epoch／目標變更或慢輸出超限會明示停止，不能把已顯示內容當作完整錄製。
+
+多路 watch 的單路失效不停止健康通道；結束時任一路失敗會回退出碼 2，方便腳本辨識部分接收，不因另一通道仍有資料而回報全部成功。
 
 管理操作需要人工核對。單次傳送會先預覽精確 bytes 與換行，再由人輸入 Y：
 

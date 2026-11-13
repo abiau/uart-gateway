@@ -6,6 +6,8 @@
 
 Go 單元涵蓋重複 JSON Key／Unicode／深度／U64／Base64、亂序回覆、角色錯配、事件溢位、逾時不重試、RX 脈絡、控制碼／標記解析、Linux 私有來源與衝突、flock、收據終態及保留時間遞減、損壞偏好與慢輸出有界停止。建置方式見 [Go Client](go-client.md)。
 
+Go 整合另驗單路故障時另一路繼續接收、整次退出碼 2，以及真 PTY 的 Ctrl+C 返回後直接 Enter 使用新清單再監看，無須 R。Python TUI 的單路重開在管理操作完成時立即同步該窗格世代，既有暫停／慢 Driver／另一通道接收案例檢查暫停快照已解除，不以延長測試等待掩蓋畫面延後更新。
+
 Linux 設 `PYTHONPATH=src UART_GO_BINARY=<本輪 ELF 絕對路徑>` 後執行 `python3 -m unittest tests.integration.test_go_client -v`，使用原 Python Gateway／Fake Serial／Fake Shell、真 TCP 與 POSIX PTY，驗證二進位重播／雙路、人工核對零 TX、單次精確傳送／部分寫入、Shell 完成／非零／截斷／逾時／取消／舊 Epoch、原操作查詢零重送、工作台 Ctrl+C 收尾、安裝雜湊／入口保護及實際認證才 READY。
 
 舊使用者環境安裝可明確設定 UART_GO_INSTALL_IMAGE=docker.io/library/ubuntu:14.04 或 :16.04，只執行 GoInstallTests 的安裝／壞雜湊兩案例；測試需可用 Podman，使用隔離 HOME 及 network=none。不要在這個模式執行需要主機 Gateway 網路的 hold 測試。容器共用執行主機核心，不能當作舊 Ubuntu 實機證據。

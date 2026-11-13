@@ -12,6 +12,10 @@ Phase 0 基線已核准，Phase 1 已實作 Gateway、SDK／CLI、本機只讀�
 
 ## 開始工作前的閱讀順序
 
+實機驗收保存授權（2026-11-13）：使用者後續以「commit/push」明確授權本輪 UI／操作流程修正、測試及實機驗收文件提交並推送至 origin/work。保存紀錄不代表 COM3 接收或尚待確認的 Shell／UART Ctrl+C 已通過；私人驗收資料、執行檔、錄製與原備份檔不納入提交。
+
+實機自動驗收授權補充（2026-11-13）：使用者要求自動化測試接上的實體 UART，排除 USB 插拔，並允許依量測改善 UI、效能與操作步驟，以及建立 SSH Tunnel。使用者確認 COM3／COM4 與 CR；沿用固定來源，測試 Gateway 副本可覆蓋兩路，原部署／角色設定不覆寫。登入資訊只供必要的現場操作，不進文件、一般日誌或版本庫；實際登入／Shell／TX 結果依提示與證據判定，不把回顯或 Driver 接受當完成。不因本輪要求自動重送不明命令；UART Ctrl+C 仍待明確回覆，Client 自身的 Ctrl+C 不受此限制。故障測試只停止本次建立的 Tunnel／程序，既有三條 SSH 分頁保留；實機、模擬與未測條件分開記錄。
+
 Linux 獨立 Client 授權補充（2026-11-13）：使用者在討論僅改寫 Linux Client、沿用 Windows Gateway 與 Protocol 後要求開始實作並測試。採 Go 標準函式庫、Linux amd64／GOAMD64=v1／停用 cgo，所有原生 CLI／文字介面共用 go-client/client；保留 Python Gateway／SDK／TUI。原角色、Expected Context、Confirm／Lease／Fencing、未知不重送及人工 shell-ready 規則不變。Windows 安裝預設傳原生 ELF 與固定憑證；原 Python 安裝僅明確相容模式，不失敗降級。使用者允許利用既有 SSH 測試，d3s1 需容許超過 70 秒登入；rd1-4 更正為 Ubuntu 16.04。舊版容器、真主機及實體 UART 證據分開記錄。使用者後續以「commit/push」明確授權本輪程式、測試與文件提交並推送至 origin/work。
 
 遠端操作簡化授權補充（2026-11-12）：使用者於討論 Windows 一次設定、固定憑證與 Linux 單一入口後明確要求「請開始實作」。本輪沿用 SDK／Protocol／角色權限，新增 uart 預設遠端入口、通道偏好、Windows 互動設定與固定 Gateway／SSH 啟動。SSH 安裝使用明確目的地與角色，保留主機指紋核對，不覆蓋使用者自己的 Linux 入口，不修改容器網路／掛載；預設讀取，TX 明確選用且保留原核對／Confirm／Lease。換選 UART 保留固定秘密，新增本機通道仍上限兩路，TX 範圍不自動擴大；公司 SSH 與實體 UART 驗證另列。使用者後續以「commit/push」明確授權本輪功能、前置檢查逾時修正、測試與文件提交並推送至 origin/work。
