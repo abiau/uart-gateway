@@ -1,4 +1,4 @@
-"""exec／monitor／status／interrupt；只使用標準函式庫，可在 Linux 或 Windows 執行。"""
+"""exec／monitor／status／interrupt／terminal；只使用標準函式庫，支援 Linux 與 Windows。"""
 
 import argparse
 import codecs
@@ -10,8 +10,9 @@ import re
 import select
 import socket
 import sys
+import time
 
-from protocol import DEFAULT_HOST, DEFAULT_PORT, MAX_FRAME, decode, encode, markers, read_message, unb64, validate_exec
+from protocol import DEFAULT_HOST, DEFAULT_PORT, b64, encode, iter_frames, markers, read_message, unb64, validate_exec
 
 
 def safe_text(text):
@@ -33,26 +34,179 @@ def monitor_batches(sock):
         data = sock.recv(65536)
         if not data:
             raise ValueError("Monitor 連線中斷" + ("，NDJSON 訊息不完整" if pending else ""))
-        pending.extend(data)
         batch = []
-        while True:
-            end = pending.find(b"\n")
-            if end < 0:
-                break
-            try:
-                if end + 1 > MAX_FRAME:
-                    raise ValueError("NDJSON 訊息過大")
-                message = decode(bytes(pending[:end + 1]))
-            except (ValueError, UnicodeError, RecursionError):
-                if batch:
-                    yield batch
-                raise
-            del pending[:end + 1]
-            batch.append(message)
+        try:
+            batch.extend(iter_frames(pending, data))
+        except (ValueError, UnicodeError, RecursionError):
+            if batch:
+                yield batch
+            raise
         if batch:
             yield batch
-        if len(pending) > MAX_FRAME:
-            raise ValueError("NDJSON 訊息過大")
+
+
+def raw_writer():
+    decoder = None
+    if os.name == "nt" and sys.stdout.isatty():
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        sys.stdout.reconfigure(newline="")
+    def write(data, *, final=False):
+        if data or (final and decoder is not None):
+            if decoder is not None:
+                sys.stdout.write(decoder.decode(data, final=final))
+                sys.stdout.flush()
+            else:
+                sys.stdout.buffer.write(data)
+                sys.stdout.buffer.flush()
+    return write
+
+
+@contextmanager
+def terminal_keyboard():
+    """原生鍵盤輸入，不做本機 Echo；離開時還原主控台模式。"""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ValueError("terminal 需要互動終端，不能使用管線；只讀輸出請用 monitor")
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes as w
+        class Key(ctypes.Structure):
+            _fields_ = [("down", w.BOOL), ("repeat", w.WORD), ("vk", w.WORD), ("scan", w.WORD),
+                        ("char", w.WCHAR), ("control", w.DWORD)]
+        class EventData(ctypes.Union):
+            _fields_ = [("key", Key), ("padding", ctypes.c_byte * 16)]
+        class Event(ctypes.Structure):
+            _fields_ = [("kind", w.WORD), ("data", EventData)]
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetStdHandle.argtypes, kernel.GetStdHandle.restype = [w.DWORD], w.HANDLE
+        kernel.GetConsoleMode.argtypes = [w.HANDLE, ctypes.POINTER(w.DWORD)]
+        kernel.SetConsoleMode.argtypes = [w.HANDLE, w.DWORD]
+        kernel.GetNumberOfConsoleInputEvents.argtypes = [w.HANDLE, ctypes.POINTER(w.DWORD)]
+        kernel.ReadConsoleInputW.argtypes = [w.HANDLE, ctypes.POINTER(Event), w.DWORD, ctypes.POINTER(w.DWORD)]
+        kernel.FlushConsoleInputBuffer.argtypes = [w.HANDLE]
+        handle = kernel.GetStdHandle(-10)
+        original = w.DWORD()
+        if not kernel.GetConsoleMode(handle, ctypes.byref(original)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        # 關閉 Ctrl+C 系統處理、行輸入、Echo、Quick Edit、VT Input；自行轉換按鍵。
+        if not kernel.SetConsoleMode(handle, (original.value & ~(0x01 | 0x02 | 0x04 | 0x40 | 0x200)) | 0x80):
+            raise ctypes.WinError(ctypes.get_last_error())
+        unicode_decoder = codecs.getincrementaldecoder("utf-16-le")("replace")
+        special = {0x25: b"\x1b[D", 0x26: b"\x1b[A", 0x27: b"\x1b[C", 0x28: b"\x1b[B",
+                   0x24: b"\x1b[H", 0x23: b"\x1b[F", 0x2e: b"\x1b[3~", 0x2d: b"\x1b[2~",
+                   0x21: b"\x1b[5~", 0x22: b"\x1b[6~", 0x70: b"\x1bOP", 0x71: b"\x1bOQ",
+                   0x72: b"\x1bOR", 0x73: b"\x1bOS"}
+        def read():
+            count = w.DWORD()
+            if not kernel.GetNumberOfConsoleInputEvents(handle, ctypes.byref(count)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            if not count.value:
+                return b""
+            events = (Event * min(count.value, 64))()
+            if not kernel.ReadConsoleInputW(handle, events, len(events), ctypes.byref(count)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            data = bytearray()
+            for event in events[:count.value]:
+                key = event.data.key
+                if event.kind != 1 or not key.down:
+                    continue
+                if key.char != "\x00":
+                    text = unicode_decoder.decode(key.char.encode("utf-16-le", "surrogatepass"))
+                    raw = text.encode("utf-8")
+                    if key.control & 3 and not key.control & 12 and text:
+                        raw = b"\x1b" + raw
+                else:
+                    raw = special.get(key.vk, b"")
+                data.extend(raw * max(1, key.repeat))
+                if len(data) > 4096:
+                    raise ValueError("鍵盤輸入超過 4096 bytes，不會重送已送出的內容")
+            return bytes(data)
+        try:
+            yield read
+        finally:
+            # 未送出的密碼／按鍵不可在返回 PowerShell 後被當成本機指令。
+            kernel.FlushConsoleInputBuffer(handle)
+            kernel.SetConsoleMode(handle, original.value)
+    else:
+        import termios
+        import tty
+        fd = sys.stdin.fileno()
+        original = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd, when=termios.TCSANOW)
+            def read():
+                return os.read(fd, 4096) if select.select([fd], [], [], 0)[0] else b""
+            yield read
+        finally:
+            try:
+                termios.tcflush(fd, termios.TCIFLUSH)
+            finally:
+                termios.tcsetattr(fd, termios.TCSANOW, original)
+
+
+def terminal_session(sock, read_keyboard, write_output):
+    """雙向、有界、至多一筆未確認的 TX；沒有自動重連或重送。"""
+    pending = bytearray()
+    keyboard = bytearray()
+    ready = False
+    sent_at = None
+    expected_bytes = None
+    closing = False
+    close_at = None
+    newline = b"\r"
+    opened_at = time.monotonic()
+    while True:
+        if not ready and time.monotonic() - opened_at > 5:
+            raise TimeoutError("終端連線確認逾時，沒有送出鍵盤資料")
+        if ready and not closing:
+            keys = read_keyboard()
+            if b"\x1d" in keys:
+                # 離開不再送出同批其他按鍵，避免它們在本機 Shell 或設備上意外執行。
+                closing = True
+                keyboard.clear()
+                close_at = time.monotonic()
+                sock.sendall(encode({"op": "terminal_close"}))
+            else:
+                keys = keys.replace(b"\r", newline)
+                if len(keyboard) + len(keys) > 4096:
+                    raise ValueError("互動輸入佇列已滿；部分內容可能已送出，不會重送")
+                keyboard.extend(keys)
+        if keyboard and sent_at is None and not closing:
+            data = bytes(keyboard)
+            keyboard.clear()
+            sock.sendall(encode({"op": "terminal_write", "data_b64": b64(data)}))
+            expected_bytes, sent_at = len(data), time.monotonic()
+        if sent_at is not None and time.monotonic() - sent_at > 5:
+            raise TimeoutError("互動 TX 回覆逾時，結果不明，不會重送")
+        if closing and time.monotonic() - close_at > 2:
+            raise TimeoutError("終端關閉回覆逾時；請用 status 確認，不會重送")
+        if not select.select([sock], [], [], 0.02)[0]:
+            continue
+        data = sock.recv(65536)
+        if not data:
+            raise ValueError("互動連線中斷，Shell 結果不明，不會重連或重送")
+        output = bytearray()
+        try:
+            for reply in iter_frames(pending, data):
+                kind = reply.get("type")
+                if kind == "terminal":
+                    newline = {"cr": b"\r", "lf": b"\n", "crlf": b"\r\n"}[reply["newline"]]
+                    ready = True
+                    print("已進入 UART 終端：Ctrl+C 傳至設備，Ctrl+] 離開；互動內容不存入 Server Log。", file=sys.stderr, flush=True)
+                elif kind == "rx":
+                    output.extend(unb64(reply["data_b64"]))
+                elif kind == "terminal_tx":
+                    if expected_bytes is None or reply.get("accepted_bytes") != expected_bytes:
+                        raise ValueError("互動 TX 回覆不符，結果不明，不會重送")
+                    sent_at = expected_bytes = None
+                elif kind == "terminal_closed":
+                    if closing:
+                        return 0
+                elif kind == "error":
+                    if not ready and reply.get("error") == "invalid_request":
+                        raise ValueError("目前 Server 不支援 terminal，請重新啟動 Server；沒有送出鍵盤資料")
+                    raise ValueError(reply.get("message", reply.get("error", "terminal failed")))
+        finally:
+            write_output(output)
 
 
 class CompactMonitor:
@@ -83,13 +237,17 @@ class CompactMonitor:
             self.start(execution["id"], execution["started"], unb64(execution.get("prefix_b64", "")))
             if execution.get("command"):
                 return self.command_line(execution)
-        elif kind == "tx" and event.get("id") and event.get("action") != "interrupt":
+        elif kind == "tx" and event.get("id") and event.get("action") not in ("interrupt", "terminal"):
             self.start(event["id"])
             if event.get("command"):
                 return self.command_line(event)
         elif kind == "completed":
             self.phase = "idle"
             self.pending.clear()
+        elif kind == "terminal_opened":
+            remaining = self.finish()
+            self.phase = "idle"
+            return remaining
         elif kind == "tx" and event.get("action") == "interrupt" and self.phase == "echo":
             # 若開始標記尚未出現，Ctrl+C 可能直接回到登入 Shell。
             self.phase = "idle"
@@ -221,8 +379,11 @@ class FullMonitor:
                 self.line_open = False
                 self.rx_time = None
             if kind == "tx":
-                text = "Ctrl+C (0x03)" if event.get("action") == "interrupt" else safe_text(
-                    unb64(event["data_b64"]).decode("utf-8", "backslashreplace")).replace("\r", "\\r").replace("\n", "\\n")
+                if event.get("redacted"):
+                    text = f"<互動輸入已隱去，{event.get('bytes', 0)} bytes>"
+                else:
+                    text = "Ctrl+C (0x03)" if event.get("action") == "interrupt" else safe_text(
+                        unb64(event["data_b64"]).decode("utf-8", "backslashreplace")).replace("\r", "\\r").replace("\n", "\\n")
             else:
                 text = " ".join(f"{key}={json.dumps(value, ensure_ascii=True)}"
                                 for key, value in event.items() if key not in ("type", "time", "seq"))
@@ -292,10 +453,17 @@ def main(argv=None):
     display.add_argument("--json", action="store_true", help="原始 NDJSON 事件")
     commands.add_parser("status", help="唯讀狀態查詢，輸出 JSON")
     commands.add_parser("interrupt", help="經 UART 送出一次 Ctrl+C，輸出 JSON")
+    terminal = commands.add_parser("terminal", help="互動 UART 終端：Ctrl+C 傳至設備，Ctrl+] 離開")
+    terminal.add_argument("--shell-ready", action="store_true", help="明確確認已登入 Shell 且前景命令已結束，恢復 exec 與正常 Log；不進入終端")
     args = parser.parse_args(argv)
     request = {"op": args.operation}
     command_id = None
     try:
+        if args.operation == "terminal":
+            if args.shell_ready:
+                request = {"op": "terminal_ready", "confirmed": True}
+            elif not sys.stdin.isatty() or not sys.stdout.isatty():
+                raise ValueError("terminal 需要互動終端，不能使用管線；只讀輸出請用 monitor")
         if args.operation == "exec":
             request.update(command=args.command, timeout=args.timeout, max_output=args.max_output)
             if args.cwd is not None:
@@ -318,28 +486,22 @@ def main(argv=None):
                             print(error["message"], file=sys.stderr)
                         return 2
                 sock.sendall(encode(request))
-                if args.operation in ("status", "interrupt"):
+                if args.operation == "terminal" and not args.shell_ready:
+                    with terminal_mode(), terminal_keyboard() as read_keyboard:
+                        result = terminal_session(sock, read_keyboard, raw_writer())
+                    print("\n已離開終端。確認設備已回到 Shell 且命令已結束後，可用 terminal --shell-ready 恢復 exec。", file=sys.stderr)
+                    return result
+                if args.operation in ("status", "interrupt", "terminal"):
                     reply = read_message(stream)
                     show_json(reply)
                     return 2 if reply["type"] == "error" or reply.get("state") == "unknown" else 0
                 if args.operation == "monitor":
                     renderer = FullMonitor(sys.stdout) if args.full else None
                     compact = CompactMonitor() if not args.full and not args.json else None
-                    # Windows Console 的底層 WriteConsoleW 不能直接接收半個 UTF-8 字元。
-                    # 僅實體主控台逐步解碼；管線／檔案仍輸出完全相同的原始 bytes。
-                    console_decoder = None
+                    # Windows Console 不直接寫半個 UTF-8 字元；管線仍保留 bytes。
                     if not args.json and os.name == "nt" and sys.stdout.isatty():
                         sys.stdout.reconfigure(newline="")
-                    if not args.json and not args.full and os.name == "nt" and sys.stdout.isatty():
-                        console_decoder = codecs.getincrementaldecoder("utf-8")("replace")
-                    def write_compact(data):
-                        if data:
-                            if console_decoder is not None:
-                                sys.stdout.write(console_decoder.decode(data))
-                                sys.stdout.flush()
-                            else:
-                                sys.stdout.buffer.write(data)
-                                sys.stdout.buffer.flush()
+                    write_compact = raw_writer() if compact else None
                     with terminal_mode():
                         try:
                             for batch in monitor_batches(sock):
@@ -386,7 +548,11 @@ def main(argv=None):
                     return 2
                 if not args.json:
                     output = unb64(reply["output_b64"])
-                    print(safe_text(output.decode("utf-8", errors="backslashreplace")), end="", flush=True)
+                    if sys.stdout.isatty():
+                        with terminal_mode():
+                            raw_writer()(output, final=True)
+                    else:
+                        print(safe_text(output.decode("utf-8", errors="backslashreplace")), end="", flush=True)
                 if reply["state"] != "completed" or not reply["output_complete"]:
                     print(f"\n命令 {reply['id']}：state={reply['state']} reason={reply['reason']} "
                           f"output_truncated={reply['output_truncated']}；請用 status 查詢，不要重送。", file=sys.stderr)

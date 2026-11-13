@@ -11,6 +11,7 @@ DEFAULT_PORT = 18081
 MAX_FRAME = 2 * 1024 * 1024
 MAX_COMMAND = 4096
 MAX_OUTPUT = 1024 * 1024
+FEATURES = ("cwd", "terminal")
 
 
 def encode(message):
@@ -33,6 +34,22 @@ def decode(line):
 
 def read_message(stream):
     return decode(stream.readline(MAX_FRAME + 1))
+
+
+def iter_frames(pending, data):
+    """保留半筆訊息，逐筆交付合法 frame，後續損壞不吞掉前面的訊息。"""
+    pending.extend(data)
+    while True:
+        end = pending.find(b"\n")
+        if end < 0:
+            break
+        if end + 1 > MAX_FRAME:
+            raise ValueError("NDJSON 訊息過大")
+        message = decode(bytes(pending[:end + 1]))
+        del pending[:end + 1]
+        yield message
+    if len(pending) > MAX_FRAME:
+        raise ValueError("NDJSON 訊息過大")
 
 
 def b64(data):

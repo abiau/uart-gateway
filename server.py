@@ -14,8 +14,8 @@ import threading
 import time
 import uuid
 
-from protocol import (DEFAULT_HOST, DEFAULT_PORT, ShellMarkers, b64, encode,
-                      read_message, shell_payload, validate_exec)
+from protocol import (DEFAULT_HOST, DEFAULT_PORT, FEATURES, ShellMarkers, b64, encode,
+                      iter_frames, read_message, shell_payload, unb64, validate_exec)
 
 
 class TrafficLog:
@@ -52,6 +52,10 @@ class Gateway:
         self.stopping = threading.Event()
         self.active = self.last = None
         self.interrupting = False
+        self.terminal = None
+        self.shell_uncertain = False
+        self.shell_confirmed = False
+        self.private_log = False
         self.fault = None
         self.last_rx = None
         self.sequence = 0
@@ -66,10 +70,25 @@ class Gateway:
         self.sequence += 1
         event = {"type": kind, "seq": self.sequence,
                  "time": datetime.now(timezone.utc).isoformat(), **fields}
-        self.log.write(event)
+        if self.private_log and kind in ("tx", "rx", "tx_result"):
+            # 登入時不能靠猜 Password Prompt 判斷敏感資料；整個互動期間均不保存內容。
+            metadata = {key: value for key, value in event.items() if key not in ("data_b64", "command", "cwd")}
+            metadata["redacted"] = True
+            if "data_b64" in fields:
+                metadata["bytes"] = len(unb64(fields["data_b64"]))
+            self.log.write(metadata)
+        else:
+            self.log.write(event)
+        # 密碼即使關閉設備 Echo，也不能經由其他 Monitor 的 TX 事件洩漏。
+        broadcast = metadata if self.private_log and kind == "tx" and fields.get("action") == "terminal" else event
         for monitor in tuple(self.monitors):
             try:
-                monitor.put_nowait(event)
+                monitor.put_nowait(broadcast)
+                if self.terminal and monitor is self.terminal["events"]:
+                    try:
+                        self.terminal["wake_write"].send(b"x")
+                    except BlockingIOError:
+                        pass  # 已有喚醒訊號，不能讓 UART Reader 等待終端。
             except queue.Full:
                 self.monitors.remove(monitor)
         return event
@@ -132,14 +151,17 @@ class Gateway:
 
     def status(self):
         with self.condition:
-            shell = "uncertain" if self.fault else (
+            shell = "uncertain" if self.fault else "terminal" if self.terminal else "uncertain" if self.shell_uncertain else (
                 "uncertain" if self.active and self.active["reason"] else "running" if self.active else
-                "idle" if self.last else "unknown")
+                "idle" if self.last or self.shell_confirmed else "unknown")
             return {"type": "status", "uart": "error" if self.fault else "open",
-                    "features": ["cwd"],
+                    "features": FEATURES,
+                    "terminal_id": self.terminal["id"] if self.terminal else None,
+                    "log_redacted": self.private_log,
                     "port": self.serial.port, "baudrate": self.serial.baudrate,
                     "shell": shell, "uart_error": self.fault, "last_rx": self.last_rx,
-                    "log_error": self.log.error, "monitor_count": len(self.monitors),
+                    "log_error": self.log.error,
+                    "monitor_count": len(self.monitors) - int(self.terminal is not None and self.terminal["events"] in self.monitors),
                     "last_execution": self.result(self.last) if self.last else None}
 
     def execute(self, request):
@@ -150,6 +172,9 @@ class Gateway:
         with self.condition:
             if self.fault or self.stopping.is_set():
                 return None, {"type": "error", "error": "uart_unavailable", "message": self.fault or "Server 關閉中"}
+            if self.terminal or self.shell_uncertain:
+                return None, {"type": "error", "error": "terminal_busy" if self.terminal else "shell_uncertain",
+                              "message": "互動終端占用中，或 Shell 尚未確認就緒；請用 terminal 恢復，再以 terminal --shell-ready 確認"}
             if self.active or self.interrupting:
                 return None, {"type": "error", "error": "busy", "id": self.active["id"] if self.active else None,
                               "message": "前次命令尚未確認完成，不會排隊或重送"}
@@ -179,6 +204,8 @@ class Gateway:
 
     def interrupt(self):
         with self.condition:
+            if self.terminal:
+                return {"type": "error", "error": "terminal_busy", "message": "請在互動終端按 Ctrl+C，其他連線不能插入 UART"}
             if self.fault or self.stopping.is_set():
                 return {"type": "error", "error": "uart_unavailable", "message": self.fault or "Server 關閉中"}
             if self.interrupting or (self.active and self.active["writing"]):
@@ -209,6 +236,77 @@ class Gateway:
         return {"type": "interrupt", "id": command_id, "state": "written_to_driver",
                 "accepted_bytes": count, "message": "已送出一次 Ctrl+C；請用 status 確認原命令是否完成"}
 
+    def open_terminal(self):
+        with self.condition:
+            if self.fault or self.stopping.is_set():
+                return None, {"type": "error", "error": "uart_unavailable", "message": self.fault or "Server 關閉中"}
+            if self.terminal or self.interrupting or (self.active and (self.active["writing"] or not self.active["reason"])):
+                return None, {"type": "error", "error": "busy", "message": "UART 已有 Writer；執行中的 exec 請先完成或明確 interrupt"}
+            wake_read, wake_write = socket.socketpair()
+            wake_read.setblocking(False)
+            wake_write.setblocking(False)
+            if self.active:
+                self.active["reason"] = "terminal_takeover"
+                self.active = None  # 人工接手不會把未知的舊命令宣稱為完成。
+            terminal = {"id": uuid.uuid4().hex, "events": queue.Queue(maxsize=128), "writing": False,
+                        "wake_read": wake_read, "wake_write": wake_write}
+            self.terminal = terminal
+            self.shell_confirmed = False
+            self.shell_uncertain = self.private_log = True
+            self.monitors.add(terminal["events"])
+            self._event("terminal_opened", id=terminal["id"], log_redacted=True)
+            self.condition.notify_all()
+            return terminal, None
+
+    def write_terminal(self, terminal, data):
+        with self.condition:
+            if self.terminal is not terminal or terminal["events"] not in self.monitors or self.fault or self.stopping.is_set():
+                return {"type": "error", "error": "terminal_unavailable", "message": "終端或 UART 已失效，不會重送"}
+            terminal["writing"] = True
+            self._event("tx", id=terminal["id"], action="terminal", data_b64=b64(data))
+            if terminal["events"] not in self.monitors:
+                terminal["writing"] = False
+                return {"type": "error", "error": "terminal_unavailable", "message": "終端 RX 佇列已溢位，不送出鍵盤資料"}
+        count = None
+        try:
+            count = self.serial.write(data)
+            with self.condition:
+                self._event("tx_result", id=terminal["id"], action="terminal", accepted_bytes=count)
+            if count != len(data):
+                raise OSError("互動 UART 部分寫入，結果不明")
+        except OSError as exc:
+            with self.condition:
+                self._fail(exc)
+            return {"type": "error", "error": "uart_error", "message": "互動寫入失敗，可能部分送出，不會重送"}
+        finally:
+            with self.condition:
+                terminal["writing"] = False
+        return {"type": "terminal_tx", "accepted_bytes": count}
+
+    def close_terminal(self, terminal):
+        with self.condition:
+            if self.terminal is terminal:
+                self.monitors.discard(terminal["events"])
+                self.terminal = None
+                terminal["wake_read"].close()
+                terminal["wake_write"].close()
+                # 延遲 Echo 也可能包含密碼，直到人工確認 Shell 恢復之前持續隱去 Log 內容。
+                self._event("terminal_closed", id=terminal["id"], shell="uncertain", log_redacted=True)
+                self.condition.notify_all()
+
+    def confirm_shell_ready(self, request):
+        with self.condition:
+            if request.get("confirmed") is not True:
+                raise ValueError("必須明確確認 Shell 已登入且前景命令已結束")
+            if self.fault or self.stopping.is_set():
+                return {"type": "error", "error": "uart_unavailable", "message": self.fault or "Server 關閉中"}
+            if self.terminal or self.active or self.interrupting:
+                return {"type": "error", "error": "busy", "message": "請先離開 terminal，並處理待確認的命令"}
+            self.shell_uncertain = self.private_log = False
+            self.shell_confirmed = True
+            self._event("shell_ready", confirmed=True)
+            return {"type": "shell_ready", "confirmed": True}
+
     def detach(self, execution):
         with self.condition:
             if self.active is execution and not execution["reason"]:
@@ -218,6 +316,8 @@ class Gateway:
     def close(self):
         self.stopping.set()
         with self.condition:
+            if self.terminal:
+                self.close_terminal(self.terminal)
             if self.active:
                 self.active["reason"] = "server_stopped"
             self.condition.notify_all()
@@ -245,7 +345,7 @@ class Handler(socketserver.StreamRequestHandler):
             request = read_message(self.rfile)
             if request.get("op") == "hello":
                 # 與 exec 共用同一連線；確認功能後不會因 Server 換版而改送到另一個程序。
-                self.send({"type": "hello", "features": ["cwd"]})
+                self.send({"type": "hello", "features": FEATURES})
                 request = read_message(self.rfile)
             operation = request.get("op")
             if operation == "status":
@@ -254,6 +354,10 @@ class Handler(socketserver.StreamRequestHandler):
                 self.send(gateway.interrupt())
             elif operation == "monitor":
                 self.monitor(gateway)
+            elif operation == "terminal":
+                self.terminal(gateway)
+            elif operation == "terminal_ready":
+                self.send(gateway.confirm_shell_ready(request))
             elif operation == "exec":
                 execution, error = gateway.execute(request)
                 if error:
@@ -273,7 +377,7 @@ class Handler(socketserver.StreamRequestHandler):
                 finally:
                     gateway.detach(execution)
             else:
-                self.send({"type": "error", "error": "invalid_request", "message": "只接受 exec、monitor、status、interrupt"})
+                self.send({"type": "error", "error": "invalid_request", "message": "未知操作"})
         except (ValueError, UnicodeError, RecursionError) as exc:
             try:
                 self.send({"type": "error", "error": "invalid_request", "message": str(exc)})
@@ -320,6 +424,57 @@ class Handler(socketserver.StreamRequestHandler):
         finally:
             with gateway.condition:
                 gateway.monitors.discard(events)
+
+    def terminal(self, gateway):
+        terminal, error = gateway.open_terminal()
+        if error:
+            self.send(error)
+            return
+        pending = bytearray()
+        self.request.settimeout(1)
+        try:
+            self.send({"type": "terminal", "id": terminal["id"], "newline": gateway.newline, "log_redacted": True})
+            while not gateway.stopping.is_set():
+                with gateway.condition:
+                    lost = terminal["events"] not in gateway.monitors or gateway.fault
+                if lost:
+                    self.send({"type": "error", "error": "terminal_lost", "message": "UART 故障或 RX 佇列溢位，Shell 結果不明"})
+                    return
+                # 每輪有上限，持續的 RX 不得餓死鍵盤輸入。
+                for _ in range(32):
+                    try:
+                        self.send(terminal["events"].get_nowait())
+                    except queue.Empty:
+                        break
+                # 用本機 socketpair 喚醒 RX，避免為了同時等待鍵盤而延遲或塞滿 RX 佇列。
+                timeout = 0 if not terminal["events"].empty() else 0.1
+                readable = select.select([self.request, terminal["wake_read"]], [], [], timeout)[0]
+                if terminal["wake_read"] in readable:
+                    try:
+                        terminal["wake_read"].recv(4096)
+                    except BlockingIOError:
+                        pass
+                if self.request not in readable:
+                    continue
+                data = self.request.recv(65536)
+                if not data:
+                    return
+                for message in iter_frames(pending, data):
+                    if message.get("op") == "terminal_close":
+                        gateway.close_terminal(terminal)
+                        self.send({"type": "terminal_closed", "shell": "uncertain"})
+                        return
+                    if message.get("op") != "terminal_write" or not isinstance(message.get("data_b64"), str):
+                        raise ValueError("互動連線只接受 terminal_write 或 terminal_close")
+                    raw = unb64(message["data_b64"])
+                    if not 1 <= len(raw) <= 4096:
+                        raise ValueError("互動寫入每筆必須為 1～4096 bytes")
+                    result = gateway.write_terminal(terminal, raw)
+                    self.send(result)
+                    if result["type"] == "error":
+                        return
+        finally:
+            gateway.close_terminal(terminal)
 
 
 class TCPServer(socketserver.ThreadingTCPServer):

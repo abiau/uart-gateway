@@ -1,6 +1,7 @@
 """Fake UART＋真 TCP；不依賴硬體、Linux 或外部測試套件。"""
 
 from datetime import datetime
+from contextlib import nullcontext
 import io
 import json
 import os
@@ -767,6 +768,52 @@ class GatewayTests(unittest.TestCase):
         self.serial.auto_reply = None
         result = subprocess.run(command + ["exec", "test", "--timeout", "0.1"], capture_output=True, timeout=5)
         self.assertEqual(result.returncode, 2)
+
+    def test_exec_renders_control_bytes_on_terminal_and_escapes_redirected_output(self):
+        class Output:
+            def __init__(self, terminal):
+                self.buffer = self
+                self.data = bytearray()
+                self.terminal = terminal
+            def isatty(self):
+                return self.terminal
+            def reconfigure(self, **kwargs):
+                pass
+            def write(self, value):
+                self.data.extend(value.encode() if isinstance(value, str) else value)
+                return len(value)
+            def flush(self):
+                pass
+        body = b"\x1b[1;32mfile\x1b[m\r\n10%\r\x1b[2Kdone\b!\r\n" + "測試".encode()
+        self.serial.auto_reply = lambda command_id: self.complete(command_id, body)
+        for terminal in (True, False):
+            with self.subTest(terminal=terminal):
+                output = Output(terminal)
+                with patch("client.sys.stdout", output), patch("client.terminal_mode", return_value=nullcontext()) as mode:
+                    result = client.main(["--port", str(self.address[1]), "exec", "test"])
+                self.assertEqual(result, 0)
+                if terminal:
+                    self.assertEqual(output.data, body)
+                    mode.assert_called_once()
+                else:
+                    self.assertEqual(output.data, body.replace(b"\x1b", b"\\x1b").replace(b"\b", b"\\x08"))
+                    mode.assert_not_called()
+
+    def test_exec_json_preserves_color_and_other_control_bytes(self):
+        body = b"\x1b[32mfile\x1b[0m\r\n\x00\xff\x1b[3;5H"
+        self.serial.auto_reply = lambda command_id: self.complete(command_id, body)
+        result = subprocess.run([sys.executable, "client.py", "--port", str(self.address[1]),
+                                 "exec", "test", "--json"], capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(unb64(json.loads(result.stdout)["output_b64"]), body)
+
+    @unittest.skipUnless(os.name == "nt", "Windows Console 的 UTF-8 解碼")
+    def test_exec_raw_writer_does_not_drop_incomplete_final_utf8_character(self):
+        output = Mock()
+        output.isatty.return_value = True
+        with patch("client.sys.stdout", output):
+            client.raw_writer()(b"ok\xe6", final=True)
+        output.write.assert_called_once_with("ok\ufffd")
 
     def test_cwd_cli_protocol_status_and_monitor_metadata(self):
         self.serial.auto_reply = lambda command_id: self.complete(command_id, b"ok")

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import shlex
 import socket
 import subprocess
 import sys
@@ -14,10 +15,10 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from protocol import DEFAULT_PORT, encode, markers, read_message, unb64
+from protocol import DEFAULT_PORT, b64, encode, markers, read_message, unb64
 
 
-def check_port(port, tcp_port, test_interrupt=False, test_cwd=False):
+def check_port(port, tcp_port, test_interrupt=False, test_cwd=False, test_terminal=False):
     env = dict(os.environ, PYTHONUTF8="1")
     address = ("127.0.0.1", tcp_port)
     process = subprocess.Popen([sys.executable, "server.py", "--serial", port, "--port", str(tcp_port),
@@ -131,6 +132,58 @@ def check_port(port, tcp_port, test_interrupt=False, test_cwd=False):
             assert restored["cwd"] is None, restored
             cwd_results = {"cwd": "/tmp", "missing_directory_blocks_all_commands": True,
                            "next_exec_preserves_original_directory": True}
+        terminal_results = None
+        if test_terminal:
+            original = cli("exec", "pwd", "--json")
+            original_path = unb64(original["output_b64"]).decode("utf-8").strip()
+            assert original_path.startswith("/") and all(char.isprintable() for char in original_path), original
+            terminal_sock = socket.create_connection(address, timeout=3)
+            with terminal_sock, terminal_sock.makefile("rb") as terminal_stream:
+                terminal_sock.sendall(encode({"op": "terminal"}))
+                assert read_message(terminal_stream)["type"] == "terminal"
+                def send_raw(data):
+                    terminal_sock.sendall(encode({"op": "terminal_write", "data_b64": b64(data)}))
+                def wait_prompt():
+                    data = bytearray()
+                    for _ in range(256):
+                        message = read_message(terminal_stream)
+                        assert message["type"] != "error", message
+                        if message["type"] == "rx":
+                            data.extend(unb64(message["data_b64"]))
+                            if data.endswith(b" # "):
+                                return bytes(data)
+                    raise AssertionError("未觀察到 Shell 提示符，不繼續發送測試命令")
+                send_raw(b"\r")
+                wait_prompt()
+                send_raw(b"pwd\r")
+                assert original_path.encode() in wait_prompt()
+                send_raw(b"cd /tmp\r")
+                wait_prompt()
+                send_raw(b"pwd\r")
+                assert b"\r\n/tmp\r\n" in wait_prompt()
+                send_raw(b"sleep 5\r")
+                while read_message(terminal_stream)["type"] != "terminal_tx":
+                    pass
+                time.sleep(0.2)
+                start = time.monotonic()
+                send_raw(b"\x03")
+                assert b"^C" in wait_prompt()
+                assert time.monotonic() - start < 3
+                send_raw(("cd " + shlex.quote(original_path) + "\r").encode())
+                wait_prompt()
+                send_raw(b"pwd\r")
+                assert original_path.encode() in wait_prompt()
+                terminal_sock.sendall(encode({"op": "terminal_close"}))
+                while read_message(terminal_stream)["type"] != "terminal_closed":
+                    pass
+            blocked = cli("exec", "pwd", "--json", expected=2)
+            assert blocked["error"] == "shell_uncertain", blocked
+            ready = cli("terminal", "--shell-ready")
+            assert ready["type"] == "shell_ready", ready
+            restored = cli("exec", "pwd", "--json")
+            assert restored["output_b64"] == original["output_b64"], restored
+            terminal_results = {"raw_pwd": True, "persistent_cd": True, "ctrl_c": True,
+                                "original_directory_restored": True, "explicit_shell_ready": True}
         interrupt_results = []
         if test_interrupt:
             # 使用有固定終點的 sleep，測試失敗時也不留下無限執行的命令。
@@ -174,7 +227,7 @@ def check_port(port, tcp_port, test_interrupt=False, test_cwd=False):
             assert unb64(result["output_b64"]) == b"interrupt-recovered", result
         captured = list(events.queue)
         tx = [e for e in captured if e["type"] == "tx"]
-        assert len(tx) == (11 if test_interrupt else 6) + (4 if test_cwd else 0), ("命令不可重送，busy 請求不可寫入", len(tx))
+        assert len(tx) == (11 if test_interrupt else 6) + (4 if test_cwd else 0) + (10 if test_terminal else 0), ("命令不可重送，busy 請求不可寫入", len(tx))
         if test_interrupt:
             assert [unb64(e["data_b64"]) for e in tx if e.get("action") == "interrupt"] == [b"\x03", b"\x03"]
         assert any(e["type"] == "rx" for e in captured)
@@ -182,7 +235,7 @@ def check_port(port, tcp_port, test_interrupt=False, test_cwd=False):
         return {"port": port, "passed": True, "commands": results,
                 "exclusive_com": True, "timeout_late_completion": True,
                 "disconnect_late_completion": True, "monitor_tx_count": len(tx), "no_retry": True,
-                "interrupt_results": interrupt_results, "cwd_results": cwd_results}
+                "interrupt_results": interrupt_results, "cwd_results": cwd_results, "terminal_results": terminal_results}
     finally:
         if monitor:
             monitor.shutdown(socket.SHUT_RDWR)
@@ -205,10 +258,11 @@ def main():
     parser.add_argument("--tcp-port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--interrupt", action="store_true", help="另測試 Ctrl+C 中斷 sleep 與逾時恢復")
     parser.add_argument("--test-cwd", action="store_true", help="另測試 /tmp 工作目錄、失敗保護及不保存目錄")
+    parser.add_argument("--test-terminal", action="store_true", help="另測試互動終端、cd、Ctrl+C 及手動恢復 exec；不重開機或登入")
     args = parser.parse_args()
     results = []
     for port in args.ports:
-        result = check_port(port, args.tcp_port, args.interrupt, args.test_cwd)
+        result = check_port(port, args.tcp_port, args.interrupt, args.test_cwd, args.test_terminal)
         results.append(result)
         print(json.dumps(result, ensure_ascii=True), flush=True)
     Path("logs").mkdir(exist_ok=True)
