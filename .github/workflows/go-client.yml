@@ -1,0 +1,30 @@
+name: Go client
+on: [push, pull_request]
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.4'
+      - run: go vet ./...
+      - run: go test ./...
+      - run: sh scripts/build-client.sh
+      - run: CGO_ENABLED=0 go test -c -o dist/client-tests ./cmd/uart-client
+      - name: Ubuntu userspace compatibility
+        run: |
+          for version in 16.04 22.04 26.04; do
+            docker run --rm -v "$PWD/dist:/client:ro" "ubuntu:$version" /client/uart-client-linux-amd64 --help
+            docker run --rm -v "$PWD/dist:/client:ro" "ubuntu:$version" /client/client-tests -test.v -test.timeout=30s
+          done
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s tests
+        env:
+          UART_CLIENT_BIN: dist/uart-client-linux-amd64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uart-client-linux
+          path: dist/uart-client-linux-*

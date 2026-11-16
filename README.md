@@ -45,20 +45,44 @@ py -3.14 -m venv .venv
 
 也可直接使用 `.\.venv\Scripts\python.exe client.py ...`，不需要啟用虛擬環境。
 
-## Linux Client
+## Go Client（Ubuntu 16.04／22.04／26.04）
 
-複製專案後安裝，Client 不需要 pyserial：
+Client 現在提供 Go 版本，Server 與 TCP 協定保持不變。目標機不需要 Go、Python 或 pip。
+同一 CPU 架構共用一個執行檔；x86-64 使用 amd64，ARM64 使用 arm64。
+Python `client.py` 暫保留作為相容參考與既有測試使用。
 
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/uart-client status
-.venv/bin/uart-client exec 'uname -a'
-.venv/bin/uart-client monitor
-.venv/bin/uart-client terminal
+在有 Go 1.23 以上的開發機建置（依賴版本由 go.mod／go.sum 固定）：
+
+```powershell
+./scripts/build-client.ps1
 ```
 
-不安裝入口也可只複製 `client.py`、`protocol.py`，使用 `python3 client.py ...`。
+Linux 開發機也可使用 `sh scripts/build-client.sh`。使用純 Go 依賴與 `CGO_ENABLED=0`，
+Linux 發行檔不依賴目標機的 glibc；amd64 使用 v1 CPU 基準。
+產物在 `dist/uart-client-linux-amd64`、`dist/uart-client-linux-arm64`；PowerShell 腳本另產生 Windows exe。
+
+複製對應執行檔到 Linux 後：
+
+```bash
+chmod +x uart-client-linux-amd64
+mkdir -p ~/.local/bin
+cp uart-client-linux-amd64 ~/.local/bin/uart-client
+# 請確保 ~/.local/bin 在 PATH 中
+uart-client status
+uart-client exec 'uname -a'
+uart-client exec --cwd /tmp 'pwd' --json
+uart-client monitor
+uart-client terminal
+```
+
+`--host`／`--port` 仍放在子指令前，既有五個子指令、退出碼、cwd 握手與不重送行為保持一致。
+Windows 可使用 `dist/uart-client-windows-amd64.exe` 取代下文 Python client 範例。
+Server 安裝與啟動仍使用原本 Python 指令。
+
+驗證：`go test ./...`、`go vet ./...`；建置後用 `python -m unittest discover -s tests`
+執行既有回歸與 Go CLI 對 Python server 的 Fake UART／真 TCP 整合測試。
+Ubuntu 三版本仍需在實際目標環境驗證，尤其是 terminal 的鍵盤、控制字元與終端還原；
+跨平台編譯成功不代表已完成各版本實機測試。
 
 ### 既有 SSH Reverse Tunnel
 
